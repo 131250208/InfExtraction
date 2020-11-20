@@ -30,26 +30,6 @@ class Indexer:
         return tag_ids[:self.max_seq_len]
 
 
-class CharTokenizer:
-    '''
-    character level tokenizer
-    '''
-
-    def __init__(self):
-        '''
-        :param char2id: a dictionary, mapping characters to ids
-        '''
-        # self.char2idx = char2id
-        # self.char_indexer = Indexer(char2id, max_seq_len, {"[UNK]": char2id["[UNK]"], "[PAD]": char2id["[PAD]"]})
-
-    def tokenize(self, text):
-        return list(text)
-
-    # def text2char_indices(self, text):
-    #     chars = self.tokenize(text)
-    #     return self.char_indexer.get_indices(chars)
-
-
 class WordTokenizer:
     '''
     word level tokenizer,
@@ -229,24 +209,28 @@ class Preprocessor:
                 tok_sp[1] = tok_ind + 1 # 一直修改
         return char2tok_span
 
-    def _get_ent2char_spans(self, text, entities, ignore_subword=True):
+    def _get_ent2char_spans(self, text, entities, ignore_subword_match=True):
         '''
         a dict mapping an entity to all possible character level spans
         it is used for adding character level spans for all entities
         e.g. {"entity1": [[0, 1], [18, 19]]}
         if ignore_subword, look for entities with whitespace around, e.g. "entity" -> " entity "
         '''
-        entities = sorted(entities, key=lambda x: len(x), reverse=True)
-        text_cp = " {} ".format(text) if ignore_subword else text
+        entities = sorted(set(entities), key=lambda x: len(x), reverse=True)
+        text_cp = " {} ".format(text) if ignore_subword_match else text
         ent2char_spans = {}
         for ent in entities:
             spans = []
-            target_ent = " {} ".format(ent) if ignore_subword else ent
+            target_ent = " {} ".format(ent) if ignore_subword_match else ent
             for m in re.finditer(re.escape(target_ent), text_cp):
-                span = [m.span()[0], m.span()[1] - 2] if ignore_subword else m.span()
+                # if consider subword, avoid matching an incomplete number, "76567" -> "65", or it will introduce too many errors.
+                if not ignore_subword_match and re.match("\d+", target_ent):
+                    if (m.span()[0] - 1 >= 0 and re.match("\d", text_cp[m.span()[0] - 1])) or (
+                            m.span()[1] < len(text_cp) and re.match("\d", text_cp[m.span()[1]])):
+                        continue
+                # if ignore_subword_match, we use " {original entity} " to match. So, we need to recover the correct span
+                span = [m.span()[0], m.span()[1] - 2] if ignore_subword_match else m.span()
                 spans.append(span)
-            #             if len(spans) == 0:
-            #                 set_trace()
             ent2char_spans[ent] = spans
         return ent2char_spans
 
@@ -307,53 +291,106 @@ class Preprocessor:
 
         return self._clean_sp_char(normal_sample_list)
 
-    def add_char_span(self, dataset, ignore_subword=True):
+    def add_char_span(self, dataset, ignore_subword_match=True):
         '''
         if the dataset has not annotated character level spans, add them automatically
         :param dataset:
-        :param ignore_subword: if a word is a subword of another word, ignore its span.
+        :param ignore_subword_match: if a word is a subword of another word, ignore its span.
         :return:
         '''
+        for sample in tqdm(dataset, desc="adding char level spans"):
+            entities = []
+            if "relation_list" in sample:
+                entities.extend([rel["subject"] for rel in sample["relation_list"]])
+                entities.extend([rel["object"] for rel in sample["relation_list"]])
+            if "entity_list" in sample:
+                entities.extend([ent["text"] for ent in sample["entity_list"]])
+            # if "event_list" in sample:
+            #     for event in sample["event_list"]:
+            #         entities.append(event["trigger"])
+            #         entities.extend([arg["text"] for arg in event["argument_list"]])
 
-        for sample in tqdm(dataset, desc="Adding char level spans"):
-            entities = [ent["text"] for ent in sample["entity_list"]]
-            ent2char_spans = self._get_ent2char_spans(sample["text"], entities, ignore_subword=ignore_subword)
+            ent2char_spans = self._get_ent2char_spans(sample["text"], entities,
+                                                      ignore_subword_match=ignore_subword_match)
 
-            # filter duplicates
-            ent_memory_set = set()
-            uni_entity_list = []
-            for ent in sample["entity_list"]:
-                ent_memory = "{}-{}".format(ent["text"], ent["type"])
-                if ent_memory not in ent_memory_set:
-                    uni_entity_list.append(ent)
-                    ent_memory_set.add(ent_memory)
+            if "relation_list" in sample:
+                new_relation_list = []
+                for rel in sample["relation_list"]:
+                    subj_char_spans = ent2char_spans[rel["subject"]]
+                    obj_char_spans = ent2char_spans[rel["object"]]
+                    for subj_sp in subj_char_spans:
+                        for obj_sp in obj_char_spans:
+                            new_relation_list.append({
+                                "subject": rel["subject"],
+                                "object": rel["object"],
+                                "subj_char_span": subj_sp,
+                                "obj_char_span": obj_sp,
+                                "predicate": rel["predicate"],
+                            })
 
-            new_ent_list = []
-            for ent in uni_entity_list:
-                ent_spans = ent2char_spans[ent["text"]]
-                for sp in ent_spans:
-                    new_ent_list.append({
-                        "text": ent["text"],
-                        "type": ent["type"],
-                        "char_span": sp,
-                    })
+                assert len(sample["relation_list"]) <= len(new_relation_list)
+                sample["relation_list"] = new_relation_list
 
-            assert sample["entity_list"] == len(new_ent_list)
-            sample["entity_list"] = new_ent_list
+            if "entity_list" in sample:
+                new_ent_list = []
+                for ent in sample["entity_list"]:
+                    for char_sp in ent2char_spans[ent["text"]]:
+                        new_ent_list.append({
+                            "text": ent["text"],
+                            "type": ent["type"],
+                            "char_span": char_sp,
+                        })
+                assert len(new_ent_list) >= sample["entity_list"]
+                sample["entity_list"] = new_ent_list
+
+            if "event_list" in sample:
+                miss_span = False
+                for event in sample["event_list"]:
+                    if "trigger_char_span" not in event:
+                        miss_span = True
+                    for arg in event["argument_list"]:
+                        if "char_span" not in arg:
+                            miss_span = True
+
+                error_info = "it is not a good idea to automatically add character level spans for events. Because it will introduce too many errors"
+                assert miss_span is False, error_info
         return dataset
 
     def add_tok_span(self, data):
         '''
         add token level span according to the character spans, character level spans are required
         '''
-        for sample in tqdm(data, desc="Adding token level span"):
-            text = sample["text"]
-            char2tok_span = self._get_char2tok_span(text)
-            for ent in sample["entity_list"]:
-                char_span = ent["char_span"]
-                tok_span_list = char2tok_span[char_span[0]:char_span[1]]
-                tok_span = [tok_span_list[0][0], tok_span_list[-1][1]]
-                ent["tok_span"] = tok_span
+        def char_span2tok_span(char_span, char2tok_span):
+            tok_span_list = char2tok_span[char_span[0]:char_span[1]]
+            tok_span = [tok_span_list[0][0], tok_span_list[-1][1]]
+            return tok_span
+
+        for sample in tqdm(data, desc="adding word level and subword level spans"):
+            char2word_span = self._get_char2tok_span(sample["word_level_features"]["tok2char_span"])
+            char2subwd_span = self._get_char2tok_span(sample["subword_level_features"]["tok2char_span"])
+            
+            if "relation_list" in sample:
+                for rel in sample["relation_list"]:
+                    subj_char_span = rel["subj_char_span"]
+                    obj_char_span = rel["obj_char_span"]
+                    rel["subj_wd_span"] = char_span2tok_span(subj_char_span, char2word_span)
+                    rel["obj_wd_span"] = char_span2tok_span(obj_char_span, char2word_span)
+                    rel["subj_subwd_span"] = char_span2tok_span(subj_char_span, char2subwd_span)
+                    rel["obj_subwd_span"] = char_span2tok_span(obj_char_span, char2subwd_span)
+                    
+            if "entity_list" in sample:
+                for ent in sample["entity_list"]:
+                    char_span = ent["char_span"]
+                    ent["wd_span"] = char_span2tok_span(char_span, char2word_span)
+                    ent["subwd_span"] = char_span2tok_span(char_span, char2subwd_span)
+                    
+            if "event_list" in sample:
+                for event in sample["event_list"]:
+                    event["trigger_wd_span"] = char_span2tok_span(event["trigger_char_span"], char2word_span)
+                    event["trigger_subwd_span"] = char_span2tok_span(event["trigger_char_span"], char2subwd_span)
+                    for arg in event["argument_list"]:
+                        arg["wd_span"] = char_span2tok_span(arg["char_span"], char2word_span)
+                        arg["subwd_span"] = char_span2tok_span(arg["char_span"], char2subwd_span)
         return data
 
     def check_tok_span(self, data):
@@ -362,78 +399,142 @@ class Preprocessor:
         :param data: 
         :return: 
         '''
-        entities_to_fix = []
-        for sample in tqdm(data, desc="check tok spans"):
+        sample_id2mismatched_ents = {}
+
+        def extract_ent(tok_span, tok2char_span, text):
+            char_span_list = tok2char_span[tok_span[0]:tok_span[1]]
+            char_span = [char_span_list[0][0], char_span_list[-1][1]]
+            text_extr = text[char_span[0]:char_span[1]]
+            return text_extr
+
+        for sample in tqdm(data, desc="checking word level and subword level"):
             text = sample["text"]
-            tok2char_span = self.get_tok2char_span_map(text)
-            for ent in sample["entity_list"]:
-                tok_span = ent["tok_span"]
-                char_span_list = tok2char_span[tok_span[0]:tok_span[1]]
-                char_span = [char_span_list[0][0], char_span_list[-1][1]]
-                text_extr = text[char_span[0]:char_span[1]]
-                gold_char_span = ent["char_span"]
-                if not (char_span[0] == gold_char_span[0] and char_span[1] == gold_char_span[1] and text_extr == ent[
-                    "text"]):
-                    bad_ent = copy.deepcopy(ent)
-                    bad_ent["extr_text"] = text_extr
-                    entities_to_fix.append(bad_ent)
+            word2char_span = sample["word_level_features"]["tok2char_span"]
+            subword2char_span = sample["subword_level_features"]["tok2char_span"]
 
-        span_error_memory = set()
-        for ent in entities_to_fix:
-            err_mem = "gold: {} --- extr: {}".format(ent["text"], ent["extr_text"])
-            span_error_memory.add(err_mem)
-        return span_error_memory
+            bad_entities = []
+            bad_rels = []
+            bad_events = []
+            if "entity_list" in sample:
 
-    def build_data(self, data, task):
+                for ent in sample["entity_list"]:
+                    word_span = ent["wd_span"]
+                    subword_span = ent["subwd_span"]
+                    ent_wd = extract_ent(word_span, word2char_span, text)
+                    ent_subwd = extract_ent(subword_span, subword2char_span, text)
+
+                    if not (ent_wd == ent_subwd == ent["text"]):
+                        bad_ent = copy.deepcopy(ent)
+                        bad_ent["extr_ent_wd"] = ent_wd
+                        bad_ent["extr_ent_subwd"] = ent_subwd
+                        bad_entities.append(bad_ent)
+                sample_id2mismatched_ents[sample["id"]] = {
+                    "bad_entites": bad_entities,
+                }
+
+            if "relation_list" in sample:
+
+                for rel in sample["relation_list"]:
+                    subj_wd_span = rel["subj_wd_span"]
+                    obj_wd_span = rel["obj_wd_span"]
+                    subj_subwd_span = rel["subj_subwd_span"]
+                    obj_subwd_span = rel["obj_subwd_span"]
+
+                    subj_wd = extract_ent(subj_wd_span, word2char_span, text)
+                    obj_wd = extract_ent(obj_wd_span, word2char_span, text)
+                    subj_subwd = extract_ent(subj_subwd_span, subword2char_span, text)
+                    obj_subwd = extract_ent(obj_subwd_span, subword2char_span, text)
+
+                    if not (subj_wd == rel["subject"] == subj_subwd and obj_wd == rel["object"] == obj_subwd):
+                        bad_rel = copy.deepcopy(rel)
+                        bad_rel["extr_subj_wd"] = subj_wd
+                        bad_rel["extr_subj_subwd"] = subj_subwd
+                        bad_rel["extr_obj_wd"] = obj_wd
+                        bad_rel["extr_obj_subwd"] = obj_subwd
+                        bad_rels.append(bad_rel)
+                sample_id2mismatched_ents[sample["id"]]["bad_relations"] = bad_rels
+
+            if "event_list" in sample:
+
+                for event in sample["event_list"]:
+                    bad = False
+                    trigger_wd_span = event["trigger_wd_span"]
+                    trigger_subwd_span = event["trigger_subwd_span"]
+                    trigger_wd = extract_ent(trigger_wd_span, word2char_span, text)
+                    trigger_subwd = extract_ent(trigger_subwd_span, subword2char_span, text)
+                    if not (trigger_wd == trigger_subwd == event["trigger"]):
+                        bad = True
+
+                    for arg in event["argument_list"]:
+                        arg_wd_span = arg["wd_span"]
+                        arg_subwd_span = arg["subwd_span"]
+                        arg_wd = extract_ent(arg_wd_span, word2char_span, text)
+                        arg_subwd = extract_ent(arg_subwd_span, subword2char_span, text)
+                        if not (arg_wd == arg_subwd == arg["text"]):
+                            bad = True
+                    if bad:
+                        bad_events.append(event)
+
+            sample_id2mismatched_ents[sample["id"]] = {}
+            if len(bad_entities) > 0:
+                sample_id2mismatched_ents[sample["id"]]["bad_entities"] = bad_entities
+            if len(bad_rels) > 0:
+                sample_id2mismatched_ents[sample["id"]]["bad_relations"] = bad_rels
+            if len(bad_events) > 0:
+                sample_id2mismatched_ents[sample["id"]]["bad_events"] = bad_events
+            if len(sample_id2mismatched_ents[sample["id"]]) == 0:
+                del sample_id2mismatched_ents[sample["id"]]
+        return sample_id2mismatched_ents
+
+    def process_main_data(self, data, task, add_char_span, ignore_subword_match):
+        # add char spans
+        if add_char_span:
+            self.add_char_span(data, ignore_subword_match=ignore_subword_match)
+
+        # build features
         separator = "_"  # for event extraction task
-        for sample in tqdm(data, desc="building data"):
+        for sample in tqdm(data, desc="processing main data"):
             text = sample["text"]
-
-            t1 = time.time()
             # features
             ## word level
-            sample["word_level_features"] = self.word_tokenizer.tokenize_plus(text)
-            t2 = time.time()
+            word_feature_keys = {"ner_tag_list", "word_list", "pos_tag_list", "dependency_list", "tok2char_span"}
+            # if a key not exists, generate features from scratch
+            # (to guarantee the lengths match each other)
+            generate = False
+            for key in word_feature_keys:
+                if key not in sample:
+                    generate = True
+            if generate:
+                sample["word_level_features"] = self.word_tokenizer.tokenize_plus(text)
+            else:
+                word_level_features = {
+                    "word_list": sample["word_list"],
+                    "tok2char_span": sample["tok2char_span"],
+                    "pos_tag_list": sample["pos_tag_list"],
+                    "ner_tag_list": sample["ner_tag_list"],
+                    "dependency_list": sample["dependency_list"],
+                }
+                sample["word_level_features"] = word_level_features
+                del sample["word_list"]
+                del sample["tok2char_span"]
+                del sample["dependency_list"]
+                del sample["pos_tag_list"]
+                del sample["ner_tag_list"]
 
-            if "ner_tag_list" in sample:
-                if len(sample["ner_tag_list"]) == len(sample["word_level_features"]["word_list"]):
-                    sample["word_level_features"]["ner_tag_list"] = sample["ner_tag_list"]
-                    del sample["ner_tag_list"]
-                else:
-                    logging.warning("length of ner_tag_list != word_list, auto generate ner_tag_list.")
-                    set_trace()
-                    
-            if "pos_tag_list" in sample:
-                if len(sample["pos_tag_list"]) == len(sample["word_level_features"]["word_list"]):
-                    sample["word_level_features"]["pos_tag_list"] = sample["pos_tag_list"]
-                    del sample["pos_tag_list"]
-                else:
-                    logging.warning("length of pos_tag_list != word_list, auto generate pos_tag_list.")
-                    set_trace()
-                    
-            if "dependency_list" in sample:
-                if len(sample["dependency_list"]) == len(sample["word_level_features"]["word_list"]):
-                    sample["word_level_features"]["dependency_list"] = sample["dependency_list"]
-                    del sample["dependency_list"]
-                else:
-                    logging.warning("length of dependency_list != word_list, auto generate dependency_list.")
-                    set_trace()
-
-            # transform to matrix point
+            ### transform dependencies to matrix point
             new_dep_list = []
             for wid, dep in enumerate(sample["word_level_features"]["dependency_list"]):
                 new_dep_list.append([wid, dep[0] + wid, dep[1]])
             sample["word_level_features"]["dependency_list"] = new_dep_list
 
-
             ## subword level
-            subword_features = self.subword_tokenizer.encode_plus(text,
-                                               return_offsets_mapping=True,
-                                               add_special_tokens=False,
-                                               )
+            subword_features = self.subword_tokenizer.encode_plus_fr_words(sample["word_level_features"]["word_list"],
+                                                                           sample["word_level_features"]["tok2char_span"],
+                                                                           return_offsets_mapping=True,
+                                                                           add_special_tokens=False,
+                                                                           )
             subword2char_span = subword_features["offset_mapping"]
-            word2char_span = sample["word_level_features"]["tok2char_span"]
-            char2word_span = self._get_char2tok_span(word2char_span)
+            char2word_span = self._get_char2tok_span(sample["word_level_features"]["tok2char_span"])
             subword2word_idx = []
             for subw_id, char_sp in enumerate(subword2char_span):
                 wd_sps = char2word_span[char_sp[0]:char_sp[1]]
@@ -447,6 +548,7 @@ class Preprocessor:
                 "ner_tag_list": [sample["word_level_features"]["ner_tag_list"][wid] for wid in subword2word_idx],
                 "pos_tag_list": [sample["word_level_features"]["pos_tag_list"][wid] for wid in subword2word_idx],
             }
+            subw_feats = sample["subword_level_features"]
 
             ### generate subword level dependency list
             word2subword_ids = [[] for _ in range(len(sample["word_level_features"]["word_list"]))]
@@ -459,7 +561,20 @@ class Preprocessor:
                         subword_dep_list.append([subw_id1, subw_id2, dep[2]])
             sample["subword_level_features"]["dependency_list"] = subword_dep_list
 
-            ## entities, relations
+            # check features
+            assert len(subw_feats["subword_list"]) == len(subw_feats["tok2char_span"]) == len(
+                subw_feats["word_list"]) == len(subw_feats["ner_tag_list"]) == len(subw_feats["pos_tag_list"])
+            for subw_id, wid in enumerate(subword2word_idx):
+                subw = sample["subword_level_features"]["subword_list"][subw_id]
+                word = sample["word_level_features"]["word_list"][wid]
+                assert re.sub("##", "", subw) in word or subw == "[UNK]"
+            for subw_id, char_sp in enumerate(subword2char_span):
+                subw = sample["subword_level_features"]["subword_list"][subw_id]
+                subw = re.sub("##", "", subw)
+                subw_extr = sample["text"][char_sp[0]:char_sp[1]]
+                assert subw_extr == subw or subw == "[UNK]"
+
+            # entities, relations
             fin_ent_list, fin_rel_list = [], []
             if "entity_list" in sample:
                 fin_ent_list.extend(sample["entity_list"])
@@ -531,6 +646,89 @@ class Preprocessor:
                 for ent in sample["entity_list"]:
                     ent["type"] = "DEFAULT"
 
+        # add token spans (word level and subword level)
+        self.add_tok_span(data)
+
+        return data
+
+    def generate_supporting_data(self, data, max_word_num, min_word_freq):
+        rel_type_set = set()
+        ent_type_set = set()
+        pos_tag_set = set()
+        ner_tag_set = set()
+        deprel_type_set = set()
+        word2num = dict()
+        word_set = set()
+        char_set = set()
+
+        for sample in tqdm(data, desc="generating supporting data"):
+            # entity type
+            ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
+            # relation type
+            rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
+            # POS tag
+            pos_tag_set |= {pos_tag for pos_tag in sample["word_level_features"]["pos_tag_list"]}
+            # NER tag
+            ner_tag_set |= {ner_tag for ner_tag in sample["word_level_features"]["ner_tag_list"]}
+            # dependency relations
+            deprel_type_set |= {deprel[-1] for deprel in sample["word_level_features"]["dependency_list"]}
+            # character
+            char_set |= set(sample["text"])
+            # word
+            for word in sample["word_level_features"]["word_list"]:
+                word2num[word] = word2num.get(word, 0) + 1
+
+        rel_type_set = sorted(rel_type_set)
+        rel2id = {rel: ind for ind, rel in enumerate(rel_type_set)}
+
+        ent_type_set = sorted(ent_type_set)
+        ent2id = {ent: ind for ind, ent in enumerate(ent_type_set)}
+
+        def get_dict(tag_set):
+            tag2id = {tag: ind + 2 for ind, tag in enumerate(sorted(tag_set))}
+            tag2id["[PAD]"] = 0
+            tag2id["[UNK]"] = 1
+            return tag2id
+
+        deprel_type2id = get_dict(deprel_type_set)
+        pos_tag2id = get_dict(pos_tag_set)
+
+        char2id = get_dict(char_set)
+        ner_tag_set.remove("O")
+        ner_tag2id = {ner_tag: ind + 1 for ind, ner_tag in enumerate(sorted(ner_tag_set))}
+        ner_tag2id["O"] = 0
+
+        word2num = dict(sorted(word2num.items(), key=lambda x: x[1], reverse=True))
+        for tok, num in word2num.items():
+            if num < min_word_freq:  # filter words with a frequency of less than <min_freq>
+                continue
+            word_set.add(tok)
+            if len(word_set) == max_word_num:
+                break
+        word2id = get_dict(word_set)
+
+        data_statistics = {
+            "relation_type_num": len(rel2id),
+            "entity_type_num": len(ent2id),
+            "pos_tag_num": len(pos_tag2id),
+            "ner_tag_num": len(ner_tag2id),
+            "deprel_type_num": len(deprel_type2id),
+            "word_num": len(word2id),
+            "char_num": len(char2id),
+        }
+
+        dicts = {
+            "rel_type2id": rel2id,
+            "ent_type2id": ent2id,
+            "pos_tag2id": pos_tag2id,
+            "ner_tag2id": ner_tag2id,
+            "deprel_type2id": deprel_type2id,
+            "char2id": char2id,
+            "word2id": word2id,
+        }
+
+        return dicts, data_statistics
+
     def split_into_short_samples(self,
                                  data,
                                  max_seq_len,
@@ -596,19 +794,4 @@ class Preprocessor:
 
 
 if __name__ == "__main__":
-    stanza_nlp = stanza.Pipeline("en")
-    tokenizer = BertTokenizerAlignedWithStanza.from_pretrained("../data/bert-base-cased",
-                                                               add_special_tokens=False,
-                                                               do_lower_case=False,
-                                                               stanza_nlp=stanza_nlp)
-    text = "Its favored cities include Boston , Washington , Los Angeles , Seattle , San Francisco and Oakland ."
-    codes = tokenizer.encode_plus(text,
-                                  return_offsets_mapping=True,
-                                  add_special_tokens=False,
-                                  max_length=128,
-                                  truncation=True,
-                                  pad_to_max_length=True,
-                                  )
-    print(codes)
-    tokens = tokenizer.tokenize(text, max_length=128)
-    print(tokens)
+    pass

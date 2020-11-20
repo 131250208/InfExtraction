@@ -14,18 +14,23 @@ import os
 import json
 import re
 import stanza
+import logging
+from pprint import pprint
 
 # settings
 exp_name = settings.exp_name
 data_in_dir = os.path.join(settings.data_in_dir, exp_name)
 data_out_dir = os.path.join(settings.data_out_dir, exp_name)
+if not os.path.exists(data_out_dir):
+    os.makedirs(data_out_dir)
 task_type = settings.task_type
 language = settings.language
 pretrained_model_path = settings.pretrained_model_path
 ori_data_format = settings.ori_data_format
-
-if not os.path.exists(data_out_dir):
-    os.makedirs(data_out_dir)
+add_char_span = settings.add_char_span
+ignore_subword_match = settings.ignore_subword_match
+max_word_num = settings.max_word_num
+min_word_freq = settings.min_word_freq
 
 # load data
 file_name2data = {}
@@ -57,59 +62,38 @@ if ori_data_format != "tplinker": # if tplinker, skip transforming
         data = preprocessor.transform_data(data, ori_format=ori_data_format, dataset_type=data_type, add_id=True)
         file_name2data[file_name] = data
 
+# process and save main data
 for filename, data in file_name2data.items():
-    preprocessor.build_data(data, task_type)
+    # process data
+    data = preprocessor.process_main_data(data, task_type, add_char_span, ignore_subword_match)
+    file_name2data[filename] = data
 
-# #
-# # clean, add char span, tok span
-# # generate dicts: relation, entity type
-# # check tok spans
-# rel_set = set()
-# ent_set = set()
-# pos_tag_set = set()
-# ent_tag_set = set()
-# error_statistics = {}
-#
-# for file_name, data in file_name2data.items():
-#     assert len(data) > 0
-#     if "relation_list" not in data[0] and "event_list" not in data[0]:  # skip unannotated test set
-#         continue
-#     #     # rm redundant whitespaces
-#     #     # separate by whitespaces
-#     #     data = preprocessor.clean_data_wo_span(data, separate = config["separate_char_by_white"])
-#
-#     error_statistics[file_name] = {}
-#
-#     # add char span
-#     if config["add_char_span"]:
-#         data, miss_sample_list = preprocessor.add_char_span(data, config["ignore_subword"])
-#         error_statistics[file_name]["miss_samples"] = len(miss_sample_list)
-#
-#     # build data for a specific task
-#     preprocessor.build_data(data, task)
-#
-#     # collect relation types and entity types
-#     for sample in tqdm(data, desc="building relation type set and entity type set"):
-#         for ent in sample["entity_list"]:
-#             ent_set.add(ent["type"])
-#
-#         for rel in sample["relation_list"]:
-#             rel_set.add(rel["predicate"])
-#
-#         for pos_tag in sample["pos_tag_list"]:
-#             pos_tag_set.add(pos_tag)
-#
-#         for ent_tag in sample["ent_tag_list"]:
-#             ent_tag_set.add(ent_tag)
-#
-#     # add tok span
-#     data = preprocessor.add_tok_span(data)
-#
-#     # check tok span
-#     span_error_memory = preprocessor.check_tok_span(data)
-#     if len(span_error_memory) > 0:
-#         print(span_error_memory)
-#     error_statistics[file_name]["tok_span_error"] = len(span_error_memory)
-#
-#     file_name2data[file_name] = data
-# pprint(error_statistics)
+# generate supporting data: word and character dict, relation type dict, entity type dict, ...
+all_data = []
+for data in file_name2data.values():
+    all_data.extend(data)
+
+# check word level and subword level spans
+sample_id2mismatch = preprocessor.check_tok_span(all_data)
+if len(sample_id2mismatch) > 0:
+    error_info = "Some spans do not match the text! " \
+                 "It might because that you set ignore_subword_match to false and " \
+                 "the tokenizer of BERT can not handle some tokens. e.g. tokens: [ab, ##cde], text: abcd."
+    logging.warning(error_info)
+    pprint(sample_id2mismatch)
+
+dicts, statistics = preprocessor.generate_supporting_data(all_data, max_word_num, min_word_freq)
+for filename, data in file_name2data.items():
+    statistics[filename] = len(data)
+
+# save main data
+for filename, data in file_name2data.items():
+    data_path = os.path.join(data_out_dir, "{}.json".format(filename))
+    json.dump(data, open(data_path, "w", encoding="utf-8"), ensure_ascii=False)
+
+# save supporting data
+dicts_path = os.path.join(data_out_dir, "dicts.json")
+json.dump(dicts, open(dicts_path, "w", encoding="utf-8"), ensure_ascii=False, indent=4)
+statistics_path = os.path.join(data_out_dir, "statistics.json")
+json.dump(statistics, open(statistics_path, "w", encoding="utf-8"), ensure_ascii=False, indent=4)
+
