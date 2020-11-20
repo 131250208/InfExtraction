@@ -8,8 +8,8 @@ Prepare data for training
 5. generate other files if needed
 '''
 
-from InfExtraction.Components.preprocess import WordTokenizer, BertTokenizerAlignedWithStanza, Preprocessor
-from InfExtraction.TaskFlows import preprocess_settings as settings
+from InfExtraction.components.preprocess import WordTokenizer, BertTokenizerAlignedWithStanza, Preprocessor
+from InfExtraction.work_flows import preprocess_settings as settings
 import os
 import json
 import re
