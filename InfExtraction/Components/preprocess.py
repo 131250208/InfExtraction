@@ -5,6 +5,7 @@ from transformers import BertTokenizerFast
 import stanza
 import logging
 import time
+from IPython.core.debugger import set_trace
 
 class Indexer:
     def __init__(self, tag2id, max_seq_len, spe_tag_dict):
@@ -133,8 +134,9 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
     def __init__(self, *args, **kwargs):
         super(BertTokenizerAlignedWithStanza, self).__init__(*args, **kwargs)
         self.stanza_nlp = kwargs["stanza_nlp"]
-
-    def _tokenize(self, text, max_length=None, *args, **kwargs):
+    
+    def tokenize_fr_words(self, words, max_length=None, *args, **kwargs):
+        text = " ".join(words)
         tokens = super(BertTokenizerAlignedWithStanza, self).tokenize(text, *args, **kwargs)
 
         if max_length is not None:
@@ -143,18 +145,11 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
             else:
                 tokens = tokens[:max_length]
         return tokens
-
+    
     def tokenize(self, text, max_length=None, *args, **kwargs):
         words_by_stanza = [word.text for sent in self.stanza_nlp(text).sentences for word in sent.words]
-        text = " ".join(words_by_stanza)
-        # subword2word_idx = []
-        # tks = super(BertTokenizerAlignedWithStanza, self).tokenize(word.text, *args, **kwargs)
-        # tks = [tk for tk in tks if tk != "[PAD]"]
-        # tokens.extend(tks)
-        # for _ in tks:
-        #     subword2word_idx.append(word.id - 1)
-        return self._tokenize(text, max_length, *args, **kwargs)
-
+        return self.tokenize_fr_words(words_by_stanza, max_length=max_length, *args, **kwargs)
+    
     def encode_plus(self, text, *args, **kwargs):
         words_by_stanza = []
         word2char_span = []
@@ -164,7 +159,11 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
                 start_char, end_char = word.misc.split("|")
                 start_char, end_char = int(start_char.split("=")[1]), int(end_char.split("=")[1])
                 word2char_span.append([start_char, end_char])
-        text = " ".join(words_by_stanza)
+                
+        return self.encode_plus_fr_words(words_by_stanza, word2char_span, *args, **kwargs)
+    
+    def encode_plus_fr_words(self, words, word2char_span, *args, **kwargs):
+        text = " ".join(words)
 
         new_char_ids2ori_char_ids = []
         for char_sp in word2char_span:
@@ -185,7 +184,8 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
             features["offset_mapping"] = new_offset_mapping
 
         max_length = kwargs["max_length"] if "max_length" in kwargs else None
-        features["subword_list"] = self._tokenize(text, max_length=max_length)
+        
+        features["subword_list"] = self.tokenize_fr_words(words, max_length=max_length)
 
         return features
 
@@ -401,18 +401,23 @@ class Preprocessor:
                     del sample["ner_tag_list"]
                 else:
                     logging.warning("length of ner_tag_list != word_list, auto generate ner_tag_list.")
+                    set_trace()
+                    
             if "pos_tag_list" in sample:
                 if len(sample["pos_tag_list"]) == len(sample["word_level_features"]["word_list"]):
                     sample["word_level_features"]["pos_tag_list"] = sample["pos_tag_list"]
                     del sample["pos_tag_list"]
                 else:
                     logging.warning("length of pos_tag_list != word_list, auto generate pos_tag_list.")
+                    set_trace()
+                    
             if "dependency_list" in sample:
                 if len(sample["dependency_list"]) == len(sample["word_level_features"]["word_list"]):
                     sample["word_level_features"]["dependency_list"] = sample["dependency_list"]
                     del sample["dependency_list"]
                 else:
                     logging.warning("length of dependency_list != word_list, auto generate dependency_list.")
+                    set_trace()
 
             # transform to matrix point
             new_dep_list = []
@@ -423,9 +428,9 @@ class Preprocessor:
 
             ## subword level
             subword_features = self.subword_tokenizer.encode_plus(text,
-                                                                   return_offsets_mapping=True,
-                                                                   add_special_tokens=False,
-                                                                   )
+                                               return_offsets_mapping=True,
+                                               add_special_tokens=False,
+                                               )
             subword2char_span = subword_features["offset_mapping"]
             word2char_span = sample["word_level_features"]["tok2char_span"]
             char2word_span = self._get_char2tok_span(word2char_span)
