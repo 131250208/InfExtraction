@@ -3,7 +3,7 @@ import random
 # data
 data_in_dir = "../../data/normal_data"
 train_data = "train_data.json"
-valid_data = "train_data.json"
+valid_data = "valid_data.json"
 dicts = "dicts.json"
 statistics = "statistics.json"
 
@@ -45,6 +45,7 @@ bilstm_settings = {
 }
 
 pretrained_model_settings = {
+    "pretrained_model_padding": 0,
     "wordpieces_prefix": "##",
     "lr": 5e-5,
     "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",

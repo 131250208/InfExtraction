@@ -1,0 +1,372 @@
+import torch
+import copy
+import re
+from abc import ABCMeta, abstractmethod
+from tqdm import tqdm
+
+
+class Tagger(metaclass=ABCMeta):
+    @abstractmethod
+    def get_tag_points(self, sample):
+        '''
+        This function is for generating tag points
+
+        sample: an example
+        return points for tagging
+        point: (start_pos, end_pos, tag_id)
+        '''
+        pass
+
+    @abstractmethod
+    def points2tag(self, points):
+        pass
+
+    @abstractmethod
+    def points2tag_batch(self, batch_points):
+        '''
+        This function is for generation tag tensors for training
+
+        convert spots to a tag matrix
+        spots_batch:
+            [batch1, batch2, ....]
+            batch1: [(start_pos, end_pos, tag_id), ]
+        return: tag matrix (a tensor)
+        '''
+        pass
+
+    @abstractmethod
+    def tag2points(self, tag):
+        '''
+        This function if for supporting the decoding function below
+
+        tag_matrix: the tag matrix
+        return matrix_spots: [(start_pos, end_pos, tag_id), ]
+        '''
+        pass
+
+    @abstractmethod
+    def decode(self, sample, tag):
+        '''
+        decoding function: to extract results by the predicted tag
+
+        :param sample: example object (dict)
+        :param tag: predicted tag
+        :return: extracted event list
+        '''
+        pass
+
+    @abstractmethod
+    def get_loss(self, pred_tag, gold_tag):
+        pass
+    
+
+class HandshakingTagger(Tagger):
+    def __init__(self, rel2id, entity_type2id, max_seq_len):
+        super().__init__()
+        self.rel2id = rel2id
+        self.id2rel = {ind: rel for rel, ind in rel2id.items()}
+
+        self.separator = "\u2E80"
+        self.link_types = {"SH2OH",  # subject head to object head
+                           "OH2SH",  # object head to subject head
+                           "ST2OT",  # subject tail to object tail
+                           "OT2ST",  # object tail to subject tail
+                           }
+        self.tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.link_types}
+
+        self.ent2id = entity_type2id
+        self.id2ent = {ind: ent for ent, ind in self.ent2id.items()}
+        self.tags |= {self.separator.join([ent, "EH2ET"]) for ent in
+                      self.ent2id.keys()}  # EH2ET: entity head to entity tail
+
+        self.tags = sorted(self.tags)
+
+        self.tag2id = {t: idx for idx, t in enumerate(self.tags)}
+        self.id2tag = {idx: t for t, idx in self.tag2id.items()}
+        self.matrix_size = max_seq_len
+
+        # map
+        # e.g. [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]
+        self.shaking_idx2matrix_idx = [(ind, end_ind) for ind in range(self.matrix_size) for end_ind in
+                                       list(range(self.matrix_size))[ind:]]
+
+        self.matrix_idx2shaking_idx = [[0 for i in range(self.matrix_size)] for j in range(self.matrix_size)]
+        for shaking_ind, matrix_ind in enumerate(self.shaking_idx2matrix_idx):
+            self.matrix_idx2shaking_idx[matrix_ind[0]][matrix_ind[1]] = shaking_ind
+
+    def get_tag_size(self):
+        return len(self.tag2id)
+
+    def tag(self, data):
+        for sample in tqdm(data, desc="tagging"):
+            sample["tag_points"] = self.get_tag_points(sample)
+        return data
+
+    def get_tag_points(self, sample):
+        '''
+        matrix_points: [(tok_pos1, tok_pos2, tag_id), ]
+        '''
+        matrix_points = []
+        point_memory_set = set()
+
+        def add_point(point):
+            memory = "{},{},{}".format(*point)
+            if memory not in point_memory_set:
+                matrix_points.append(point)
+                point_memory_set.add(memory)
+
+        for ent in sample["entity_list"]:
+            add_point(
+                (ent["tok_span"][0], ent["tok_span"][1] - 1, self.tag2id[self.separator.join([ent["type"], "EH2ET"])]))
+
+        for rel in sample["relation_list"]:
+            subj_tok_span = rel["subj_tok_span"]
+            obj_tok_span = rel["obj_tok_span"]
+            rel = rel["predicate"]
+            if subj_tok_span[0] <= obj_tok_span[0]:
+                add_point((subj_tok_span[0], obj_tok_span[0], self.tag2id[self.separator.join([rel, "SH2OH"])]))
+            else:
+                add_point((obj_tok_span[0], subj_tok_span[0], self.tag2id[self.separator.join([rel, "OH2SH"])]))
+            if subj_tok_span[1] <= obj_tok_span[1]:
+                add_point((subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "ST2OT"])]))
+            else:
+                add_point((obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "OT2ST"])]))
+        return matrix_points
+
+    def points2tag(self, points):
+        '''
+        convert points to matrix tag
+        points: [(start_ind, end_ind, tag_id), ]
+        return: 
+            shaking_tag: (shaking_seq_len, tag_size)
+        '''
+        shaking_seq_len = self.matrix_size * (self.matrix_size + 1) // 2
+        shaking_tag = torch.zeros(shaking_seq_len, len(self.tag2id)).long()
+        for sp in points:
+            shaking_idx = self.matrix_idx2shaking_idx[sp[0]][sp[1]]
+            shaking_tag[shaking_idx][sp[2]] = 1
+        return shaking_tag
+
+    def points2tag_batch(self, batch_points):
+        '''
+        batch_points: a batch of points, [points1, points2, ...]
+            points: [(start_ind, end_ind, tag_id), ]
+        return:
+            batch_shaking_tag: (batch_size, shaking_seq_len, tag_size)
+        '''
+        shaking_seq_len = self.matrix_size * (self.matrix_size + 1) // 2
+        batch_shaking_tag = torch.zeros(len(batch_points), shaking_seq_len, len(self.tag2id)).long()
+        for batch_id, points in enumerate(batch_points):
+            for sp in points:
+                shaking_idx = self.matrix_idx2shaking_idx[sp[0]][sp[1]]
+                batch_shaking_tag[batch_id][shaking_idx][sp[2]] = 1
+        return batch_shaking_tag
+
+    def tag2points(self, shaking_tag):
+        '''
+        shaking_tag -> points
+        shaking_tag: (shaking_seq_len, tag_id)
+        points: [(start_ind, end_ind, tag_id), ]
+        '''
+        points = []
+        nonzero_points = torch.nonzero(shaking_tag, as_tuple=False)
+        for point in nonzero_points:
+            shaking_idx, tag_idx = point[0].item(), point[1].item()
+            pos1, pos2 = self.shaking_idx2matrix_idx[shaking_idx]
+            point = (pos1, pos2, tag_idx)
+            points.append(point)
+        return points
+
+    def decode(self, sample, shaking_tag):
+        '''
+        shaking_tag: (shaking_seq_len, tag_id_num)
+        '''
+        rel_list, ent_list = [], []
+        matrix_points = self.tag2points(shaking_tag)
+
+        sample_idx, text = sample["id"], sample["text"]
+        tok2char_span = sample["features"]["tok2char_span"]
+
+        # entity
+        head_ind2entities = {}
+        for sp in matrix_points:
+            tag = self.id2tag[sp[2]]
+            ent_type, link_type = tag.split(self.separator)
+            if link_type != "EH2ET" or sp[0] > sp[
+                1]:  # for an entity, the start position can not be larger than the end pos.
+                continue
+
+            char_span_list = tok2char_span[sp[0]:sp[1] + 1]
+            char_sp = [char_span_list[0][0], char_span_list[-1][1]]
+            ent_text = text[char_sp[0]:char_sp[1]]
+            entity = {
+                "type": ent_type,
+                "text": ent_text,
+                "tok_span": [sp[0], sp[1] + 1],
+                "char_span": char_sp,
+            }
+            head_key = str(sp[0])  # take ent_head_pos as the key to entity list
+            if head_key not in head_ind2entities:
+                head_ind2entities[head_key] = []
+            head_ind2entities[head_key].append(entity)
+            ent_list.append(entity)
+
+        # tail link
+        tail_link_memory_set = set()
+        for sp in matrix_points:
+            tag = self.id2tag[sp[2]]
+            rel, link_type = tag.split(self.separator)
+            if link_type == "ST2OT":
+                tail_link_memory = self.separator.join([rel, str(sp[0]), str(sp[1])])
+                tail_link_memory_set.add(tail_link_memory)
+            elif link_type == "OT2ST":
+                tail_link_memory = self.separator.join([rel, str(sp[1]), str(sp[0])])
+                tail_link_memory_set.add(tail_link_memory)
+
+        # head link
+        for sp in matrix_points:
+            tag = self.id2tag[sp[2]]
+            rel, link_type = tag.split(self.separator)
+
+            if link_type == "SH2OH":
+                subj_head_key, obj_head_key = str(sp[0]), str(sp[1])
+            elif link_type == "OH2SH":
+                subj_head_key, obj_head_key = str(sp[1]), str(sp[0])
+            else:
+                continue
+
+            if subj_head_key not in head_ind2entities or obj_head_key not in head_ind2entities:
+                # no entity start with subj_head_key and obj_head_key
+                continue
+
+            subj_list = head_ind2entities[subj_head_key]  # all entities start with this subject head
+            obj_list = head_ind2entities[obj_head_key]  # all entities start with this object head
+
+            # go over all subj-obj pair to check whether the tail link exists
+            for subj in subj_list:
+                for obj in obj_list:
+                    tail_link_memory = self.separator.join(
+                        [rel, str(subj["tok_span"][1] - 1), str(obj["tok_span"][1] - 1)])
+                    if tail_link_memory not in tail_link_memory_set:
+                        # no such relation
+                        continue
+                    rel_list.append({
+                        "subject": subj["text"],
+                        "object": obj["text"],
+                        "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
+                        "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
+                        "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
+                        "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
+                        "predicate": rel,
+                    })
+            # recover the positons in the original text
+            for ent in ent_list:
+                ent["char_span"] = [ent["char_span"][0], ent["char_span"][1]]
+                ent["tok_span"] = [ent["tok_span"][0], ent["tok_span"][1]]
+
+        return {
+            "id": sample_idx,
+            "text": text,
+            "relation_list": rel_list,
+            "entity_list": ent_list,
+            "tok_level_offset": sample["tok_level_offset"],
+            "char_level_offset": sample["char_level_offset"],
+        }
+
+    def get_loss(self, pred_tag, gold_tag):
+        pass
+
+
+class HandshakingTagger4EE(HandshakingTagger):
+    def decode(self, sample, shaking_tag):
+        pred_sample = super(HandshakingTagger4EE, self).decode(sample, shaking_tag)
+        return {
+            **pred_sample,
+            "event_list": self.trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
+        }
+
+    def trans2ee(self, rel_list, ent_list):
+        new_rel_list, new_ent_list = [], []
+        for rel in rel_list:
+            if rel["predicate"].split(":")[0] == "EE":
+                new_rel = copy.deepcopy(rel)
+                new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
+                new_rel_list.append(new_rel)
+        for ent in ent_list:
+            if ent["type"].split(":")[0] == "EE":
+                new_ent = copy.deepcopy(ent)
+                new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
+                new_ent_list.append(new_ent)
+        rel_list, ent_list = new_rel_list, new_ent_list
+
+        sepatator = "_"
+        trigger_set, arg_iden_set, arg_class_set = set(), set(), set()
+        trigger_offset2vote = {}
+        trigger_offset2trigger_text = {}
+        trigger_offset2trigger_char_span = {}
+        # get candidate trigger types from relation
+        for rel in rel_list:
+            trigger_offset = rel["obj_tok_span"]
+            trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
+            trigger_offset2trigger_text[trigger_offset_str] = rel["object"]
+            trigger_offset2trigger_char_span[trigger_offset_str] = rel["obj_char_span"]
+            _, event_type = rel["predicate"].split(sepatator)
+
+            if trigger_offset_str not in trigger_offset2vote:
+                trigger_offset2vote[trigger_offset_str] = {}
+            trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
+                event_type, 0) + 1
+
+        # get candidate trigger types from entity types
+        for ent in ent_list:
+            t1, t2 = ent["type"].split(sepatator)
+            assert t1 == "Trigger" or t1 == "Argument"
+            if t1 == "Trigger":  # trigger
+                event_type = t2
+                trigger_span = ent["tok_span"]
+                trigger_offset_str = "{},{}".format(trigger_span[0], trigger_span[1])
+                trigger_offset2trigger_text[trigger_offset_str] = ent["text"]
+                trigger_offset2trigger_char_span[trigger_offset_str] = ent["char_span"]
+                if trigger_offset_str not in trigger_offset2vote:
+                    trigger_offset2vote[trigger_offset_str] = {}
+                trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
+                    event_type, 0) + 1.1  # if even, entity type makes the call
+
+        # voting
+        tirigger_offset2event = {}
+        for trigger_offet_str, event_type2score in trigger_offset2vote.items():
+            event_type = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0]
+            tirigger_offset2event[trigger_offet_str] = event_type  # final event type
+
+        # generate event list
+        trigger_offset2arguments = {}
+        for rel in rel_list:
+            trigger_offset = rel["obj_tok_span"]
+            argument_role, event_type = rel["predicate"].split(sepatator)
+            trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
+            if tirigger_offset2event[trigger_offset_str] != event_type:  # filter false relations
+                #                 set_trace()
+                continue
+
+            # append arguments
+            if trigger_offset_str not in trigger_offset2arguments:
+                trigger_offset2arguments[trigger_offset_str] = []
+            trigger_offset2arguments[trigger_offset_str].append({
+                "text": rel["subject"],
+                "type": argument_role,
+                "char_span": rel["subj_char_span"],
+                "tok_span": rel["subj_tok_span"],
+            })
+        event_list = []
+        for trigger_offset_str, event_type in tirigger_offset2event.items():
+            arguments = trigger_offset2arguments[
+                trigger_offset_str] if trigger_offset_str in trigger_offset2arguments else []
+            event = {
+                "trigger": trigger_offset2trigger_text[trigger_offset_str],
+                "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
+                "trigger_tok_span": trigger_offset_str.split(","),
+                "trigger_type": event_type,
+                "argument_list": arguments,
+            }
+            event_list.append(event)
+        return event_list

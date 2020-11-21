@@ -6,6 +6,8 @@ import stanza
 import logging
 import time
 from IPython.core.debugger import set_trace
+from torch.utils.data import Dataset
+import torch
 
 class Indexer:
     def __init__(self, tag2id, max_seq_len, spe_tag_dict):
@@ -13,9 +15,27 @@ class Indexer:
         self.max_seq_len = max_seq_len
         self.spe_tag_dict = spe_tag_dict
 
-    def get_indices(self, tags):
+    def index_tag_list_w_matrix_pos(self, tags):
         '''
-        tags: a list of tag
+        :param tags: [[pos_i, pos_j, tag1], [pos_i, pos_j, tag2], ...]
+        :return:
+        '''
+        for t in tags:
+            if t[2] in self.tag2id:
+                t[2] = self.tag2id[t[2]]
+            else:
+                t[2] = self.spe_tag_dict["[UNK]"]
+        return tags
+
+    @staticmethod
+    def pad2length(tags, padding_tag, length):
+        if len(tags) < length:
+            tags.extend([padding_tag] * (length - len(tags)))
+        return tags[:length]
+
+    def index_tag_list(self, tags):
+        '''
+        tags: [t1, t2, t3, ...]
         '''
         tag_ids = []
         for t in tags:
@@ -982,5 +1002,45 @@ class Preprocessor:
                 del sample_id2mismatched_ents[sample["id"]]
         return sample_id2mismatched_ents
 
+    @staticmethod
+    def index_features(data, key2dict, max_seq_len, pretrained_model_padding=0):
+        for sample in tqdm(data, desc="indexing"):
+            features = sample["features"]
+            for f_key, tags in features.items():
+                if f_key in key2dict.keys():
+                    tag2id = key2dict[f_key]
+
+                    if f_key == "ner_tag_list":
+                        spe_tag_dict = {"[UNK]": tag2id["O"], "[PAD]": tag2id["O"]}
+                    else:
+                        spe_tag_dict = {"[UNK]": tag2id["[UNK]"], "[PAD]": tag2id["[PAD]"]}
+
+                    indexer = Indexer(tag2id, max_seq_len, spe_tag_dict)
+                    if f_key == "dependency_list":
+                        features[f_key] = indexer.index_tag_list_w_matrix_pos(tags)
+                    else:
+                        features[f_key] = torch.LongTensor(indexer.index_tag_list(tags))
+                elif f_key in {"token_type_ids", "attention_mask"}:
+                    features[f_key] = torch.LongTensor(Indexer.pad2length(tags, 0, max_seq_len))
+                elif f_key == "tok2char_span":
+                    features[f_key] = Indexer.pad2length(tags, [0, 0], max_seq_len)
+                elif f_key == "input_ids":
+                    features[f_key] = torch.LongTensor(Indexer.pad2length(tags, pretrained_model_padding, max_seq_len))
+        return data
+
+
+class MyDataset(Dataset):
+    def __init__(self, data):
+        self.data = data
+
+    def __getitem__(self, index):
+        return self.data[index]
+
+    def __len__(self):
+        return len(self.data)
+
+
 if __name__ == "__main__":
+    bert = BertTokenizerAlignedWithStanza()
+    bert.get_vocab()
     pass

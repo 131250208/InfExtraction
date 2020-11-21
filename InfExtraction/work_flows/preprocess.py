@@ -84,3 +84,4 @@ json.dump(dicts, open(dicts_path, "w", encoding="utf-8"), ensure_ascii=False, in
 statistics_path = os.path.join(data_out_dir, "statistics.json")
 json.dump(statistics, open(statistics_path, "w", encoding="utf-8"), ensure_ascii=False, indent=4)
 
+
