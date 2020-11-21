@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/EventExtraction.iml" filepath="$PROJECT_DIR$/.idea/EventExtraction.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/InfExtraction.iml" filepath="$PROJECT_DIR$/.idea/InfExtraction.iml" />
     </modules>
   </component>
 </project>

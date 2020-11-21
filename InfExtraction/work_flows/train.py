@@ -2,9 +2,92 @@
 Train the model
 '''
 
-# Read data
+# load data
 # Split the data (by max sequence length in the config file)
 # Index the data
 # Put the data into a Dataloader (from torch.utils.data import DataLoader, Dataset)
 # Initialize the model and metrics
 # Train
+
+from InfExtraction.components.preprocess import Preprocessor
+from InfExtraction.work_flows import settings_train as settings
+from InfExtraction.work_flows.utils import DefaultLogger
+import os
+import torch
+import wandb
+import json
+from pprint import pprint
+
+# settings
+exp_name = settings.exp_name
+data_in_dir = settings.data_in_dir
+train_data_path = os.path.join(data_in_dir, exp_name, settings.train_data)
+valid_data_path = os.path.join(data_in_dir, exp_name, settings.valid_data)
+dicts_path = os.path.join(data_in_dir, exp_name, settings.dicts)
+statistics_path = os.path.join(data_in_dir, exp_name, settings.statistics)
+
+use_wandb = settings.use_wandb
+run_name = settings.run_name
+config2log = settings.config_to_log
+# logger settings
+log_path = settings.log_path
+run_id = settings.run_id
+path_to_save_model = settings.path_to_save_model
+# training settings
+device_num = settings.device_num
+task_type = settings.task_type
+language = settings.language
+use_bert = settings.use_bert
+seed = settings.seed
+batch_size = settings.batch_size
+epochs = settings.epochs
+log_interval = settings.log_interval
+max_seq_len = settings.max_seq_len
+sliding_len = settings.sliding_len
+scheduler = settings.scheduler
+ghm = settings.ghm
+tok_pair_sample_rate = settings.tok_pair_sample_rate
+# model
+model_settings = settings.model_settings
+
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
+os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+torch.manual_seed(seed) # pytorch random seed
+torch.backends.cudnn.deterministic = True # for reproductivity
+
+# reset settings from args
+
+# logger
+if use_wandb:
+    # init wandb
+    wandb.init(project=exp_name, name=run_name, config=config2log)
+    model_state_dict_dir = wandb.run.dir
+    logger = wandb
+else:
+    logger = DefaultLogger(log_path,
+                           exp_name,
+                           run_name,
+                           run_id, config2log)
+    model_state_dict_dir = path_to_save_model
+    if not os.path.exists(model_state_dict_dir):
+        os.makedirs(model_state_dict_dir)
+
+# load data
+train_data = json.load(open(train_data_path, "r", encoding="utf-8"))
+valid_data = json.load(open(valid_data_path, "r", encoding="utf-8"))
+statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
+
+# splitting
+if use_bert:
+    max_seq_len_statistics = statistics["max_subword_seq_length"]
+else:
+    max_seq_len_statistics = statistics["max_word_seq_length"]
+max_seq_len = min(max_seq_len, max_seq_len_statistics)
+split_train_data = Preprocessor.split_into_short_samples(train_data, max_seq_len, sliding_len, "train",
+                                                         wordpieces_prefix=model_settings["wordpieces_prefix"],
+                                                         feature_list_key="word_level_features")
+sample_id2dismatched = Preprocessor.check_splits(split_train_data)
+pprint(sample_id2dismatched)
+
+# indexing

@@ -1,19 +1,12 @@
 '''
 Prepare data for training
-0. tokenize (word level, subword level)
-1. add character level spans (if needed)
-2. add token level spans
-3. generate a dict mapping id to tag
-4. generate a dict mapping id to token (for LSTM if needed)
-5. generate other files if needed
 '''
 
-from InfExtraction.components.preprocess import WordTokenizer, BertTokenizerAlignedWithStanza, Preprocessor
-from InfExtraction.work_flows import preprocess_settings as settings
+from InfExtraction.components.preprocess import Preprocessor
+from InfExtraction.work_flows import settings_preprocess as settings
 import os
 import json
 import re
-import stanza
 import logging
 from pprint import pprint
 
@@ -21,16 +14,16 @@ from pprint import pprint
 exp_name = settings.exp_name
 data_in_dir = os.path.join(settings.data_in_dir, exp_name)
 data_out_dir = os.path.join(settings.data_out_dir, exp_name)
-if not os.path.exists(data_out_dir):
-    os.makedirs(data_out_dir)
 task_type = settings.task_type
 language = settings.language
 pretrained_model_path = settings.pretrained_model_path
 ori_data_format = settings.ori_data_format
 add_char_span = settings.add_char_span
 ignore_subword_match = settings.ignore_subword_match
-max_word_num = settings.max_word_num
+max_word_dict_size = settings.max_word_dict_size
 min_word_freq = settings.min_word_freq
+if not os.path.exists(data_out_dir):
+    os.makedirs(data_out_dir)
 
 # load data
 file_name2data = {}
@@ -41,13 +34,7 @@ for path, folds, files in os.walk(data_in_dir):
         file_name2data[file_name] = json.load(open(file_path, "r", encoding="utf-8"))
 
 # preprocessor
-stanza_nlp = stanza.Pipeline(settings.language)
-word_tokenizer = WordTokenizer(stanza_nlp)
-subword_tokenizer = BertTokenizerAlignedWithStanza.from_pretrained(pretrained_model_path,
-                                                                   add_special_tokens=False,
-                                                                   do_lower_case=False,
-                                                                   stanza_nlp=stanza_nlp)
-preprocessor = Preprocessor(word_tokenizer, subword_tokenizer)
+preprocessor = Preprocessor(language, pretrained_model_path)
 
 # transform data
 if ori_data_format != "tplinker": # if tplinker, skip transforming
@@ -82,7 +69,7 @@ if len(sample_id2mismatch) > 0:
     logging.warning(error_info)
     pprint(sample_id2mismatch)
 
-dicts, statistics = preprocessor.generate_supporting_data(all_data, max_word_num, min_word_freq)
+dicts, statistics = preprocessor.generate_supporting_data(all_data, max_word_dict_size, min_word_freq)
 for filename, data in file_name2data.items():
     statistics[filename] = len(data)
 
