@@ -231,7 +231,7 @@ class TPLinkerPlus(nn.Module, IEModel):
             matrix_points_batch.append(sample["tag_points"])
         batch_dict["sample_list"] = sample_list
         # shaking tag
-        seq_length = len(batch_dict["subword_input_ids"].size()[1])
+        seq_length = batch_dict["subword_input_ids"].size()[1]
         batch_dict["shaking_tag"] = self.tagger.points2tag_batch(matrix_points_batch, seq_length)
         return batch_dict
 
