@@ -126,7 +126,7 @@ if __name__ == "__main__":
                                                      pretrained_model_padding)
     indexed_valid_data = Preprocessor.index_features(split_valid_data,
                                                      key2dict,
-                                                     max_seq_len_statistics,
+                                                     max_seq_len, # max_seq_len_statistics
                                                      model_settings["char_encoder_config"]["max_char_num_in_tok"],
                                                      pretrained_model_padding)
 
