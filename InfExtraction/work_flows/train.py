@@ -99,10 +99,12 @@ if __name__ == "__main__":
         max_seq_len_statistics = statistics["max_word_seq_length"]
         feature_list_key = "word_level_features"
     max_seq_len = min(max_seq_len, max_seq_len_statistics)
-    split_train_data = Preprocessor.split_into_short_samples(train_data, max_seq_len, sliding_len, "train",
+    max_seq_len_train = max_seq_len
+    max_seq_len_valid = max_seq_len # max_seq_len_statistics
+    split_train_data = Preprocessor.split_into_short_samples(train_data, max_seq_len_train, sliding_len, "train",
                                                              wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"],
                                                              feature_list_key=feature_list_key)
-    split_valid_data = Preprocessor.split_into_short_samples(valid_data, max_seq_len, sliding_len, "valid",
+    split_valid_data = Preprocessor.split_into_short_samples(valid_data, max_seq_len_valid, sliding_len, "valid",
                                                              wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"],
                                                              feature_list_key=feature_list_key)
     sample_id2dismatched = Preprocessor.check_splits(split_train_data)
@@ -121,12 +123,12 @@ if __name__ == "__main__":
     pretrained_model_padding = model_settings["pretrained_model_padding"] if "pretrained_model_padding" in model_settings else 0
     indexed_train_data = Preprocessor.index_features(split_train_data,
                                                      key2dict,
-                                                     max_seq_len,
+                                                     max_seq_len_train,
                                                      model_settings["char_encoder_config"]["max_char_num_in_tok"],
                                                      pretrained_model_padding)
     indexed_valid_data = Preprocessor.index_features(split_valid_data,
                                                      key2dict,
-                                                     max_seq_len, # max_seq_len_statistics
+                                                     max_seq_len_valid, # max_seq_len_statistics
                                                      model_settings["char_encoder_config"]["max_char_num_in_tok"],
                                                      pretrained_model_padding)
 
