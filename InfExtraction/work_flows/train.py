@@ -142,6 +142,7 @@ if __name__ == "__main__":
     model_settings["word_encoder_config"]["word2id"] = dicts["word2id"] # set word2id dict
     tag_size = tagger.get_tag_size()
     model = TPLinkerPlus(tag_size, tagger, **model_settings)
+    model = model.to(device)
     collate_fn = model.generate_batch
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
