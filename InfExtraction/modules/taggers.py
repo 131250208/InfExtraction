@@ -184,6 +184,19 @@ class HandshakingTagger(Tagger):
                 batch_shaking_tag[batch_id][shaking_idx][sp[2]] = 1
         return batch_shaking_tag
 
+    def points2matrix_batch(self, batch_points, matrix_size):
+        '''
+        batch_points: a batch of points, [points1, points2, ...]
+            points: [(start_ind, end_ind, tag_id), ]
+        return:
+            batch_matrix: (batch_size, matrix_size, matrix_size)
+        '''
+        batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size).long()
+        for batch_id, points in enumerate(batch_points):
+            for pt in points:
+                batch_matrix[batch_id][pt[0]][pt[1]] = pt[2]
+        return batch_matrix
+
     def tag2points(self, shaking_tag):
         '''
         shaking_tag -> points

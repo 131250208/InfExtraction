@@ -5,7 +5,7 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from transformers import BertModel
-from InfExtraction.modules.model_components import HandshakingKernel
+from InfExtraction.modules.model_components import HandshakingKernel, GraphConvLayer
 from InfExtraction.modules.metrics import MetricsCalculator
 from gensim.models import KeyedVectors
 import logging
@@ -34,6 +34,7 @@ class TPLinkerPlus(nn.Module, IEModel):
                  word_encoder_config=None,
                  ner_tag_emb_config=None,
                  pos_tag_emb_config=None,
+                 dep_config=None,
                  handshaking_kernel_config=None,
                  fin_hidden_size=None,
                  ):
@@ -66,8 +67,9 @@ class TPLinkerPlus(nn.Module, IEModel):
         '''
         self.metrics_cal = MetricsCalculator()
         self.tagger = tagger
-        combined_hidden_size = 0
+        combined_hidden_size_1 = 0
 
+        # ner
         self.ner_tag_emb_config = ner_tag_emb_config
         if ner_tag_emb_config is not None:
             ner_tag_num = ner_tag_emb_config["ner_tag_num"]
@@ -75,8 +77,9 @@ class TPLinkerPlus(nn.Module, IEModel):
             ner_tag_emb_dropout = ner_tag_emb_config["emb_dropout"]
             self.ner_tag_emb = nn.Embedding(ner_tag_num, ner_tag_emb_dim)
             self.ner_tag_emb_dropout = nn.Dropout(p=ner_tag_emb_dropout)
-            combined_hidden_size += ner_tag_emb_dim
+            combined_hidden_size_1 += ner_tag_emb_dim
 
+        # pos
         self.pos_tag_emb_config = pos_tag_emb_config
         if pos_tag_emb_config is not None:
             pos_tag_num = pos_tag_emb_config["pos_tag_num"]
@@ -84,8 +87,9 @@ class TPLinkerPlus(nn.Module, IEModel):
             pos_tag_emb_dropout = pos_tag_emb_config["emb_dropout"]
             self.pos_tag_emb = nn.Embedding(pos_tag_num, pos_tag_emb_dim)
             self.pos_tag_emb_dropout = nn.Dropout(p=pos_tag_emb_dropout)
-            combined_hidden_size += pos_tag_emb_dim
+            combined_hidden_size_1 += pos_tag_emb_dim
 
+        # char
         self.char_encoder_config = char_encoder_config
         if char_encoder_config is not None:
             # char encoder
@@ -114,7 +118,7 @@ class TPLinkerPlus(nn.Module, IEModel):
                                         batch_first=True)
             self.char_cnn = nn.Conv1d(char_bilstm_hidden_size[1], char_bilstm_hidden_size[1], max_char_num_in_subword,
                                       stride=max_char_num_in_subword)
-            combined_hidden_size += char_bilstm_hidden_size[1]
+            combined_hidden_size_1 += char_bilstm_hidden_size[1]
 
         # word encoder
         self.word_encoder_config = word_encoder_config
@@ -169,7 +173,7 @@ class TPLinkerPlus(nn.Module, IEModel):
                                         dropout=word_bilstm_dropout[2],
                                         bidirectional=True,
                                         batch_first=True)
-            combined_hidden_size += word_bilstm_hidden_size[1]
+            combined_hidden_size_1 += word_bilstm_hidden_size[1]
 
         # subword_encoder
         self.subwd_encoder_config = subwd_encoder_config
@@ -181,10 +185,31 @@ class TPLinkerPlus(nn.Module, IEModel):
             if not bert_finetune:  # if train without finetuning bert
                 for param in self.bert.parameters():
                     param.requires_grad = False
-            combined_hidden_size += self.bert.config.hidden_size
+            combined_hidden_size_1 += self.bert.config.hidden_size
 
-        # encoding fc
-        self.reduce_fc = nn.Linear(combined_hidden_size, fin_hidden_size)
+        # aggregate fc 1
+        self.aggr_fc_1 = nn.Linear(combined_hidden_size_1, fin_hidden_size)
+
+        # dependencies
+        self.dep_config = dep_config
+        if dep_config is not None:
+            self.dep_type_num = dep_config["dep_type_num"]
+            dep_type_emb_dim = dep_config["dep_type_emb_dim"]
+            dep_type_emb_dropout = dep_config["emb_dropout"]
+            dep_gcn_dim = dep_config["gcn_dim"]
+            dep_gcn_dropout = dep_config["gcn_dropout"]
+            dep_gcn_layer_num = dep_config["gcn_layer_num"]
+            self.dep_type_emb = nn.Embedding(self.dep_type_num * 2, dep_type_emb_dim)
+            self.dep_type_emb_dropout = nn.Dropout(p=dep_type_emb_dropout)
+            # GCN
+            self.gcn_layers = nn.ModuleList()
+            self.dep_gcn_dropout = nn.Dropout(dep_gcn_dropout)
+            combined_hidden_size_2 = combined_hidden_size_1
+            for _ in range(dep_gcn_layer_num):
+                self.gcn_layers.append(GraphConvLayer(dep_type_emb_dim, dep_gcn_dim, "avg"))
+                combined_hidden_size_2 += dep_gcn_dim
+            # aggregate fc 2
+            self.aggr_fc_2 = nn.Linear(combined_hidden_size_2, fin_hidden_size)
 
         # handshaking kernel
         shaking_type = handshaking_kernel_config["shaking_type"]
@@ -207,6 +232,8 @@ class TPLinkerPlus(nn.Module, IEModel):
             batch_dict["attention_mask"] = torch.stack(attention_mask_list, dim=0)
             batch_dict["token_type_ids"] = torch.stack(token_type_ids_list, dim=0)
 
+        seq_length = batch_dict["subword_input_ids"].size()[1]
+
         if self.word_encoder_config is not None:
             word_input_ids_list = [sample["features"]["word_input_ids"] for sample in batch_data]
             batch_dict["word_input_ids"] = torch.stack(word_input_ids_list, dim=0)
@@ -223,16 +250,19 @@ class TPLinkerPlus(nn.Module, IEModel):
             pos_tag_ids_list = [sample["features"]["pos_tag_ids"] for sample in batch_data]
             batch_dict["pos_tag_ids"] = torch.stack(pos_tag_ids_list, dim=0)
 
+        if self.dep_config is not None:
+            dep_matrix_points_batch = [sample["features"]["dependency_points"] for sample in batch_data]
+            batch_dict["dep_adj_matrix"] = self.tagger.points2matrix_batch(dep_matrix_points_batch, seq_length)
+
         # must
         sample_list = []
-        matrix_points_batch = []
+        tag_points_batch = []
         for sample in batch_data:
             sample_list.append(sample)
-            matrix_points_batch.append(sample["tag_points"])
+            tag_points_batch.append(sample["tag_points"])
         batch_dict["sample_list"] = sample_list
         # shaking tag
-        seq_length = batch_dict["subword_input_ids"].size()[1]
-        batch_dict["shaking_tag"] = self.tagger.points2tag_batch(matrix_points_batch, seq_length)
+        batch_dict["shaking_tag"] = self.tagger.points2tag_batch(tag_points_batch, seq_length)
         return batch_dict
 
     def forward(self,
@@ -242,7 +272,8 @@ class TPLinkerPlus(nn.Module, IEModel):
                 attention_mask=None,
                 token_type_ids=None,
                 ner_tag_ids=None,
-                pos_tag_ids=None):
+                pos_tag_ids=None,
+                dep_adj_matrix=None):
 
         # features
         features = []
@@ -281,6 +312,7 @@ class TPLinkerPlus(nn.Module, IEModel):
             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
             features.append(word_hiddens)
 
+        # subword
         if self.subwd_encoder_config is not None:
             # subword_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
             context_oudtuts = self.bert(subword_input_ids, attention_mask, token_type_ids)
@@ -290,7 +322,23 @@ class TPLinkerPlus(nn.Module, IEModel):
             features.append(subword_hiddens)
 
         # combine features
-        combined_hiddens = self.reduce_fc(torch.cat(features, dim=-1))
+        # combined_hiddens: (batch_size, seq_len, combined_size)
+        combined_hiddens = self.aggr_fc_1(torch.cat(features, dim=-1))
+
+        # dependencies
+        if self.dep_config is not None:
+            # dep_adj_matrix: (batch_size, seq_len, seq_len)
+            dep_adj_matrix = (dep_adj_matrix + self.dep_type_num) + torch.transpose(dep_adj_matrix, 1, 2)
+            dep_type_embeddings = self.dep_type_emb(dep_adj_matrix)
+            # dep_type_embeddings: (batch_size, seq_len, seq_len, dep_emb_dim)
+            weight_adj = self.dep_type_emb_dropout(dep_type_embeddings)
+            gcn_outputs = combined_hiddens
+            for gcn_l in self.gcn_layers:
+                gcn_outputs, weight_adj = gcn_l(weight_adj, gcn_outputs)  # [batch, seq, dim]
+                gcn_outputs = self.gcn_drop(gcn_outputs)
+                weight_adj = self.gcn_drop(weight_adj)
+                features.append(gcn_outputs)
+            combined_hiddens = self.aggr_fc_2(torch.cat(features, dim=-1))
 
         # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # shaking_seq_len: max_seq_len * vf - sum(1, vf)
