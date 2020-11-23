@@ -79,8 +79,9 @@ class Trainer:
         del batch_valid_data["shaking_tag"]
         for k, v in batch_valid_data.items():
             batch_valid_data[k] = v.to(self.device)
-
-        pred_outputs = self.model(**batch_valid_data)
+        
+        with torch.no_grad():
+            pred_outputs = self.model(**batch_valid_data)
         pred_tag = (pred_outputs > 0.).long()
         seq_acc = self.model.metrics_cal.get_tag_seq_accuracy(pred_tag, batch_shaking_tag)
 
