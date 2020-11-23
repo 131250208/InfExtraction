@@ -234,28 +234,27 @@ dep_dict = {'O': 0, 'punct': 1, 'iobj': 2, 'parataxis': 3, 'auxpass': 4, 'aux': 
 class GraphConvLayer(nn.Module):
     """ A GCN module operated on dependency graphs. """
 
-    def __init__(self, device, gcn_dim, dep_embed_dim, pooling='avg'):
+    def __init__(self, dep_embed_dim, gcn_dim, pooling='avg'):
         super(GraphConvLayer, self).__init__()
 
         self.gcn_dim = gcn_dim
         self.dep_embed_dim = dep_embed_dim
-        self.device = device
         self.pooling = pooling
 
         self.W = nn.Linear(self.gcn_dim, self.gcn_dim)
         self.highway = Edgeupdate(gcn_dim, self.dep_embed_dim, dropout_ratio=0.5)
 
-    def forward(self, weight_adj, gcn_inputs):
+    def forward(self, weight_adj, node_hiddens):
         """
         :param weight_adj: [batch, seq, seq, dim_e]
-        :param gcn_inputs: [batch, seq, dim]
+        :param node_hiddens: [batch, seq, dim]
         :return:
         """
-        batch, seq, dim = gcn_inputs.shape
+        batch, seq, dim = node_hiddens.shape
         weight_adj = weight_adj.permute(0, 3, 1, 2)  # [batch, dim_e, seq, seq]
 
-        gcn_inputs = gcn_inputs.unsqueeze(1).expand(batch, self.dep_embed_dim, seq, dim)
-        Ax = torch.matmul(weight_adj, gcn_inputs)  # [batch, dim_e, seq, dim]
+        node_hiddens = node_hiddens.unsqueeze(1).expand(batch, self.dep_embed_dim, seq, dim)
+        Ax = torch.matmul(weight_adj, node_hiddens)  # [batch, dim_e, seq, dim]
         if self.pooling == 'avg':
             Ax = Ax.mean(dim=1)
         elif self.pooling == 'max':
@@ -272,7 +271,7 @@ class GraphConvLayer(nn.Module):
         node_outputs1 = node_outputs.unsqueeze(1).expand(batch, seq, seq, dim)
         node_outputs2 = node_outputs1.permute(0, 2, 1, 3).contiguous()
         edge_outputs = self.highway(weight_adj, node_outputs1, node_outputs2)
-        return node_outputs, edge_outputs
+        return edge_outputs, node_outputs
 
 
 class Edgeupdate(nn.Module):
@@ -316,10 +315,6 @@ def rnn_zero_state(batch_size, hidden_dim, num_layers, bidirectional=True):
     state_shape = (total_layers, batch_size, hidden_dim)
     h0 = c0 = Variable(torch.zeros(*state_shape), requires_grad=False)
     return h0, c0
-
-
-def clones(module, N):
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
 
 
 class EEGCN(nn.Module):

@@ -83,6 +83,15 @@ subwd_encoder_config = {
     "wordpieces_prefix": "##",
 }
 
+dep_config = {
+    "dep_type_num": statistics["deprel_type_num"],
+    "dep_type_emb_dim": 64,
+    "emb_dropout": 0.1,
+    "gcn_dim": 128,
+    "gcn_dropout": 0.1,
+    "gcn_layer_num": 2,
+}
+
 handshaking_kernel_config = {
     "shaking_type": "cln",
 }
@@ -92,6 +101,7 @@ model_settings = {
     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
     "word_encoder_config": word_encoder_config,
+    "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "fin_hidden_size": 768,
 }
