@@ -48,13 +48,11 @@ class Trainer:
 
     # train step
     def train_step(self, batch_train_data):
-        # sample_list = batch_train_data["sample_list"]
-        # tok2char_span_list = batch_train_data["tok2char_span_list"]
         batch_shaking_tag = batch_train_data["shaking_tag"]
+        batch_shaking_tag = batch_shaking_tag.to(self.device)
 
         del batch_train_data["sample_list"]
         del batch_train_data["shaking_tag"]
-        del batch_train_data["tok2char_span_list"]
         for k, v in batch_train_data.items():
             batch_train_data[k] = v.to(self.device)
         # zero the parameter gradients
@@ -74,12 +72,11 @@ class Trainer:
     # valid step
     def valid_step(self, batch_valid_data):
         sample_list = batch_valid_data["sample_list"]
-        tok2char_span_list = batch_valid_data["tok2char_span_list"]
         batch_shaking_tag = batch_valid_data["shaking_tag"]
+        batch_shaking_tag = batch_shaking_tag.to(self.device)
 
         del batch_valid_data["sample_list"]
         del batch_valid_data["shaking_tag"]
-        del batch_valid_data["tok2char_span_list"]
         for k, v in batch_valid_data.items():
             batch_valid_data[k] = v.to(self.device)
 

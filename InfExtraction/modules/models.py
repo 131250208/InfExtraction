@@ -225,16 +225,13 @@ class TPLinkerPlus(nn.Module, IEModel):
 
         # must
         sample_list = []
-        tok2char_span_list = []
         matrix_points_batch = []
         for sample in batch_data:
             sample_list.append(sample)
-            tok2char_span_list.append(sample["features"]["tok2char_span"])
             matrix_points_batch.append(sample["tag_points"])
         batch_dict["sample_list"] = sample_list
-        batch_dict["tok2char_span_list"] = tok2char_span_list
         # shaking tag
-        seq_length = len(tok2char_span_list[0])
+        seq_length = len(batch_dict["subword_input_ids"].size()[1])
         batch_dict["shaking_tag"] = self.tagger.points2tag_batch(matrix_points_batch, seq_length)
         return batch_dict
 
