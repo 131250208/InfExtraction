@@ -1003,9 +1003,28 @@ class Preprocessor:
         return sample_id2mismatched_ents
 
     @staticmethod
-    def index_features(data, key2dict, max_seq_len, pretrained_model_padding=0):
+    def index_features(data, key2dict, max_seq_len, max_char_num_in_tok, pretrained_model_padding=0):
+        '''
+        :param data:
+        :param key2dict:
+        :param max_seq_len:
+        :param max_char_num_in_tok: for character ids padding
+        :param pretrained_model_padding: for subword ids padding
+        :return:
+        '''
+        key_map = {
+            "char_list": "char_input_ids",
+            "word_list": "word_input_ids",
+            "pos_tag_list": "pos_tag_ids",
+            "ner_tag_list": "ner_tag_ids",
+            "dependency_list": "dependency_points",
+            "input_ids": "subword_input_ids",
+        }
+
         for sample in tqdm(data, desc="indexing"):
             features = sample["features"]
+            features["char_list"] = list(sample["text"])
+            # indexing and padding
             for f_key, tags in features.items():
                 if f_key in key2dict.keys():
                     tag2id = key2dict[f_key]
@@ -1017,15 +1036,32 @@ class Preprocessor:
 
                     indexer = Indexer(tag2id, max_seq_len, spe_tag_dict)
                     if f_key == "dependency_list":
-                        features[f_key] = indexer.index_tag_list_w_matrix_pos(tags)
+                        features[key_map[f_key]] = indexer.index_tag_list_w_matrix_pos(tags)
+                        del features[f_key]
+                    elif f_key == "char_list":
+                        char_input_ids = indexer.index_tag_list(tags)
+                        # padding character ids
+                        char_input_ids_padded = []
+                        for span in features["tok2char_span"]:
+                            char_ids = char_input_ids[span[0]:span[1]]
+
+                            if len(char_ids) < max_char_num_in_tok:
+                                char_ids.extend([0] * (max_char_num_in_tok - len(char_ids)))
+                            else:
+                                char_ids = char_ids[:max_char_num_in_tok]
+                            char_input_ids_padded.extend(char_ids)
+                        features[key_map[f_key]] = torch.LongTensor(char_input_ids_padded)
+                        del features[f_key]
                     else:
-                        features[f_key] = torch.LongTensor(indexer.index_tag_list(tags))
+                        features[key_map[f_key]] = torch.LongTensor(indexer.index_tag_list(tags))
+                        del features[f_key]
                 elif f_key in {"token_type_ids", "attention_mask"}:
                     features[f_key] = torch.LongTensor(Indexer.pad2length(tags, 0, max_seq_len))
                 elif f_key == "tok2char_span":
                     features[f_key] = Indexer.pad2length(tags, [0, 0], max_seq_len)
                 elif f_key == "input_ids":
-                    features[f_key] = torch.LongTensor(Indexer.pad2length(tags, pretrained_model_padding, max_seq_len))
+                    features[key_map[f_key]] = torch.LongTensor(Indexer.pad2length(tags, pretrained_model_padding, max_seq_len))
+                    del features[f_key]
         return data
 
 

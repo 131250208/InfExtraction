@@ -4,7 +4,6 @@ import re
 from abc import ABCMeta, abstractmethod
 from tqdm import tqdm
 
-
 class Tagger(metaclass=ABCMeta):
     @abstractmethod
     def get_tag_points(self, sample):
@@ -18,11 +17,11 @@ class Tagger(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def points2tag(self, points):
+    def points2tag(self, points, matrix_size):
         pass
 
     @abstractmethod
-    def points2tag_batch(self, batch_points):
+    def points2tag_batch(self, batch_points, matrix_size):
         '''
         This function is for generation tag tensors for training
 
@@ -56,12 +55,18 @@ class Tagger(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def get_loss(self, pred_tag, gold_tag):
+    def decode_batch(self, sample_list, pred_tag_batch):
+        '''
+        decoding function for batch data, based on decode()
+        :param sample_list:
+        :param pred_tag_batch:
+        :return:
+        '''
         pass
     
 
 class HandshakingTagger(Tagger):
-    def __init__(self, rel2id, entity_type2id, max_seq_len):
+    def __init__(self, rel2id, entity_type2id):
         super().__init__()
         self.rel2id = rel2id
         self.id2rel = {ind: rel for rel, ind in rel2id.items()}
@@ -83,16 +88,30 @@ class HandshakingTagger(Tagger):
 
         self.tag2id = {t: idx for idx, t in enumerate(self.tags)}
         self.id2tag = {idx: t for t, idx in self.tag2id.items()}
-        self.matrix_size = max_seq_len
 
         # map
         # e.g. [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]
-        self.shaking_idx2matrix_idx = [(ind, end_ind) for ind in range(self.matrix_size) for end_ind in
-                                       list(range(self.matrix_size))[ind:]]
+        # self.shaking_idx2matrix_idx = [(ind, end_ind) for ind in range(self.matrix_size) for end_ind in
+        #                                list(range(self.matrix_size))[ind:]]
+        #
+        # self.matrix_idx2shaking_idx = [[0 for i in range(self.matrix_size)] for j in range(self.matrix_size)]
+        # for shaking_ind, matrix_ind in enumerate(self.shaking_idx2matrix_idx):
+        #     self.matrix_idx2shaking_idx[matrix_ind[0]][matrix_ind[1]] = shaking_ind
 
-        self.matrix_idx2shaking_idx = [[0 for i in range(self.matrix_size)] for j in range(self.matrix_size)]
-        for shaking_ind, matrix_ind in enumerate(self.shaking_idx2matrix_idx):
-            self.matrix_idx2shaking_idx[matrix_ind[0]][matrix_ind[1]] = shaking_ind
+        # self.shaking_idx2matrix_idx = self.get_shaking_idx2matrix_idx(self.matrix_size)
+        # self.matrix_idx2shaking_idx = self.get_matrix_idx2shaking_idx(self.matrix_size)
+
+    def get_shaking_idx2matrix_idx(self, matrix_size):
+        shaking_idx2matrix_idx = [(ind, end_ind) for ind in range(matrix_size) for end_ind in
+                                  list(range(matrix_size))[ind:]]
+        return shaking_idx2matrix_idx
+
+    def get_matrix_idx2shaking_idx(self, matrix_size):
+        matrix_idx2shaking_idx = [[0 for i in range(matrix_size)] for j in range(matrix_size)]
+        shaking_idx2matrix_idx = self.get_shaking_idx2matrix_idx(matrix_size)
+        for shaking_ind, matrix_ind in enumerate(shaking_idx2matrix_idx):
+            matrix_idx2shaking_idx[matrix_ind[0]][matrix_ind[1]] = shaking_ind
+        return matrix_idx2shaking_idx
 
     def get_tag_size(self):
         return len(self.tag2id)
@@ -108,57 +127,60 @@ class HandshakingTagger(Tagger):
         '''
         matrix_points = []
         point_memory_set = set()
-
         def add_point(point):
             memory = "{},{},{}".format(*point)
             if memory not in point_memory_set:
                 matrix_points.append(point)
                 point_memory_set.add(memory)
 
-        for ent in sample["entity_list"]:
-            add_point(
-                (ent["tok_span"][0], ent["tok_span"][1] - 1, self.tag2id[self.separator.join([ent["type"], "EH2ET"])]))
+        if "entity_list" in sample:
+            for ent in sample["entity_list"]:
+                add_point(
+                    (ent["tok_span"][0], ent["tok_span"][1] - 1, self.tag2id[self.separator.join([ent["type"], "EH2ET"])]))
 
-        for rel in sample["relation_list"]:
-            subj_tok_span = rel["subj_tok_span"]
-            obj_tok_span = rel["obj_tok_span"]
-            rel = rel["predicate"]
-            if subj_tok_span[0] <= obj_tok_span[0]:
-                add_point((subj_tok_span[0], obj_tok_span[0], self.tag2id[self.separator.join([rel, "SH2OH"])]))
-            else:
-                add_point((obj_tok_span[0], subj_tok_span[0], self.tag2id[self.separator.join([rel, "OH2SH"])]))
-            if subj_tok_span[1] <= obj_tok_span[1]:
-                add_point((subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "ST2OT"])]))
-            else:
-                add_point((obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "OT2ST"])]))
+        if "relation_list" in sample:
+            for rel in sample["relation_list"]:
+                subj_tok_span = rel["subj_tok_span"]
+                obj_tok_span = rel["obj_tok_span"]
+                rel = rel["predicate"]
+                if subj_tok_span[0] <= obj_tok_span[0]:
+                    add_point((subj_tok_span[0], obj_tok_span[0], self.tag2id[self.separator.join([rel, "SH2OH"])]))
+                else:
+                    add_point((obj_tok_span[0], subj_tok_span[0], self.tag2id[self.separator.join([rel, "OH2SH"])]))
+                if subj_tok_span[1] <= obj_tok_span[1]:
+                    add_point((subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "ST2OT"])]))
+                else:
+                    add_point((obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "OT2ST"])]))
         return matrix_points
 
-    def points2tag(self, points):
+    def points2tag(self, points, matrix_size):
         '''
         convert points to matrix tag
         points: [(start_ind, end_ind, tag_id), ]
         return: 
             shaking_tag: (shaking_seq_len, tag_size)
         '''
-        shaking_seq_len = self.matrix_size * (self.matrix_size + 1) // 2
+        matrix_idx2shaking_idx = self.get_matrix_idx2shaking_idx(matrix_size)
+        shaking_seq_len = matrix_size * (matrix_size + 1) // 2
         shaking_tag = torch.zeros(shaking_seq_len, len(self.tag2id)).long()
         for sp in points:
-            shaking_idx = self.matrix_idx2shaking_idx[sp[0]][sp[1]]
+            shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
             shaking_tag[shaking_idx][sp[2]] = 1
         return shaking_tag
 
-    def points2tag_batch(self, batch_points):
+    def points2tag_batch(self, batch_points, matrix_size):
         '''
         batch_points: a batch of points, [points1, points2, ...]
             points: [(start_ind, end_ind, tag_id), ]
         return:
             batch_shaking_tag: (batch_size, shaking_seq_len, tag_size)
         '''
-        shaking_seq_len = self.matrix_size * (self.matrix_size + 1) // 2
+        matrix_idx2shaking_idx = self.get_matrix_idx2shaking_idx(matrix_size)
+        shaking_seq_len = matrix_size * (matrix_size + 1) // 2
         batch_shaking_tag = torch.zeros(len(batch_points), shaking_seq_len, len(self.tag2id)).long()
         for batch_id, points in enumerate(batch_points):
             for sp in points:
-                shaking_idx = self.matrix_idx2shaking_idx[sp[0]][sp[1]]
+                shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
                 batch_shaking_tag[batch_id][shaking_idx][sp[2]] = 1
         return batch_shaking_tag
 
@@ -169,20 +191,24 @@ class HandshakingTagger(Tagger):
         points: [(start_ind, end_ind, tag_id), ]
         '''
         points = []
+        shaking_seq_len = shaking_tag.size()[0]
+        matrix_size = int((2 * shaking_seq_len + 0.25)**0.5 - 0.5)
+        shaking_idx2matrix_idx = self.get_shaking_idx2matrix_idx(matrix_size)
         nonzero_points = torch.nonzero(shaking_tag, as_tuple=False)
         for point in nonzero_points:
             shaking_idx, tag_idx = point[0].item(), point[1].item()
-            pos1, pos2 = self.shaking_idx2matrix_idx[shaking_idx]
+            pos1, pos2 = shaking_idx2matrix_idx[shaking_idx]
             point = (pos1, pos2, tag_idx)
             points.append(point)
         return points
 
-    def decode(self, sample, shaking_tag):
+    def decode(self, sample, predicted_tag):
         '''
-        shaking_tag: (shaking_seq_len, tag_id_num)
+        sample: to provide tok2char_span map and text
+        predicted_tag: (shaking_seq_len, tag_id_num)
         '''
         rel_list, ent_list = [], []
-        matrix_points = self.tag2points(shaking_tag)
+        matrix_points = self.tag2points(predicted_tag)
 
         sample_idx, text = sample["id"], sample["text"]
         tok2char_span = sample["features"]["tok2char_span"]
@@ -273,8 +299,14 @@ class HandshakingTagger(Tagger):
             "char_level_offset": sample["char_level_offset"],
         }
 
-    def get_loss(self, pred_tag, gold_tag):
-        pass
+    def decode_batch(self, sample_list, pred_tag_batch):
+        pred_sample_list = []
+        for ind in range(len(sample_list)):
+            sample = sample_list[ind]
+            pred_tag = pred_tag_batch[ind]
+            pred_sample = self.decode(sample, pred_tag)  # decoding
+            pred_sample_list.append(pred_sample)
+        return pred_sample_list
 
 
 class HandshakingTagger4EE(HandshakingTagger):
@@ -282,10 +314,10 @@ class HandshakingTagger4EE(HandshakingTagger):
         pred_sample = super(HandshakingTagger4EE, self).decode(sample, shaking_tag)
         return {
             **pred_sample,
-            "event_list": self.trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
+            "event_list": self._trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
         }
 
-    def trans2ee(self, rel_list, ent_list):
+    def _trans2ee(self, rel_list, ent_list):
         new_rel_list, new_ent_list = [], []
         for rel in rel_list:
             if rel["predicate"].split(":")[0] == "EE":

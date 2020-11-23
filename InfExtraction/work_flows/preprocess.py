@@ -2,7 +2,7 @@
 Prepare data for training
 '''
 
-from InfExtraction.components.preprocess import Preprocessor
+from InfExtraction.modules.preprocess import Preprocessor
 from InfExtraction.work_flows import settings_preprocess as settings
 import os
 import json
@@ -16,7 +16,7 @@ data_in_dir = os.path.join(settings.data_in_dir, exp_name)
 data_out_dir = os.path.join(settings.data_out_dir, exp_name)
 task_type = settings.task_type
 language = settings.language
-pretrained_model_path = settings.pretrained_model_path
+pretrained_model_tokenizer_path = settings.pretrained_model_tokenizer_path
 ori_data_format = settings.ori_data_format
 add_char_span = settings.add_char_span
 ignore_subword_match = settings.ignore_subword_match
@@ -34,7 +34,7 @@ for path, folds, files in os.walk(data_in_dir):
         file_name2data[file_name] = json.load(open(file_path, "r", encoding="utf-8"))
 
 # preprocessor
-preprocessor = Preprocessor(language, pretrained_model_path)
+preprocessor = Preprocessor(language, pretrained_model_tokenizer_path)
 
 # transform data
 if ori_data_format != "tplinker": # if tplinker, skip transforming
