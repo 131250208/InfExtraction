@@ -15,7 +15,7 @@ statistics_path = os.path.join(data_in_dir, exp_name, statistics)
 statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 
 # training settings
-device_num = 0
+device_num = 1
 task_type = "ee"
 language = "en"
 use_bert = True
@@ -32,7 +32,7 @@ score_threshold = 0
 model_state_dict_path = None
 
 # logger
-use_wandb = False
+use_wandb = True
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
