@@ -1037,7 +1037,7 @@ class Preprocessor:
                     indexer = Indexer(tag2id, max_seq_len, spe_tag_dict)
                     if f_key == "dependency_list":
                         features[key_map[f_key]] = indexer.index_tag_list_w_matrix_pos(tags)
-                        del features[f_key]
+                        # del features[f_key]
                     elif f_key == "char_list":
                         char_input_ids = indexer.index_tag_list(tags)
                         # padding character ids
@@ -1051,17 +1051,17 @@ class Preprocessor:
                                 char_ids = char_ids[:max_char_num_in_tok]
                             char_input_ids_padded.extend(char_ids)
                         features[key_map[f_key]] = torch.LongTensor(char_input_ids_padded)
-                        del features[f_key]
+                        # del features[f_key]
                     else:
                         features[key_map[f_key]] = torch.LongTensor(indexer.index_tag_list(tags))
-                        del features[f_key]
+                        # del features[f_key]
                 elif f_key in {"token_type_ids", "attention_mask"}:
                     features[f_key] = torch.LongTensor(Indexer.pad2length(tags, 0, max_seq_len))
                 elif f_key == "tok2char_span":
                     features[f_key] = Indexer.pad2length(tags, [0, 0], max_seq_len)
                 elif f_key == "input_ids":
                     features[key_map[f_key]] = torch.LongTensor(Indexer.pad2length(tags, pretrained_model_padding, max_seq_len))
-                    del features[f_key]
+                    # del features[f_key]
         return data
 
 
