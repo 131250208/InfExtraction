@@ -223,4 +223,4 @@ class Trainer:
                     torch.save(self.model.state_dict(),
                                os.path.join(self.model_state_dict_save_dir,
                                             "model_state_dict_{}.pt".format(modle_state_num)))
-                    print("Current score: {}, Best score: {}".format(fin_score, self.max_score))
+            print("Current score: {}, Best score: {}".format(fin_score, self.max_score))
