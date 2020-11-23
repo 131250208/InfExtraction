@@ -9,6 +9,7 @@ from InfExtraction.modules.model_components import HandshakingKernel, GraphConvL
 from InfExtraction.modules.metrics import MetricsCalculator
 from gensim.models import KeyedVectors
 import logging
+from IPython.core.debugger import set_trace
 
 
 class IEModel(metaclass=ABCMeta):
@@ -196,12 +197,12 @@ class TPLinkerPlus(nn.Module, IEModel):
             self.dep_type_num = dep_config["dep_type_num"]
             dep_type_emb_dim = dep_config["dep_type_emb_dim"]
             dep_type_emb_dropout = dep_config["emb_dropout"]
-            dep_gcn_dim = dep_config["gcn_dim"]
-            dep_gcn_dropout = dep_config["gcn_dropout"]
-            dep_gcn_layer_num = dep_config["gcn_layer_num"]
-            self.dep_type_emb = nn.Embedding(self.dep_type_num * 2, dep_type_emb_dim)
+            self.dep_type_emb = nn.Embedding(self.dep_type_num, dep_type_emb_dim)
             self.dep_type_emb_dropout = nn.Dropout(p=dep_type_emb_dropout)
             # GCN
+            dep_gcn_dim = fin_hidden_size # dep_config["gcn_dim"]
+            dep_gcn_dropout = dep_config["gcn_dropout"]
+            dep_gcn_layer_num = dep_config["gcn_layer_num"]
             self.gcn_layers = nn.ModuleList()
             self.dep_gcn_dropout = nn.Dropout(dep_gcn_dropout)
             combined_hidden_size_2 = combined_hidden_size_1
@@ -324,19 +325,19 @@ class TPLinkerPlus(nn.Module, IEModel):
         # combine features
         # combined_hiddens: (batch_size, seq_len, combined_size)
         combined_hiddens = self.aggr_fc_1(torch.cat(features, dim=-1))
-
+#         set_trace()
         # dependencies
         if self.dep_config is not None:
             # dep_adj_matrix: (batch_size, seq_len, seq_len)
-            dep_adj_matrix = (dep_adj_matrix + self.dep_type_num) + torch.transpose(dep_adj_matrix, 1, 2)
+            dep_adj_matrix = torch.transpose(dep_adj_matrix, 1, 2)
             dep_type_embeddings = self.dep_type_emb(dep_adj_matrix)
             # dep_type_embeddings: (batch_size, seq_len, seq_len, dep_emb_dim)
             weight_adj = self.dep_type_emb_dropout(dep_type_embeddings)
             gcn_outputs = combined_hiddens
             for gcn_l in self.gcn_layers:
                 weight_adj, gcn_outputs = gcn_l(weight_adj, gcn_outputs)  # [batch, seq, dim]
-                gcn_outputs = self.gcn_drop(gcn_outputs)
-                weight_adj = self.gcn_drop(weight_adj)
+                gcn_outputs = self.dep_gcn_dropout(gcn_outputs)
+                weight_adj = self.dep_gcn_dropout(weight_adj)
                 features.append(gcn_outputs)
             combined_hiddens = self.aggr_fc_2(torch.cat(features, dim=-1))
 

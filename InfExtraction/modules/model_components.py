@@ -250,6 +250,7 @@ class GraphConvLayer(nn.Module):
         :param node_hiddens: [batch, seq, dim]
         :return:
         """
+    
         batch, seq, dim = node_hiddens.shape
         weight_adj = weight_adj.permute(0, 3, 1, 2)  # [batch, dim_e, seq, seq]
 
@@ -262,6 +263,7 @@ class GraphConvLayer(nn.Module):
         elif self.pooling == 'sum':
             Ax = Ax.sum(dim=1)
         # Ax: [batch, seq, dim]
+        
         gcn_outputs = self.W(Ax)
         weights_gcn_outputs = F.relu(gcn_outputs)
 

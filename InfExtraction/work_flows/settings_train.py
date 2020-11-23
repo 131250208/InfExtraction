@@ -20,7 +20,7 @@ task_type = "ee"
 language = "en"
 use_bert = True
 seed = 2333
-batch_size = 32
+batch_size = 8
 epochs = 200
 max_seq_len = 100
 sliding_len = 20
@@ -32,7 +32,7 @@ score_threshold = 0
 model_state_dict_path = None
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -41,7 +41,7 @@ default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 note = ""
 
 # model
-run_name = "tp2+bert+pos+ner"
+run_name = "tp2+dep+pos+ner"
 model_name = "tplinker_plus"
 
 pos_tag_emb_config = {
