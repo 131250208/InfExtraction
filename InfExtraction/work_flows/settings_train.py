@@ -41,7 +41,7 @@ default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 note = ""
 
 # model
-run_name = ""
+run_name = "tp2+bert+pos+ner"
 model_name = "tplinker_plus"
 
 pos_tag_emb_config = {
@@ -84,7 +84,7 @@ subwd_encoder_config = {
 }
 
 handshaking_kernel_config = {
-    "shaking_type": "cln_lstm",
+    "shaking_type": "cln",
 }
 
 model_settings = {
@@ -105,7 +105,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_steps": 2,
+        "rewarm_steps": 4000,
     },
     "StepLR": {
         "name": "StepLR",
