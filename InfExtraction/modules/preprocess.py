@@ -828,7 +828,7 @@ class Preprocessor:
 
                 new_features["dependency_list"] = []
                 for dep in features["dependency_list"]:
-                    if dep[0] >= start_ind and dep[1] < end_ind:
+                    if start_ind <= dep[0] < end_ind and start_ind <= dep[1] < end_ind:
                         new_dep = [dep[0] - tok_level_offset, dep[1] - tok_level_offset, dep[2]]
                         new_features["dependency_list"].append(new_dep)
 
