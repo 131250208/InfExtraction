@@ -79,7 +79,7 @@ class Trainer:
         del batch_valid_data["shaking_tag"]
         for k, v in batch_valid_data.items():
             batch_valid_data[k] = v.to(self.device)
-        
+
         with torch.no_grad():
             pred_outputs = self.model(**batch_valid_data)
         pred_tag = (pred_outputs > 0.).long()
@@ -163,8 +163,8 @@ class Trainer:
 
             log_dict, final_score = None, None
             if "rel_cpg" in total_cpg_dict:
-                rel_prf = self.model.metrics.get_prf_scores(*total_cpg_dict["rel_cpg"])
-                ent_prf = self.model.metrics.get_prf_scores(*total_cpg_dict["ent_cpg"])
+                rel_prf = self.model.metrics_cal.get_prf_scores(*total_cpg_dict["rel_cpg"])
+                ent_prf = self.model.metrics_cal.get_prf_scores(*total_cpg_dict["ent_cpg"])
                 final_score = rel_prf[2]
                 log_dict = {
                     "val_shaking_tag_acc": avg_sample_acc,
@@ -177,18 +177,18 @@ class Trainer:
                     "time": time.time() - t_ep,
                 }
             elif "trigger_iden_cpg" in total_cpg_dict:
-                trigger_iden_prf = self.model.metrics.get_prf_scores(total_cpg_dict["trigger_iden_cpg"][0],
-                                                                     total_cpg_dict["trigger_iden_cpg"][1],
-                                                                     total_cpg_dict["trigger_iden_cpg"][2])
-                trigger_class_prf = self.model.metrics.get_prf_scores(total_cpg_dict["trigger_class_cpg"][0],
-                                                                      total_cpg_dict["trigger_class_cpg"][1],
-                                                                      total_cpg_dict["trigger_class_cpg"][2])
-                arg_iden_prf = self.model.metrics.get_prf_scores(total_cpg_dict["arg_iden_cpg"][0],
-                                                                 total_cpg_dict["arg_iden_cpg"][1],
-                                                                 total_cpg_dict["arg_iden_cpg"][2])
-                arg_class_prf = self.model.metrics.get_prf_scores(total_cpg_dict["arg_class_cpg"][0],
-                                                                  total_cpg_dict["arg_class_cpg"][1],
-                                                                  total_cpg_dict["arg_class_cpg"][2])
+                trigger_iden_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["trigger_iden_cpg"][0],
+                                                                         total_cpg_dict["trigger_iden_cpg"][1],
+                                                                         total_cpg_dict["trigger_iden_cpg"][2])
+                trigger_class_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["trigger_class_cpg"][0],
+                                                                          total_cpg_dict["trigger_class_cpg"][1],
+                                                                          total_cpg_dict["trigger_class_cpg"][2])
+                arg_iden_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["arg_iden_cpg"][0],
+                                                                     total_cpg_dict["arg_iden_cpg"][1],
+                                                                     total_cpg_dict["arg_iden_cpg"][2])
+                arg_class_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["arg_class_cpg"][0],
+                                                                      total_cpg_dict["arg_class_cpg"][1],
+                                                                      total_cpg_dict["arg_class_cpg"][2])
                 final_score = arg_class_prf[2]
                 log_dict = {
                     "val_shaking_tag_acc": avg_sample_acc,
@@ -221,5 +221,6 @@ class Trainer:
                 if fin_score > self.score_threshold:  # save the best model
                     modle_state_num = len(glob.glob(self.model_state_dict_save_dir + "/model_state_dict_*.pt"))
                     torch.save(self.model.state_dict(),
-                               os.path.join(self.model_state_dict_save_dir, "model_state_dict_{}.pt".format(modle_state_num)))
+                               os.path.join(self.model_state_dict_save_dir,
+                                            "model_state_dict_{}.pt".format(modle_state_num)))
                     print("Current score: {}, Best score: {}".format(fin_score, self.max_score))
