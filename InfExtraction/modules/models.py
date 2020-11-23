@@ -334,7 +334,7 @@ class TPLinkerPlus(nn.Module, IEModel):
             weight_adj = self.dep_type_emb_dropout(dep_type_embeddings)
             gcn_outputs = combined_hiddens
             for gcn_l in self.gcn_layers:
-                gcn_outputs, weight_adj = gcn_l(weight_adj, gcn_outputs)  # [batch, seq, dim]
+                weight_adj, gcn_outputs = gcn_l(weight_adj, gcn_outputs)  # [batch, seq, dim]
                 gcn_outputs = self.gcn_drop(gcn_outputs)
                 weight_adj = self.gcn_drop(weight_adj)
                 features.append(gcn_outputs)
