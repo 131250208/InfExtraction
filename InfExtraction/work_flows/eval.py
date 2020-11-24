@@ -43,6 +43,7 @@ if __name__ == "__main__":
     match_pattern = settings.match_pattern
     device_num = settings.device_num
     use_bert = settings.use_bert
+    token_level = settings.token_level
     batch_size = settings.batch_size_test
     max_seq_len = settings.max_seq_len_test
     sliding_len = settings.sliding_len_test
@@ -83,12 +84,14 @@ if __name__ == "__main__":
     model = model.to(device)
     assert model_state_dict_path is not None
     model.load_state_dict(torch.load(model_state_dict_path))
+    print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
+
     model.eval()
     collate_fn = model.generate_batch
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     # evaluator
-    evaluator = Evaluator(task_type, model, tagger, device, match_pattern=None)
+    evaluator = Evaluator(task_type, model, tagger, token_level, device, match_pattern=None)
     filename2score_dict = {}
     for filename, test_data in test_data_dict.items():
         # splitting

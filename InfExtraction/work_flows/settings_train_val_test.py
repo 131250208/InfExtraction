@@ -20,6 +20,7 @@ statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 # train, valid, test settings
 device_num = 1
 use_bert = True
+token_level = "subword"
 seed = 2333
 epochs = 200
 batch_size_train = 8

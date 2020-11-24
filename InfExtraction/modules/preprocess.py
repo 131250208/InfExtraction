@@ -1020,6 +1020,37 @@ class Preprocessor:
         return split_sample_list
 
     @staticmethod
+    def choose_spans_by_token_level(data, token_level):
+        '''
+        :param data:
+        :param token_level: "subword" or "word"
+        :return:
+        '''
+        for sample in data:
+            if "entity_list" in sample:
+                for ent in sample["entity_list"]:
+                    ent["tok_span"] = ent["subwd_span"] if token_level == "subword" else ent["wd_span"]
+                    del ent["subwd_span"]
+                    del ent["wd_span"]
+            if "relation_list" in sample:
+                for rel in sample["relation_list"]:
+                    rel["subj_tok_span"] = rel["subj_subwd_span"] if token_level == "subword" else rel["subj_wd_span"]
+                    rel["obj_tok_span"] = rel["obj_subwd_span"] if token_level == "subword" else rel["obj_wd_span"]
+                    del rel["subj_wd_span"]
+                    del rel["obj_wd_span"]
+                    del rel["subj_subwd_span"]
+                    del rel["obj_subwd_span"]
+            if "event_list" in sample:
+                for event in sample["event_list"]:
+                    event["trigger_tok_span"] = event["trigger_subwd_span"] if token_level == "subword" else event["trigger_wd_span"]
+                    del event["trigger_subwd_span"]
+                    del event["trigger_wd_span"]
+                    for arg in event["argument_list"]:
+                        arg["tok_span"] = arg["subwd_span"] if token_level == "subword" else arg["wd_span"]
+                        del arg["subwd_span"]
+                        del arg["wd_span"]
+
+    @staticmethod
     def span_offset(sample, tok_level_offset, char_level_offset):
         if "relation_list" in sample:
             for rel in sample["relation_list"]:
