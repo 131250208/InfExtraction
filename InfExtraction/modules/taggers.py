@@ -256,27 +256,27 @@ class HandshakingTagger4EE(HandshakingTagger):
             trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
             trigger_offset2trigger_text[trigger_offset_str] = rel["object"]
             trigger_offset2trigger_char_span[trigger_offset_str] = rel["obj_char_span"]
-            _, event_type = rel["predicate"].split(sepatator)
+            _, event_types = rel["predicate"].split(sepatator)
 
             if trigger_offset_str not in trigger_offset2vote:
                 trigger_offset2vote[trigger_offset_str] = {}
-            trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
-                event_type, 0) + 1
+            trigger_offset2vote[trigger_offset_str][event_types] = trigger_offset2vote[trigger_offset_str].get(
+                event_types, 0) + 1
 
         # get candidate trigger types from entity tags
         for ent in ent_list:
             t1, t2 = ent["type"].split(sepatator)
             assert t1 == "Trigger" or t1 == "Argument"
             if t1 == "Trigger":  # trigger
-                event_type = t2
+                event_types = t2
                 trigger_span = ent["tok_span"]
                 trigger_offset_str = "{},{}".format(trigger_span[0], trigger_span[1])
                 trigger_offset2trigger_text[trigger_offset_str] = ent["text"]
                 trigger_offset2trigger_char_span[trigger_offset_str] = ent["char_span"]
                 if trigger_offset_str not in trigger_offset2vote:
                     trigger_offset2vote[trigger_offset_str] = {}
-                trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
-                    event_type, 0) + 1.1  # if even, entity type makes the call
+                trigger_offset2vote[trigger_offset_str][event_types] = trigger_offset2vote[trigger_offset_str].get(
+                    event_types, 0) + 1.1  # if even, entity type makes the call
 
         # choose the final trigger type by votes
         tirigger_offset2event_types = {}
@@ -286,34 +286,39 @@ class HandshakingTagger4EE(HandshakingTagger):
             tirigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
 
         # generate event list
-        trigger_offset2arguments = {}
+        trigger_offset2event2arguments = {}
         for rel in rel_list:
             trigger_offset = rel["obj_tok_span"]
-            argument_role, event_type = rel["predicate"].split(sepatator)
+            argument_role, event_types = rel["predicate"].split(sepatator)
             trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
-            if event_type not in tirigger_offset2event_types[trigger_offset_str]:  # filter false relations
+            if event_types not in tirigger_offset2event_types[trigger_offset_str]:  # filter false relations
                 continue
             # append arguments
-            if trigger_offset_str not in trigger_offset2arguments:
-                trigger_offset2arguments[trigger_offset_str] = []
-            trigger_offset2arguments[trigger_offset_str].append({
+            if trigger_offset_str not in trigger_offset2event2arguments:
+                trigger_offset2event2arguments[trigger_offset_str] = {}
+            if event_types not in trigger_offset2event2arguments[trigger_offset_str][event_types]:
+                trigger_offset2event2arguments[trigger_offset_str][event_types] = []
+            trigger_offset2event2arguments[trigger_offset_str][event_types].append({
                 "text": rel["subject"],
                 "type": argument_role,
                 "char_span": rel["subj_char_span"],
                 "tok_span": rel["subj_tok_span"],
             })
         event_list = []
-        for trigger_offset_str, event_type in tirigger_offset2event_types.items():
-            arguments = trigger_offset2arguments[
-                trigger_offset_str] if trigger_offset_str in trigger_offset2arguments else []
+        for trigger_offset_str, event_types in tirigger_offset2event_types.items():
+            for et in event_types:
+                arguments = []
+                if trigger_offset_str in trigger_offset2event2arguments and \
+                        et in trigger_offset2event2arguments[trigger_offset_str]:
+                    arguments = trigger_offset2event2arguments[trigger_offset_str][et]
 
-            trigger_offset = trigger_offset_str.split(",")
-            event = {
-                "trigger": trigger_offset2trigger_text[trigger_offset_str],
-                "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
-                "trigger_tok_span": [int(trigger_offset[0]), int(trigger_offset[1])],
-                "trigger_type": event_type,
-                "argument_list": arguments,
-            }
-            event_list.append(event)
+                trigger_offset = trigger_offset_str.split(",")
+                event = {
+                    "trigger": trigger_offset2trigger_text[trigger_offset_str],
+                    "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
+                    "trigger_tok_span": [int(trigger_offset[0]), int(trigger_offset[1])],
+                    "trigger_type": et,
+                    "argument_list": arguments,
+                }
+                event_list.append(event)
         return event_list
