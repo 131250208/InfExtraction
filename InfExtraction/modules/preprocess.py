@@ -9,6 +9,7 @@ from IPython.core.debugger import set_trace
 from torch.utils.data import Dataset
 import torch
 
+
 class Indexer:
     def __init__(self, tag2id, max_seq_len, spe_tag_dict):
         self.tag2id = tag2id
@@ -48,6 +49,99 @@ class Indexer:
             tag_ids.extend([self.spe_tag_dict["[PAD]"]] * (self.max_seq_len - len(tag_ids)))
 
         return tag_ids[:self.max_seq_len]
+
+    @staticmethod
+    def get_shaking_idx2matrix_idx(matrix_size):
+        '''
+        :param matrix_size:
+        :return: a list mapping shaking sequence points to matrix points
+        '''
+        shaking_idx2matrix_idx = [(ind, end_ind) for ind in range(matrix_size) for end_ind in
+                                  list(range(matrix_size))[ind:]]
+        return shaking_idx2matrix_idx
+
+    @staticmethod
+    def get_matrix_idx2shaking_idx(matrix_size):
+        '''
+        :param matrix_size:
+        :return: a matrix mapping matrix points to shaking sequence points
+        '''
+        matrix_idx2shaking_idx = [[0 for i in range(matrix_size)] for j in range(matrix_size)]
+        shaking_idx2matrix_idx = Indexer.get_shaking_idx2matrix_idx(matrix_size)
+        for shaking_ind, matrix_ind in enumerate(shaking_idx2matrix_idx):
+            matrix_idx2shaking_idx[matrix_ind[0]][matrix_ind[1]] = shaking_ind
+        return matrix_idx2shaking_idx
+
+    @staticmethod
+    def points2shaking_seq(points, matrix_size, tag_size):
+        '''
+        Convert points to a shaking sequence tensor
+
+        points: [(start_ind, end_ind, tag_id), ]
+        return:
+            shaking_seq: (shaking_seq_len, tag_size)
+        '''
+        matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        shaking_seq_len = matrix_size * (matrix_size + 1) // 2
+        shaking_seq = torch.zeros(shaking_seq_len, tag_size).long()
+        for sp in points:
+            shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
+            shaking_seq[shaking_idx][sp[2]] = 1
+        return shaking_seq
+
+    @staticmethod
+    def points2shaking_seq_batch(batch_points, matrix_size, tag_size):
+        '''
+        Convert points to a shaking sequence tensor in batch (for training tags)
+
+        batch_points: a batch of points, [points1, points2, ...]
+            points: [(start_ind, end_ind, tag_id), ]
+        return:
+            batch_shaking_seq: (batch_size, shaking_seq_len, tag_size)
+        '''
+        matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        shaking_seq_len = matrix_size * (matrix_size + 1) // 2
+        batch_shaking_seq = torch.zeros(len(batch_points), shaking_seq_len, tag_size).long()
+        for batch_id, points in enumerate(batch_points):
+            for sp in points:
+                shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
+                batch_shaking_seq[batch_id][shaking_idx][sp[2]] = 1
+        return batch_shaking_seq
+
+    @staticmethod
+    def points2matrix_batch(batch_points, matrix_size):
+        '''
+        Convert points to a matrix tensor
+
+        batch_points: a batch of points, [points1, points2, ...]
+            points: [(start_ind, end_ind, tag_id), ]
+        return:
+            batch_matrix: (batch_size, matrix_size, matrix_size)
+        '''
+        batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size).long()
+        for batch_id, points in enumerate(batch_points):
+            for pt in points:
+                batch_matrix[batch_id][pt[0]][pt[1]] = pt[2]
+        return batch_matrix
+
+    @staticmethod
+    def shaking_seq2points(shaking_tag):
+        '''
+        shaking_tag -> points
+        shaking_tag: (shaking_seq_len, tag_id)
+        points: [(start_ind, end_ind, tag_id), ]
+        '''
+        points = []
+        shaking_seq_len = shaking_tag.size()[0]
+        matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
+        shaking_idx2matrix_idx = Indexer.get_shaking_idx2matrix_idx(matrix_size)
+        nonzero_points = torch.nonzero(shaking_tag, as_tuple=False)
+        for point in nonzero_points:
+            shaking_idx, tag_idx = point[0].item(), point[1].item()
+            pos1, pos2 = shaking_idx2matrix_idx[shaking_idx]
+            point = (pos1, pos2, tag_idx)
+            points.append(point)
+        return points
 
 
 class WordTokenizer:
@@ -622,7 +716,7 @@ class Preprocessor:
             if "entity_list" in sample:
                 fin_ent_list.extend(sample["entity_list"])
                 default_ent_list = copy.deepcopy(sample["entity_list"])
-                # add default tag to entities
+                # add default get_tag_points_batch to entities
                 for ent in default_ent_list:
                     ent["type"] = "EXT:DEFAULT"
                 fin_ent_list.extend(default_ent_list)
@@ -634,7 +728,7 @@ class Preprocessor:
                         "type": "EE:{}{}{}".format("Trigger", separator, event["trigger_type"]),  # EE: event extraction
                         "char_span": event["trigger_char_span"],
                     })
-                    # add default tag to entities
+                    # add default get_tag_points_batch to entities
                     fin_ent_list.append({
                         "text": event["trigger"],
                         "type": "EXT:DEFAULT",
@@ -646,7 +740,7 @@ class Preprocessor:
                             "type": "EE:{}{}{}".format("Argument", separator, arg["type"]),
                             "char_span": arg["char_span"],
                         })
-                        # add default tag to entities
+                        # add default get_tag_points_batch to entities
                         fin_ent_list.append({
                             "text": arg["text"],
                             "type": "EXT:DEFAULT",
@@ -662,7 +756,7 @@ class Preprocessor:
                         })
 
             if "re" in task:
-                # add default tag to entities
+                # add default get_tag_points_batch to entities
                 for rel in sample["relation_list"]:
                     fin_ent_list.append({
                         "text": rel["subject"],
@@ -710,9 +804,9 @@ class Preprocessor:
             ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
             # relation type
             rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
-            # POS tag
+            # POS get_tag_points_batch
             pos_tag_set |= {pos_tag for pos_tag in sample["word_level_features"]["pos_tag_list"]}
-            # NER tag
+            # NER get_tag_points_batch
             ner_tag_set |= {ner_tag for ner_tag in sample["word_level_features"]["ner_tag_list"]}
             # dependency relations
             deprel_type_set |= {deprel[-1] for deprel in sample["word_level_features"]["dependency_list"]}

@@ -3,12 +3,13 @@ import copy
 import re
 from abc import ABCMeta, abstractmethod
 from tqdm import tqdm
+from InfExtraction.modules.preprocess import Indexer
 
 class Tagger(metaclass=ABCMeta):
     @abstractmethod
     def get_tag_points(self, sample):
         '''
-        This function is for generating tag points
+        This function is for generating get_tag_points_batch points
 
         sample: an example
         return points for tagging
@@ -17,55 +18,40 @@ class Tagger(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def points2tag(self, points, matrix_size):
-        pass
-
-    @abstractmethod
-    def points2tag_batch(self, batch_points, matrix_size):
+    def get_tag_points_batch(self, data):
         '''
-        This function is for generation tag tensors for training
+        This function is for generating get_tag_points_batch points in batch
 
-        convert spots to a tag matrix
-        spots_batch:
-            [batch1, batch2, ....]
-            batch1: [(start_pos, end_pos, tag_id), ]
-        return: tag matrix (a tensor)
+        data: examples
+        return points for tagging
+        point: (start_pos, end_pos, tag_id)
         '''
         pass
 
     @abstractmethod
-    def tag2points(self, tag):
+    def decode(self, sample, pred_tag):
         '''
-        This function if for supporting the decoding function below
+        decoding function: to extract results by the predicted get_tag_points_batch
 
-        tag_matrix: the tag matrix
-        return matrix_spots: [(start_pos, end_pos, tag_id), ]
-        '''
-        pass
-
-    @abstractmethod
-    def decode(self, sample, tag):
-        '''
-        decoding function: to extract results by the predicted tag
-
-        :param sample: example object (dict)
-        :param tag: predicted tag
-        :return: extracted event list
+        :param sample: an example (to offer text, tok2char_span for decoding)
+        :param pred_tag: predicted get_tag_points_batch
+        :return: predicted example
         '''
         pass
 
     @abstractmethod
-    def decode_batch(self, sample_list, pred_tag_batch):
+    def decode_batch(self, data, pred_tag_batch):
         '''
         decoding function for batch data, based on decode()
-        :param sample_list:
+        :param data: examples (to offer text, tok2char_span for decoding)
         :param pred_tag_batch:
-        :return:
+        :return:predicted example list
         '''
         pass
     
 
 class HandshakingTagger(Tagger):
+
     def __init__(self, rel2id, entity_type2id):
         super().__init__()
         self.rel2id = rel2id
@@ -89,34 +75,10 @@ class HandshakingTagger(Tagger):
         self.tag2id = {t: idx for idx, t in enumerate(self.tags)}
         self.id2tag = {idx: t for t, idx in self.tag2id.items()}
 
-        # map
-        # e.g. [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]
-        # self.shaking_idx2matrix_idx = [(ind, end_ind) for ind in range(self.matrix_size) for end_ind in
-        #                                list(range(self.matrix_size))[ind:]]
-        #
-        # self.matrix_idx2shaking_idx = [[0 for i in range(self.matrix_size)] for j in range(self.matrix_size)]
-        # for shaking_ind, matrix_ind in enumerate(self.shaking_idx2matrix_idx):
-        #     self.matrix_idx2shaking_idx[matrix_ind[0]][matrix_ind[1]] = shaking_ind
-
-        # self.shaking_idx2matrix_idx = self.get_shaking_idx2matrix_idx(self.matrix_size)
-        # self.matrix_idx2shaking_idx = self.get_matrix_idx2shaking_idx(self.matrix_size)
-
-    def get_shaking_idx2matrix_idx(self, matrix_size):
-        shaking_idx2matrix_idx = [(ind, end_ind) for ind in range(matrix_size) for end_ind in
-                                  list(range(matrix_size))[ind:]]
-        return shaking_idx2matrix_idx
-
-    def get_matrix_idx2shaking_idx(self, matrix_size):
-        matrix_idx2shaking_idx = [[0 for i in range(matrix_size)] for j in range(matrix_size)]
-        shaking_idx2matrix_idx = self.get_shaking_idx2matrix_idx(matrix_size)
-        for shaking_ind, matrix_ind in enumerate(shaking_idx2matrix_idx):
-            matrix_idx2shaking_idx[matrix_ind[0]][matrix_ind[1]] = shaking_ind
-        return matrix_idx2shaking_idx
-
     def get_tag_size(self):
         return len(self.tag2id)
 
-    def tag(self, data):
+    def get_tag_points_batch(self, data):
         for sample in tqdm(data, desc="tagging"):
             sample["tag_points"] = self.get_tag_points(sample)
         return data
@@ -127,6 +89,7 @@ class HandshakingTagger(Tagger):
         '''
         matrix_points = []
         point_memory_set = set()
+
         def add_point(point):
             memory = "{},{},{}".format(*point)
             if memory not in point_memory_set:
@@ -153,75 +116,13 @@ class HandshakingTagger(Tagger):
                     add_point((obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "OT2ST"])]))
         return matrix_points
 
-    def points2tag(self, points, matrix_size):
-        '''
-        convert points to matrix tag
-        points: [(start_ind, end_ind, tag_id), ]
-        return: 
-            shaking_tag: (shaking_seq_len, tag_size)
-        '''
-        matrix_idx2shaking_idx = self.get_matrix_idx2shaking_idx(matrix_size)
-        shaking_seq_len = matrix_size * (matrix_size + 1) // 2
-        shaking_tag = torch.zeros(shaking_seq_len, len(self.tag2id)).long()
-        for sp in points:
-            shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
-            shaking_tag[shaking_idx][sp[2]] = 1
-        return shaking_tag
-
-    def points2tag_batch(self, batch_points, matrix_size):
-        '''
-        batch_points: a batch of points, [points1, points2, ...]
-            points: [(start_ind, end_ind, tag_id), ]
-        return:
-            batch_shaking_tag: (batch_size, shaking_seq_len, tag_size)
-        '''
-        matrix_idx2shaking_idx = self.get_matrix_idx2shaking_idx(matrix_size)
-        shaking_seq_len = matrix_size * (matrix_size + 1) // 2
-        batch_shaking_tag = torch.zeros(len(batch_points), shaking_seq_len, len(self.tag2id)).long()
-        for batch_id, points in enumerate(batch_points):
-            for sp in points:
-                shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
-                batch_shaking_tag[batch_id][shaking_idx][sp[2]] = 1
-        return batch_shaking_tag
-
-    def points2matrix_batch(self, batch_points, matrix_size):
-        '''
-        batch_points: a batch of points, [points1, points2, ...]
-            points: [(start_ind, end_ind, tag_id), ]
-        return:
-            batch_matrix: (batch_size, matrix_size, matrix_size)
-        '''
-        batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size).long()
-        for batch_id, points in enumerate(batch_points):
-            for pt in points:
-                batch_matrix[batch_id][pt[0]][pt[1]] = pt[2]
-        return batch_matrix
-
-    def tag2points(self, shaking_tag):
-        '''
-        shaking_tag -> points
-        shaking_tag: (shaking_seq_len, tag_id)
-        points: [(start_ind, end_ind, tag_id), ]
-        '''
-        points = []
-        shaking_seq_len = shaking_tag.size()[0]
-        matrix_size = int((2 * shaking_seq_len + 0.25)**0.5 - 0.5)
-        shaking_idx2matrix_idx = self.get_shaking_idx2matrix_idx(matrix_size)
-        nonzero_points = torch.nonzero(shaking_tag, as_tuple=False)
-        for point in nonzero_points:
-            shaking_idx, tag_idx = point[0].item(), point[1].item()
-            pos1, pos2 = shaking_idx2matrix_idx[shaking_idx]
-            point = (pos1, pos2, tag_idx)
-            points.append(point)
-        return points
-
-    def decode(self, sample, predicted_tag):
+    def decode(self, sample, predicted_shaking_tag):
         '''
         sample: to provide tok2char_span map and text
-        predicted_tag: (shaking_seq_len, tag_id_num)
+        predicted_shaking_tag: (shaking_seq_len, tag_id_num)
         '''
         rel_list, ent_list = [], []
-        matrix_points = self.tag2points(predicted_tag)
+        matrix_points = Indexer.shaking_seq2points(predicted_shaking_tag)
 
         sample_idx, text = sample["id"], sample["text"]
         tok2char_span = sample["features"]["tok2char_span"]

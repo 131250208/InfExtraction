@@ -135,15 +135,15 @@ if __name__ == "__main__":
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # tagging
     tagger = HandshakingTagger4EE(dicts["rel_type2id"], dicts["ent_type2id"])
-    indexed_train_data = tagger.tag(indexed_train_data)
-    indexed_valid_data = tagger.tag(indexed_valid_data)
+    indexed_train_data = tagger.get_tag_points_batch(indexed_train_data)
+    indexed_valid_data = tagger.get_tag_points_batch(indexed_valid_data)
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     # model
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     model_settings["word_encoder_config"]["word2id"] = dicts["word2id"] # set word2id dict
     tag_size = tagger.get_tag_size()
-    model = TPLinkerPlus(tag_size, tagger, **model_settings)
+    model = TPLinkerPlus(tag_size, **model_settings)
     model = model.to(device)
     collate_fn = model.generate_batch
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>

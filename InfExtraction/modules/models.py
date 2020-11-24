@@ -7,6 +7,7 @@ import pandas as pd
 from transformers import BertModel
 from InfExtraction.modules.model_components import HandshakingKernel, GraphConvLayer
 from InfExtraction.modules.metrics import MetricsCalculator
+from InfExtraction.modules.preprocess import Indexer
 from gensim.models import KeyedVectors
 import logging
 from IPython.core.debugger import set_trace
@@ -29,7 +30,6 @@ class IEModel(metaclass=ABCMeta):
 class TPLinkerPlus(nn.Module, IEModel):
     def __init__(self,
                  tag_size,
-                 tagger,
                  char_encoder_config=None,
                  subwd_encoder_config=None,
                  word_encoder_config=None,
@@ -41,33 +41,11 @@ class TPLinkerPlus(nn.Module, IEModel):
                  ):
         super().__init__()
         '''
-        char_encoder_config = {
-            "char_size": len(char2idx), 
-            "emb_dim": char_emb_dim,
-            "emb_dropout": char_emb_dropout,
-            "bilstm_layers": char_bilstm_layers,
-            "bilstm_dropout": char_bilstm_dropout,
-            "max_char_num_in_tok": max_char_num_in_tok,
-        }
-        subwd_encoder_config = {
-            "path": encoder_path,
-            "fintune": bert_finetune,
-            "use_last_k_layers": use_last_k_layers_hiddens,
-        }
-        word_encoder_config = {
-            "init_word_embedding_matrix": init_word_embedding_matrix,
-            "emb_dropout": word_emb_dropout,
-            "bilstm_layers": word_bilstm_layers,
-            "bilstm_dropout": word_bilstm_dropout,
-            "freeze_word_emb": freeze_word_emb,
-            "init_word_embedding_matrix": init_word_embedding_matrix,
-        }
-        handshaking_kernel_config = {
-            "shaking_type": hyper_parameters["shaking_type"],
-        }
+        :parameters: see model settings in settings_train.py
         '''
+        self.tag_size = tag_size
+
         self.metrics_cal = MetricsCalculator()
-        self.tagger = tagger
         combined_hidden_size_1 = 0
 
         # ner
@@ -220,7 +198,12 @@ class TPLinkerPlus(nn.Module, IEModel):
         self.dec_fc = nn.Linear(fin_hidden_size, tag_size)
 
     def generate_batch(self, batch_data):
-        batch_dict = {}
+        assert len(batch_data) > 0
+        batch_dict = {
+            "sample_list": [sample for sample in batch_data]
+        }
+        seq_length = len(batch_data[0]["features"]["tok2char_span"])
+
         if self.subwd_encoder_config is not None:
             subword_input_ids_list = []
             attention_mask_list = []
@@ -232,8 +215,6 @@ class TPLinkerPlus(nn.Module, IEModel):
             batch_dict["subword_input_ids"] = torch.stack(subword_input_ids_list, dim=0)
             batch_dict["attention_mask"] = torch.stack(attention_mask_list, dim=0)
             batch_dict["token_type_ids"] = torch.stack(token_type_ids_list, dim=0)
-
-        seq_length = batch_dict["subword_input_ids"].size()[1]
 
         if self.word_encoder_config is not None:
             word_input_ids_list = [sample["features"]["word_input_ids"] for sample in batch_data]
@@ -253,17 +234,12 @@ class TPLinkerPlus(nn.Module, IEModel):
 
         if self.dep_config is not None:
             dep_matrix_points_batch = [sample["features"]["dependency_points"] for sample in batch_data]
-            batch_dict["dep_adj_matrix"] = self.tagger.points2matrix_batch(dep_matrix_points_batch, seq_length)
+            batch_dict["dep_adj_matrix"] = Indexer.points2matrix_batch(dep_matrix_points_batch, seq_length)
 
-        # must
-        sample_list = []
-        tag_points_batch = []
-        for sample in batch_data:
-            sample_list.append(sample)
-            tag_points_batch.append(sample["tag_points"])
-        batch_dict["sample_list"] = sample_list
-        # shaking tag
-        batch_dict["shaking_tag"] = self.tagger.points2tag_batch(tag_points_batch, seq_length)
+        # shaking get_tag_points_batch
+        if "tag_points" in batch_data[0]: # no tag_points in test data
+            tag_points_batch = [sample["tag_points"] for sample in batch_data]
+            batch_dict["shaking_tag"] = Indexer.points2shaking_seq_batch(tag_points_batch, seq_length, self.tag_size)
         return batch_dict
 
     def forward(self,
@@ -279,13 +255,13 @@ class TPLinkerPlus(nn.Module, IEModel):
         # features
         features = []
 
-        # ner tag
+        # ner get_tag_points_batch
         if self.ner_tag_emb_config is not None:
             ner_tag_embeddings = self.ner_tag_emb(ner_tag_ids)
             ner_tag_embeddings = self.ner_tag_emb_dropout(ner_tag_embeddings)
             features.append(ner_tag_embeddings)
 
-        # pos tag
+        # pos get_tag_points_batch
         if self.pos_tag_emb_config is not None:
             pos_tag_embeddings = self.pos_tag_emb(pos_tag_ids)
             pos_tag_embeddings = self.pos_tag_emb_dropout(pos_tag_embeddings)
@@ -355,9 +331,6 @@ class TPLinkerPlus(nn.Module, IEModel):
 
 
 class TriggerFreeEventExtraction(nn.Module, IEModel):
-    def get_loss(self, pred_tag, gold_tag):
-        pass
-
     def __init__(self):
         super().__init__()
         pass
@@ -366,4 +339,7 @@ class TriggerFreeEventExtraction(nn.Module, IEModel):
         pass
 
     def generate_batch(self, batch_data):
+        pass
+
+    def get_loss(self, pred_tag, gold_tag):
         pass

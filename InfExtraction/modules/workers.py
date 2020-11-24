@@ -133,7 +133,7 @@ class Trainer:
                     "learning_rate": self.optimizer.param_groups[0]['lr'],
                     "time": time.time() - t_ep,
                 }
-                if type(self.logger) is wandb and batch_ind % self.logger_interval == 0:
+                if type(self.logger) is type(wandb) and batch_ind % self.logger_interval == 0:
                     self.logger.log(log_dict)
                 elif type(self.logger) is DefaultLogger and (batch_ind + 1) == len(dataloader):
                     # if logger is not wandb, only log once at the end
