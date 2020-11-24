@@ -23,16 +23,8 @@ import logging
 import re
 
 
-def eval(model_state_dict_path, test_data_dict):
-    model.load_state_dict(torch.load(model_state_dict_path))
-    print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
-    model.eval()
-    collate_fn = model.generate_batch
-
-    # evaluator
-    evaluator = Evaluator(task_type, model, tagger, token_level, device, match_pattern=None)
-    filename2score_dict = {}
-    filename2res = {}
+def get_data_loaders(test_data_dict, collate_fn):
+    filename2data_loader = {}
     for filename, test_data in test_data_dict.items():
         # splitting
         split_test_data = Preprocessor.split_into_short_samples(test_data, max_seq_len, sliding_len, "test",
@@ -62,16 +54,28 @@ def eval(model_state_dict_path, test_data_dict):
                                      drop_last=False,
                                      collate_fn=collate_fn,
                                      )
+        filename2data_loader[filename] = test_dataloader
+    return filename2data_loader
 
+
+def predict(evaluator, test_data_dict, filename2data_loader):
+    filename2res = {}
+    for filename, test_data in test_data_dict.items():
         # prediction
+        test_dataloader = filename2data_loader[filename]
         final_pred_samples = evaluator.predict(test_dataloader, test_data)
         filename2res[filename] = final_pred_samples
 
-        # score
-        score_dict = evaluator.score(final_pred_samples, test_data)
-        filename2score_dict[filename] = score_dict
+    return filename2res
 
-    return filename2score_dict, filename2res
+
+def score(evaluator, test_data_dict, filename2res):
+    filename2score_dict = {}
+    for filename, pred_samples in filename2res.items():
+        test_data = test_data_dict[filename]
+        score_dict = evaluator.score(pred_samples, test_data)
+        filename2score_dict[filename] = score_dict
+    return filename2score_dict
 
 
 def get_score_fr_path(model_path):
@@ -85,21 +89,6 @@ def get_last_k_paths(path_list, k):
 
 if __name__ == "__main__":
     exp_name = settings.exp_name
-
-    # data
-    data_in_dir = os.path.join(settings.data_in_dir, exp_name)
-    data_out_dir = settings.data_out_dir
-    if data_out_dir is not None:
-        data_out_dir = os.path.join(settings.data_out_dir, exp_name)
-        if not os.path.exists(data_out_dir):
-            os.makedirs(data_out_dir)
-
-    test_data_dict = {}
-    for filename in settings.test_data_list:
-        test_data_path = os.path.join(data_in_dir, filename)
-        test_data_dict[filename] = json.load(open(test_data_path, "r", encoding="utf-8"))
-    dicts = settings.dicts
-    statistics = settings.statistics
 
     # testing settings
     task_type = settings.task_type
@@ -115,10 +104,29 @@ if __name__ == "__main__":
     model_dir_for_test = settings.model_dir_for_test
     target_run_ids = settings.target_run_ids
     top_k_models = settings.top_k_models
+    cal_scores = settings.cal_scores
+
+    # data
+    data_in_dir = os.path.join(settings.data_in_dir, exp_name)
+    data_out_dir = settings.data_out_dir
+    if data_out_dir is not None:
+        data_out_dir = os.path.join(settings.data_out_dir, exp_name)
+        if not os.path.exists(data_out_dir):
+            os.makedirs(data_out_dir)
+
+    test_data_dict = {}
+    for filename in settings.test_data_list:
+        test_data_path = os.path.join(data_in_dir, filename)
+        test_data = json.load(open(test_data_path, "r", encoding="utf-8"))
+        test_data = Preprocessor.choose_spans_by_token_level(test_data, token_level=token_level)
+        test_data_dict[filename] = test_data
+    dicts = settings.dicts
+    statistics = settings.statistics
 
     # model settings
     model_settings = settings.model_settings
 
+    # env
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -143,11 +151,15 @@ if __name__ == "__main__":
     tag_size = tagger.get_tag_size()
     model = TPLinkerPlus(tag_size, **model_settings)
     model = model.to(device)
+    collate_fn = model.generate_batch
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-    assert model_dir_for_test is not None and model_dir_for_test.strip() != ""
+
+    # data loaders
+    filename2data_loaders = get_data_loaders(test_data_dict, collate_fn)
 
     # get model state paths
     target_run_ids = set(target_run_ids)
+    assert model_dir_for_test is not None and model_dir_for_test.strip() != ""
     run_id2model_state_paths = {}
     for root, dirs, files in os.walk(model_dir_for_test):
         for file_name in files:
@@ -158,6 +170,7 @@ if __name__ == "__main__":
                 model_state_path = os.path.join(root, file_name)
                 run_id2model_state_paths[run_id].append(model_state_path)
 
+    # predicting
     run_id2results = {}
     for run_id, path_list in run_id2model_state_paths.items():
         if run_id not in run_id2results:
@@ -165,17 +178,32 @@ if __name__ == "__main__":
         # only top k models
         path_list = get_last_k_paths(path_list, top_k_models)
         for path in path_list:
+            # load model
             model_name = re.sub("\.pt", "", path.split("/")[-1])
-            filename2scores, filename2res = eval(path, test_data_dict)
-            run_id2results[run_id].append({
-                "model_name": model_name,
-                "filename2scores": filename2scores,
-            })
+            model.load_state_dict(torch.load(path))
+            print("model state loaded: {}".format("/".join(path.split("/")[-2:])))
+            model.eval()
 
-            # save
+            # evaluator
+            evaluator = Evaluator(task_type, model, tagger, device, match_pattern=None)
+
+            # predict
+            filename2res = predict(evaluator, test_data_dict, filename2data_loaders)
+
+            # save results
             save_dir = os.path.join(data_out_dir, exp_name, task_type, run_id, model_name)
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
             for filename, res in filename2res.items():
                 json.dump(res, open(os.path.join(save_dir, filename), "w", encoding="utf-8"))
-    pprint(run_id2results)
+
+            # score
+            if cal_scores:
+                filename2scores = score(evaluator, test_data_dict, filename2res)
+                run_id2results[run_id].append({
+                    "model_name": model_name,
+                    "filename2scores": filename2scores,
+                })
+
+    if len(run_id2results) > 0:
+        pprint(run_id2results)
