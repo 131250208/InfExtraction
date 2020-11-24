@@ -191,7 +191,7 @@ if __name__ == "__main__":
             filename2res = predict(evaluator, test_data_dict, filename2data_loaders)
 
             # save results
-            save_dir = os.path.join(data_out_dir, exp_name, task_type, run_id, model_name)
+            save_dir = os.path.join(data_out_dir, task_type, run_id, model_name)
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
             for filename, res in filename2res.items():
