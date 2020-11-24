@@ -225,7 +225,7 @@ class Trainer:
             train(train_dataloader, ep)
             fin_score = valid(valid_dataloader)
 
-            max_score = 0
+            max_score = 0.
             if fin_score > self.score_threshold:
                 torch.save(self.model.state_dict(),
                            os.path.join(self.model_state_dict_save_dir,
