@@ -1049,6 +1049,7 @@ class Preprocessor:
                         arg["tok_span"] = arg["subwd_span"] if token_level == "subword" else arg["wd_span"]
                         del arg["subwd_span"]
                         del arg["wd_span"]
+        return data
 
     @staticmethod
     def span_offset(sample, tok_level_offset, char_level_offset):
@@ -1079,6 +1080,7 @@ class Preprocessor:
                     arg["tok_span"][1] += tok_level_offset
                     arg["char_span"][0] += char_level_offset
                     arg["char_span"][1] += char_level_offset
+        return sample
 
     @staticmethod
     def check_splits(data):
