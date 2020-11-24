@@ -307,10 +307,12 @@ class HandshakingTagger4EE(HandshakingTagger):
         for trigger_offset_str, event_type in tirigger_offset2event.items():
             arguments = trigger_offset2arguments[
                 trigger_offset_str] if trigger_offset_str in trigger_offset2arguments else []
+
+            trigger_offset = trigger_offset_str.split(",")
             event = {
                 "trigger": trigger_offset2trigger_text[trigger_offset_str],
                 "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
-                "trigger_tok_span": trigger_offset_str.split(","),
+                "trigger_tok_span": [int(trigger_offset[0]), int(trigger_offset[1])],
                 "trigger_type": event_type,
                 "argument_list": arguments,
             }
