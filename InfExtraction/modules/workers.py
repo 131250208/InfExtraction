@@ -1,4 +1,5 @@
 from InfExtraction.work_flows.utils import DefaultLogger
+from InfExtraction.modules.preprocess import Preprocessor
 import os
 import torch
 import wandb
@@ -11,12 +12,14 @@ import time
 class Trainer:
     def __init__(self,
                  model,
+                 tagger,
                  device,
                  optimizer,
                  trainer_config,
                  logger,
                  model_state_dict_save_dir):
         self.model = model
+        self.tagger = tagger
         self.device = device
         self.optimizer = optimizer
         self.logger = logger
@@ -85,7 +88,7 @@ class Trainer:
         pred_tag = (pred_outputs > 0.).long()
         seq_acc = self.model.metrics_cal.get_tag_seq_accuracy(pred_tag, batch_shaking_tag)
 
-        pred_sample_list = self.model.tagger.decode_batch(sample_list, pred_tag)
+        pred_sample_list = self.tagger.decode_batch(sample_list, pred_tag)
         cpg_dict = self.model.metrics_cal.get_event_cpg_dict(pred_sample_list, sample_list)
         return seq_acc.item(), cpg_dict
 
@@ -216,11 +219,142 @@ class Trainer:
             train(train_dataloader, ep)
             fin_score = valid(valid_dataloader)
 
-            if fin_score >= self.max_score:
-                self.max_score = fin_score
-                if fin_score > self.score_threshold:  # save the best model
-                    modle_state_num = len(glob.glob(self.model_state_dict_save_dir + "/model_state_dict_*.pt"))
-                    torch.save(self.model.state_dict(),
-                               os.path.join(self.model_state_dict_save_dir,
-                                            "model_state_dict_{}.pt".format(modle_state_num)))
+            if fin_score > self.score_threshold:
+                torch.save(self.model.state_dict(),
+                           os.path.join(self.model_state_dict_save_dir,
+                                        "model_state_dict_{:.2}.pt".format(fin_score)))
             print("Current score: {}, Best score: {}".format(fin_score, self.max_score))
+
+
+class Evaluator:
+    def __init__(self,
+                 task_type,
+                 model,
+                 decoder,# tagger
+                 device,
+                 match_pattern=None):
+        self.task_type = task_type
+        self.model = model
+        self.decoder = decoder
+        self.device = device
+        self.match_pattern = match_pattern # only for relation extraction
+
+    # predict step
+    def _predict_step(self, batch_predict_data):
+        sample_list = batch_predict_data["sample_list"]
+        del batch_predict_data["sample_list"]
+        for k, v in batch_predict_data.items():
+            batch_predict_data[k] = v.to(self.device)
+
+        with torch.no_grad():
+            pred_outputs = self.model(**batch_predict_data)
+        pred_tag = (pred_outputs > 0.).long()
+
+        pred_sample_list = self.decoder.decode_batch(sample_list, pred_tag)
+        # cpg_dict = self.model.metrics_cal.get_event_cpg_dict(pred_sample_list, sample_list)
+        return pred_sample_list
+        
+    def predict(self, dataloader, golden_data):
+        # predict
+        self.model.eval()
+        total_pred_sample_list = []
+        for batch_ind, batch_predict_data in enumerate(tqdm(dataloader, desc="predicting")):
+            pred_sample_list = self._predict_step(batch_predict_data)
+            total_pred_sample_list.extend(pred_sample_list)
+
+        # merge and alignment
+        id2text = {sample["id"]:sample["text"] for sample in golden_data}
+        merged_pred_samples = {}
+        for sample in total_pred_sample_list:
+            id_ = sample["id"]
+            # recover spans
+            Preprocessor.span_offset(sample, sample["tok_level_offset"], sample["char_level_offset"])
+            # merge
+            if id_ not in merged_pred_samples:
+                merged_pred_samples[id_] = {
+                    "id": id_,
+                    "text": id2text[id_],
+                    "entity_list": [],
+                    "relation_list": [],
+                    "event_list": [],
+                }
+            if "entity_list" in sample:
+                merged_pred_samples[id_]["entity_list"].extend(sample["entity_list"])
+            if "relation_list" in sample:
+                merged_pred_samples[id_]["relation_list"].extend(sample["relation_list"])
+            if "event_list" in sample:
+                merged_pred_samples[id_]["event_list"].extend(sample["event_list"])
+
+        # alignment (order)
+        fin_pred_samples = []
+        for sample in golden_data:
+            id_ = sample["id"]
+            fin_pred_samples.append(merged_pred_samples[id_])
+
+        # filter duplicated results
+        def unique(res_list):
+            memory = set()
+            new_res_list = []
+            for res in res_list:
+                if str(res) not in memory:
+                    new_res_list.append(res)
+                    memory.add(str(res))
+            return new_res_list
+
+        for sample in fin_pred_samples:
+            if "entity_list" in sample:
+                sample["entity_list"] = unique(sample["entity_list"])
+            if "relation_list" in sample:
+                sample["relation_list"] = unique(sample["relation_list"])
+            if "event_list" in sample:
+                sample["event_list"] = unique(sample["event_list"])
+
+        return fin_pred_samples
+
+    def score(self, fin_pred_samples, golden_data):
+        score_dict = None
+        if self.task_type == "re":
+            total_cpg_dict = self.model.metrics_cal.get_rel_cpg_dict(fin_pred_samples,
+                                                                     golden_data,
+                                                                     self.match_pattern)
+            rel_prf = self.model.metrics_cal.get_prf_scores(*total_cpg_dict["rel_cpg"])
+            ent_prf = self.model.metrics_cal.get_prf_scores(*total_cpg_dict["ent_cpg"])
+            score_dict = {
+                "test_rel_prec": rel_prf[0],
+                "test_rel_recall": rel_prf[1],
+                "test_rel_f1": rel_prf[2],
+                "test_ent_prec": ent_prf[0],
+                "test_ent_recall": ent_prf[1],
+                "test_ent_f1": ent_prf[2]
+            }
+        elif self.task_type == "ee":
+            total_cpg_dict = self.model.metrics_cal.get_event_cpg_dict(fin_pred_samples, golden_data)
+            trigger_iden_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["trigger_iden_cpg"][0],
+                                                                     total_cpg_dict["trigger_iden_cpg"][1],
+                                                                     total_cpg_dict["trigger_iden_cpg"][2])
+            trigger_class_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["trigger_class_cpg"][0],
+                                                                      total_cpg_dict["trigger_class_cpg"][1],
+                                                                      total_cpg_dict["trigger_class_cpg"][2])
+            arg_iden_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["arg_iden_cpg"][0],
+                                                                 total_cpg_dict["arg_iden_cpg"][1],
+                                                                 total_cpg_dict["arg_iden_cpg"][2])
+            arg_class_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["arg_class_cpg"][0],
+                                                                  total_cpg_dict["arg_class_cpg"][1],
+                                                                  total_cpg_dict["arg_class_cpg"][2])
+
+            score_dict = {
+                "test_trigger_iden_prec": trigger_iden_prf[0],
+                "test_trigger_iden_recall": trigger_iden_prf[1],
+                "test_trigger_iden_f1": trigger_iden_prf[2],
+                "test_trigger_class_prec": trigger_class_prf[0],
+                "test_trigger_class_recall": trigger_class_prf[1],
+                "test_trigger_class_f1": trigger_class_prf[2],
+                "test_arg_iden_prec": arg_iden_prf[0],
+                "test_arg_iden_recall": arg_iden_prf[1],
+                "test_arg_iden_f1": arg_iden_prf[2],
+                "test_arg_class_prec": arg_class_prf[0],
+                "test_arg_class_recall": arg_class_prf[1],
+                "test_arg_class_f1": arg_class_prf[2],
+            }
+
+        return score_dict

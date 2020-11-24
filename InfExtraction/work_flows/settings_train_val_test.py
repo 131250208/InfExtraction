@@ -4,26 +4,36 @@ import os
 import json
 
 exp_name = "ace2005_lu"
+task_type = "ee"
 
 # data
 data_in_dir = "../../data/normal_data"
+data_out_dir = "../../data/res_data"
 train_data = "train_data.json"
 valid_data = "valid_data.json"
+test_data_list = ["test_data.json", ]
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)
 statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 
-# training settings
-device_num = 0
-task_type = "ee"
-language = "en"
+# train, valid, test settings
+device_num = 1
 use_bert = True
 seed = 2333
-batch_size = 8
 epochs = 200
-max_seq_len = 100
-sliding_len = 20
+batch_size_train = 8
+batch_size_valid = 32
+batch_size_test = 32
+
+max_seq_len_train = 100
+max_seq_len_valid = 100
+max_seq_len_test = 512
+
+sliding_len_train = 20
+sliding_len_valid = 20
+sliding_len_test = 20
+
 lr = 5e-5
 
 scheduler = "CAWR"
@@ -38,7 +48,6 @@ log_interval = 10
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
 default_log_path = "./default_log_dir/default.log"
 default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
-note = ""
 
 # model
 run_name = "tp2+dep+pos+ner"
@@ -134,20 +143,24 @@ trainer_config = {
     "log_interval": log_interval,
 }
 
+# this dict would be logged
 config_to_log = {
     "model_name": model_name,
     "seed": seed,
     "task_type": task_type,
-    "batch_size": batch_size,
     "epochs": epochs,
-    "max_seq_len": max_seq_len,
-    "sliding_len": sliding_len,
+    "batch_size_train": batch_size_train,
+    "batch_size_valid": batch_size_valid,
+    "max_seq_len_train": max_seq_len_train,
+    "sliding_len_train": sliding_len_train,
+    "max_seq_len_valid": max_seq_len_valid,
+    "sliding_len_valid": sliding_len_valid,
+    "note": "",
     **model_settings,
 }
-# match_pattern:
+# match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
 # whole_text (nyt, webnlg),
 # only_head_index,
-# whole_span,
-# event_extraction
-match_pattern = "event_extraction"
+# whole_span
+match_pattern = None
