@@ -58,7 +58,7 @@ default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 
 # for test
 model_dir_for_test = "./wandb"
-target_run_ids = ["", ]
+target_run_ids = ["1zbzg5ml", "11p5ec06"]
 top_k_models = 3
 
 # model
