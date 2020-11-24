@@ -263,7 +263,7 @@ class HandshakingTagger4EE(HandshakingTagger):
             trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
                 event_type, 0) + 1
 
-        # get candidate trigger types from entity types
+        # get candidate trigger types from entity tags
         for ent in ent_list:
             t1, t2 = ent["type"].split(sepatator)
             assert t1 == "Trigger" or t1 == "Argument"
@@ -278,11 +278,12 @@ class HandshakingTagger4EE(HandshakingTagger):
                 trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
                     event_type, 0) + 1.1  # if even, entity type makes the call
 
-        # voting
-        tirigger_offset2event = {}
+        # choose the final trigger type by votes
+        tirigger_offset2event_types = {}
         for trigger_offet_str, event_type2score in trigger_offset2vote.items():
-            event_type = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0]
-            tirigger_offset2event[trigger_offet_str] = event_type  # final event type
+            top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
+            winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
+            tirigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
 
         # generate event list
         trigger_offset2arguments = {}
@@ -290,10 +291,8 @@ class HandshakingTagger4EE(HandshakingTagger):
             trigger_offset = rel["obj_tok_span"]
             argument_role, event_type = rel["predicate"].split(sepatator)
             trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
-            if tirigger_offset2event[trigger_offset_str] != event_type:  # filter false relations
-                #                 set_trace()
+            if event_type not in tirigger_offset2event_types[trigger_offset_str]:  # filter false relations
                 continue
-
             # append arguments
             if trigger_offset_str not in trigger_offset2arguments:
                 trigger_offset2arguments[trigger_offset_str] = []
@@ -304,7 +303,7 @@ class HandshakingTagger4EE(HandshakingTagger):
                 "tok_span": rel["subj_tok_span"],
             })
         event_list = []
-        for trigger_offset_str, event_type in tirigger_offset2event.items():
+        for trigger_offset_str, event_type in tirigger_offset2event_types.items():
             arguments = trigger_offset2arguments[
                 trigger_offset_str] if trigger_offset_str in trigger_offset2arguments else []
 
