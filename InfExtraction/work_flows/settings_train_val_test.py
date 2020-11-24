@@ -112,7 +112,7 @@ model_settings = {
     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
     "word_encoder_config": word_encoder_config,
-    "dep_config": dep_config,
+    "dep_config": None,
     "handshaking_kernel_config": handshaking_kernel_config,
     "fin_hidden_size": 768,
 }
