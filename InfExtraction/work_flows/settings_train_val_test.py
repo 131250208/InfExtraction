@@ -21,6 +21,7 @@ dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # train, valid, test settings
 run_name = "tp2+dep+pos+ner"
+model_name = "tplinker_plus"
 device_num = 1
 use_bert = True
 token_level = "subword"
@@ -44,10 +45,20 @@ scheduler = "CAWR"
 use_ghm = False
 score_threshold = 0
 
-# pretrianed model state
-# dep b8: run-20201123_122929-1zbzg5ml/model_state_dict_11.pt
-# dep b32: run-20201123_123852-11p5ec06/model_state_dict_18.pt
-model_state_dict_path = "./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt"
+# schedulers
+scheduler_dict = {
+    "CAWR": {
+        # CosineAnnealingWarmRestarts
+        "name": "CAWR",
+        "T_mult": 1,
+        "rewarm_steps": 4000,
+    },
+    "StepLR": {
+        "name": "StepLR",
+        "decay_rate": 0.999,
+        "decay_steps": 100,
+    },
+}
 
 # logger
 use_wandb = True
@@ -57,6 +68,23 @@ default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
 default_log_path = "./default_log_dir/default.log"
 default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 
+# training config
+trainer_config = {
+    "task_type": task_type,
+    "run_name": run_name,
+    "exp_name": exp_name,
+    "score_threshold": score_threshold,
+    "scheduler_config": scheduler_dict[scheduler],
+    "use_ghm": use_ghm,
+    "model_bag_size": 15,
+    "log_interval": log_interval,
+}
+
+# pretrianed model state
+# dep b8: run-20201123_122929-1zbzg5ml/model_state_dict_11.pt
+# dep b32: run-20201123_123852-11p5ec06/model_state_dict_18.pt
+model_state_dict_path = "./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt"
+
 # for test
 model_dir_for_test = "./wandb" # "./default_log_dir"
 target_run_ids = ["1zbzg5ml", "11p5ec06"]
@@ -64,8 +92,6 @@ top_k_models = 3
 cal_scores = True # set False if the test sets are not annotated with golden results
 
 # model
-model_name = "tplinker_plus"
-
 pos_tag_emb_config = {
     "pos_tag_num": statistics["pos_tag_num"],
     "emb_dim": 64,
@@ -131,32 +157,6 @@ model_settings = {
 
 if use_bert:
     model_settings["subwd_encoder_config"] = subwd_encoder_config
-
-# schedulers
-scheduler_dict = {
-    "CAWR": {
-        # CosineAnnealingWarmRestarts
-        "name": "CAWR",
-        "T_mult": 1,
-        "rewarm_steps": 4000,
-    },
-    "StepLR": {
-        "name": "StepLR",
-        "decay_rate": 0.999,
-        "decay_steps": 100,
-    },
-}
-
-# training config
-trainer_config = {
-    "task_type": task_type,
-    "run_name": run_name,
-    "exp_name": exp_name,
-    "score_threshold": score_threshold,
-    "scheduler_config": scheduler_dict[scheduler],
-    "use_ghm": use_ghm,
-    "log_interval": log_interval,
-}
 
 # this dict would be logged
 config_to_log = {
