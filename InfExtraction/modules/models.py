@@ -167,7 +167,7 @@ class TPLinkerPlus(nn.Module, IEModel):
             combined_hidden_size_1 += self.bert.config.hidden_size
 
         # aggregate fc 1
-        self.aggr_fc_1 = nn.Linear(combined_hidden_size_1, fin_hidden_size)
+        self.reduce_fc = nn.Linear(combined_hidden_size_1, fin_hidden_size)
 
         # dependencies
         self.dep_config = dep_config
@@ -300,7 +300,7 @@ class TPLinkerPlus(nn.Module, IEModel):
 
         # combine features
         # combined_hiddens: (batch_size_train, seq_len, combined_size)
-        combined_hiddens = self.aggr_fc_1(torch.cat(features, dim=-1))
+        combined_hiddens = self.reduce_fc(torch.cat(features, dim=-1))
 #         set_trace()
         # dependencies
         if self.dep_config is not None:
