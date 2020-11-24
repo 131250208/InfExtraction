@@ -27,8 +27,8 @@ batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
 
-max_seq_len_train = 100
-max_seq_len_valid = 100
+max_seq_len_train = 64
+max_seq_len_valid = 64
 max_seq_len_test = 512
 
 sliding_len_train = 20
@@ -42,7 +42,7 @@ use_ghm = False
 score_threshold = 0
 
 # logger
-use_wandb = False
+use_wandb = True
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -50,7 +50,9 @@ default_log_path = "./default_log_dir/default.log"
 default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 
 # pretrianed model state
-model_state_dict_path = "./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt" # run-20201123_085959-3n9ewb4x/model_state_dict_21.pt
+# dep b8: run-20201123_122929-1zbzg5ml/model_state_dict_11.pt 
+# dep b32: run-20201123_123852-11p5ec06/model_state_dict_18.pt
+model_state_dict_path = "./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt" 
 
 # model
 run_name = "tp2+dep+pos+ner"
@@ -159,6 +161,7 @@ config_to_log = {
     "max_seq_len_valid": max_seq_len_valid,
     "sliding_len_valid": sliding_len_valid,
     "note": "",
+    "model_state_dict_path": model_state_dict_path,
     **model_settings,
 }
 # match_pattern: for joint entity and relation extraction
