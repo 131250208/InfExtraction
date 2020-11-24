@@ -289,16 +289,16 @@ class HandshakingTagger4EE(HandshakingTagger):
         trigger_offset2event2arguments = {}
         for rel in rel_list:
             trigger_offset = rel["obj_tok_span"]
-            argument_role, event_types = rel["predicate"].split(sepatator)
+            argument_role, et = rel["predicate"].split(sepatator)
             trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
-            if event_types not in tirigger_offset2event_types[trigger_offset_str]:  # filter false relations
+            if et not in tirigger_offset2event_types[trigger_offset_str]:  # filter false relations
                 continue
             # append arguments
             if trigger_offset_str not in trigger_offset2event2arguments:
                 trigger_offset2event2arguments[trigger_offset_str] = {}
-            if event_types not in trigger_offset2event2arguments[trigger_offset_str][event_types]:
-                trigger_offset2event2arguments[trigger_offset_str][event_types] = []
-            trigger_offset2event2arguments[trigger_offset_str][event_types].append({
+            if et not in trigger_offset2event2arguments[trigger_offset_str]:
+                trigger_offset2event2arguments[trigger_offset_str][et] = []
+            trigger_offset2event2arguments[trigger_offset_str][et].append({
                 "text": rel["subject"],
                 "type": argument_role,
                 "char_span": rel["subj_char_span"],
