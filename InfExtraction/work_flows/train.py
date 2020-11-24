@@ -185,7 +185,7 @@ if __name__ == "__main__":
 
     if model_state_dict_path is not None:
         model.load_state_dict(torch.load(model_state_dict_path))
-        print("------------model state {} loaded ----------------".format(model_state_dict_path.split("/")[-1]))
+        print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
 
     # trainer
     trainer = Trainer(model, tagger, device, optimizer, trainer_config, logger, dir_to_save_model)

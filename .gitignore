@@ -1,5 +1,5 @@
 *data*
-# settings_*.py
+settings_*.py
 wandb/
 
 # Byte-compiled / optimized / DLL files

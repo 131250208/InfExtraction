@@ -39,15 +39,17 @@ lr = 5e-5
 scheduler = "CAWR"
 use_ghm = False
 score_threshold = 0
-model_state_dict_path = None
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
 default_log_path = "./default_log_dir/default.log"
 default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
+
+# pretrianed model state
+model_state_dict_path = "./wandb/run-20201123_085959-3n9ewb4x/model_state_dict_21.pt"
 
 # model
 run_name = "tp2+dep+pos+ner"
