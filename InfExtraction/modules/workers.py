@@ -12,7 +12,6 @@ import re
 
 class Trainer:
     def __init__(self,
-                 task_type,
                  model,
                  tagger,
                  device,
