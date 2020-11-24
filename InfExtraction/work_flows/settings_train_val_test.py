@@ -50,7 +50,7 @@ default_log_path = "./default_log_dir/default.log"
 default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 
 # pretrianed model state
-model_state_dict_path = "./wandb/run-20201123_085959-3n9ewb4x/model_state_dict_21.pt"
+model_state_dict_path = "./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt" # run-20201123_085959-3n9ewb4x/model_state_dict_21.pt
 
 # model
 run_name = "tp2+dep+pos+ner"
@@ -113,7 +113,7 @@ model_settings = {
     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
     "word_encoder_config": word_encoder_config,
-    "dep_config": None,
+    "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "fin_hidden_size": 768,
 }
