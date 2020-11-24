@@ -249,13 +249,11 @@ class Evaluator:
                  task_type,
                  model,
                  decoder,# tagger
-                 token_level,
                  device,
                  match_pattern=None):
         self.task_type = task_type
         self.model = model
         self.decoder = decoder
-        self.token_level = token_level
         self.device = device
         self.match_pattern = match_pattern # only for relation extraction
 
@@ -333,7 +331,7 @@ class Evaluator:
 
     def score(self, fin_pred_samples, golden_data):
         score_dict = None
-        golden_data = Preprocessor.choose_spans_by_token_level(golden_data, token_level=self.token_level)
+
         if self.task_type == "re":
             total_cpg_dict = self.model.metrics_cal.get_rel_cpg_dict(fin_pred_samples,
                                                                      golden_data,

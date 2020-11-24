@@ -60,6 +60,7 @@ default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 model_dir_for_test = "./wandb"
 target_run_ids = ["1zbzg5ml", "11p5ec06"]
 top_k_models = 3
+cal_scores = False # set False if the test sets are not annotated with golden results
 
 # model
 run_name = "tp2+dep+pos+ner"
