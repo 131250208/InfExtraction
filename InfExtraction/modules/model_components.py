@@ -65,7 +65,7 @@ class LayerNorm(nn.Module):
                 cond = self.hidden_dense(cond)
             # for _ in range(K.ndim(inputs) - K.ndim(cond)): # K.ndim: 以整数形式返回张量中的轴数。
             # TODO: 这两个为什么有轴数差呢？ 为什么在 dim=1 上增加维度??
-            # 为了保持维度一致，cond可以是（batch_size, cond_dim）
+            # 为了保持维度一致，cond可以是（batch_size_train, cond_dim）
             for _ in range(len(inputs.shape) - len(cond.shape)):
                 cond = cond.unsqueeze(1)  # cond = K.expand_dims(cond, 1)
 
@@ -127,7 +127,7 @@ class HandshakingKernel(nn.Module):
                                               batch_first=True)
 
     def enc_inner_hiddens(self, seq_hiddens, inner_enc_type):
-        # seq_hiddens: (batch_size, seq_len, hidden_size)
+        # seq_hiddens: (batch_size_train, seq_len, hidden_size)
         def pool(seqence, pooling_type):
             pooling = None
             if pooling_type == "mean_pooling":
@@ -149,9 +149,9 @@ class HandshakingKernel(nn.Module):
 
     def forward(self, seq_hiddens):
         '''
-        seq_hiddens: (batch_size, seq_len, hidden_size)
+        seq_hiddens: (batch_size_train, seq_len, hidden_size)
         return:
-            shaking_hiddenss: (batch_size, (1 + seq_len) * seq_len / 2, hidden_size) (32, 5+4+3+2+1, 5)
+            shaking_hiddenss: (batch_size_train, (1 + seq_len) * seq_len / 2, hidden_size) (32, 5+4+3+2+1, 5)
         '''
         seq_len = seq_hiddens.size()[-2]
         shaking_hiddens_list = []

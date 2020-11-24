@@ -14,7 +14,7 @@ from InfExtraction.modules.preprocess import Preprocessor, MyDataset
 from InfExtraction.modules.taggers import HandshakingTagger4EE
 from InfExtraction.modules.workers import Trainer
 from InfExtraction.modules.models import TPLinkerPlus
-from InfExtraction.work_flows import settings_train as settings
+from InfExtraction.work_flows import settings_train_val_test as settings
 from InfExtraction.work_flows.utils import DefaultLogger
 
 import os
@@ -23,6 +23,7 @@ import wandb
 import json
 from pprint import pprint
 from torch.utils.data import DataLoader
+import logging
 
 if __name__ == "__main__":
     # settings
@@ -42,18 +43,20 @@ if __name__ == "__main__":
     default_log_path = settings.default_log_path
     default_run_id = settings.default_run_id
     default_dir_to_save_model = settings.default_dir_to_save_model
+    log_interval = settings.log_interval
 
     # training settings
     device_num = settings.device_num
-    task_type = settings.task_type
-    language = settings.language
     use_bert = settings.use_bert
     seed = settings.seed
-    batch_size = settings.batch_size
+
     epochs = settings.epochs
-    log_interval = settings.log_interval
-    max_seq_len = settings.max_seq_len
-    sliding_len = settings.sliding_len
+    batch_size_train = settings.batch_size_train
+    batch_size_valid = settings.batch_size_valid
+    max_seq_len_train = settings.max_seq_len_train
+    sliding_len_train = settings.sliding_len_train
+    max_seq_len_valid = settings.max_seq_len_valid
+    sliding_len_valid = settings.sliding_len_valid
     trainer_config = settings.trainer_config
     lr = settings.lr
     model_state_dict_path = settings.model_state_dict_path
@@ -61,6 +64,7 @@ if __name__ == "__main__":
     # model settings
     model_settings = settings.model_settings
 
+    # env
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -98,19 +102,24 @@ if __name__ == "__main__":
     else:
         max_seq_len_statistics = statistics["max_word_seq_length"]
         feature_list_key = "word_level_features"
-    max_seq_len = min(max_seq_len, max_seq_len_statistics)
-    max_seq_len_train = max_seq_len
-    max_seq_len_valid = max_seq_len # max_seq_len_statistics
-    split_train_data = Preprocessor.split_into_short_samples(train_data, max_seq_len_train, sliding_len, "train",
+    if max_seq_len_train > max_seq_len_statistics:
+        logging.warning("since max_seq_len_train is larger than the longest sample in the data, " +
+                        "reset it to {}".format(max_seq_len_statistics))
+        max_seq_len_train = max_seq_len_statistics
+    split_train_data = Preprocessor.split_into_short_samples(train_data, max_seq_len_train, sliding_len_train, "train",
                                                              wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"],
                                                              feature_list_key=feature_list_key)
-    split_valid_data = Preprocessor.split_into_short_samples(valid_data, max_seq_len_valid, sliding_len, "valid",
+    split_valid_data = Preprocessor.split_into_short_samples(valid_data, max_seq_len_valid, sliding_len_valid, "valid",
                                                              wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"],
                                                              feature_list_key=feature_list_key)
-    sample_id2dismatched = Preprocessor.check_splits(split_train_data)
-    pprint(sample_id2dismatched)
-    sample_id2dismatched = Preprocessor.check_splits(split_valid_data)
-    pprint(sample_id2dismatched)
+    sample_id2mismatched = Preprocessor.check_splits(split_train_data)
+    if len(sample_id2mismatched) > 0:
+        logging.warning("mismatch errors:")
+        pprint(sample_id2mismatched)
+    sample_id2mismatched = Preprocessor.check_splits(split_valid_data)
+    if len(sample_id2mismatched) > 0:
+        logging.warning("mismatch errors:")
+        pprint(sample_id2mismatched)
 
     # indexing
     key2dict = {
@@ -128,7 +137,7 @@ if __name__ == "__main__":
                                                      pretrained_model_padding)
     indexed_valid_data = Preprocessor.index_features(split_valid_data,
                                                      key2dict,
-                                                     max_seq_len_valid, # max_seq_len_statistics
+                                                     max_seq_len_valid,
                                                      model_settings["char_encoder_config"]["max_char_num_in_tok"],
                                                      pretrained_model_padding)
 
@@ -151,7 +160,7 @@ if __name__ == "__main__":
     # dataset
     train_dataset = MyDataset(indexed_train_data)
     train_dataloader = DataLoader(train_dataset,
-                                  batch_size=batch_size,
+                                  batch_size=batch_size_train,
                                   shuffle=True,
                                   num_workers=0,
                                   drop_last=False,
@@ -159,7 +168,7 @@ if __name__ == "__main__":
                                  )
     valid_dataset = MyDataset(indexed_valid_data)
     valid_dataloader = DataLoader(valid_dataset,
-                                  batch_size=batch_size,
+                                  batch_size=batch_size_valid,
                                   shuffle=True,
                                   num_workers=0,
                                   drop_last=False,
@@ -179,5 +188,5 @@ if __name__ == "__main__":
         print("------------model state {} loaded ----------------".format(model_state_dict_path.split("/")[-1]))
 
     # trainer
-    trainer = Trainer(model, device, optimizer, trainer_config, logger, dir_to_save_model)
+    trainer = Trainer(model, tagger, device, optimizer, trainer_config, logger, dir_to_save_model)
     trainer.train_n_valid(train_dataloader, valid_dataloader, epochs)

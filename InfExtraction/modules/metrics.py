@@ -7,7 +7,7 @@ class MetricsCalculator():
 
     def GHM(self, gradient, bins=10, beta=0.9):
         '''
-        gradient_norm: gradient_norms of all examples in this batch; (batch_size, shaking_seq_len)
+        gradient_norm: gradient_norms of all examples in this batch; (batch_size_train, shaking_seq_len)
         '''
         avg = torch.mean(gradient)
         std = torch.std(gradient) + 1e-12
@@ -51,8 +51,8 @@ class MetricsCalculator():
         This function is a loss function for multi-label learning
         ref: https://kexue.fm/archives/7359
 
-        y_pred: (batch_size, shaking_seq_len, type_size)
-        y_true: (batch_size, shaking_seq_len, type_size)
+        y_pred: (batch_size_train, shaking_seq_len, type_size)
+        y_true: (batch_size_train, shaking_seq_len, type_size)
         y_true and y_pred have the same shape，elements in y_true are either 0 or 1，
              1 tags positive classes，0 tags negtive classes(means tok-pair does not have this type of link).
         """
@@ -75,13 +75,13 @@ class MetricsCalculator():
         the get_tag_points_batch accuracy in a batch
         a predicted get_tag_points_batch sequence (matrix) is correct if and only if the whole sequence is congruent to the golden sequence
         '''
-        #         # (batch_size, ..., seq_len, tag_size) -> (batch_size, ..., seq_len)
+        #         # (batch_size_train, ..., seq_len, tag_size) -> (batch_size_train, ..., seq_len)
         #         pred = torch.argmax(pred, dim = -1)
-        # (batch_size, ..., seq_len) -> (batch_size, seq_len)
+        # (batch_size_train, ..., seq_len) -> (batch_size_train, seq_len)
         pred = pred.view(pred.size()[0], -1)
         truth = truth.view(truth.size()[0], -1)
 
-        # (batch_size, )，每个元素是pred与truth之间tag相同的数量
+        # (batch_size_train, )，每个元素是pred与truth之间tag相同的数量
         correct_tag_num = torch.sum(torch.eq(truth, pred).float(), dim=1)
 
         # seq维上所有tag必须正确，所以correct_tag_num必须等于seq的长度才算一个correct的sample

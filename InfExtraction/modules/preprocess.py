@@ -97,7 +97,7 @@ class Indexer:
         batch_points: a batch of points, [points1, points2, ...]
             points: [(start_ind, end_ind, tag_id), ]
         return:
-            batch_shaking_seq: (batch_size, shaking_seq_len, tag_size)
+            batch_shaking_seq: (batch_size_train, shaking_seq_len, tag_size)
         '''
         matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
         shaking_seq_len = matrix_size * (matrix_size + 1) // 2
@@ -116,7 +116,7 @@ class Indexer:
         batch_points: a batch of points, [points1, points2, ...]
             points: [(start_ind, end_ind, tag_id), ]
         return:
-            batch_matrix: (batch_size, matrix_size, matrix_size)
+            batch_matrix: (batch_size_train, matrix_size, matrix_size)
         '''
         batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size).long()
         for batch_id, points in enumerate(batch_points):
@@ -448,13 +448,13 @@ class Preprocessor:
                                                       ignore_subword_match=ignore_subword_match)
 
             if "relation_list" in sample:
-                new_relation_list = []
+                relation_list = []
                 for rel in sample["relation_list"]:
                     subj_char_spans = ent2char_spans[rel["subject"]]
                     obj_char_spans = ent2char_spans[rel["object"]]
                     for subj_sp in subj_char_spans:
                         for obj_sp in obj_char_spans:
-                            new_relation_list.append({
+                            relation_list.append({
                                 "subject": rel["subject"],
                                 "object": rel["object"],
                                 "subj_char_span": subj_sp,
@@ -462,8 +462,8 @@ class Preprocessor:
                                 "predicate": rel["predicate"],
                             })
 
-                assert len(sample["relation_list"]) <= len(new_relation_list)
-                sample["relation_list"] = new_relation_list
+                assert len(sample["relation_list"]) <= len(relation_list)
+                sample["relation_list"] = relation_list
 
             if "entity_list" in sample:
                 new_ent_list = []
@@ -936,7 +936,7 @@ class Preprocessor:
                 if data_type == "test":
                     if len(sub_text) > 0:
                         split_sample_list.append(new_sample)
-                else:
+                else: # filter entities, relations, and events in the subtext
                     # spo
                     if "relation_list" in sample:
                         sub_rel_list = []
@@ -946,20 +946,20 @@ class Preprocessor:
                             # if subject and object are both in this subtext, add this spo to new sample
                             if subj_tok_span[0] >= start_ind and subj_tok_span[1] <= end_ind \
                                     and obj_tok_span[0] >= start_ind and obj_tok_span[1] <= end_ind:
-                                new_rel = copy.deepcopy(rel)
-                                del new_rel["subj_wd_span"]
-                                del new_rel["obj_wd_span"]
-                                del new_rel["subj_subwd_span"]
-                                del new_rel["obj_subwd_span"]
-                                new_rel["subj_tok_span"] = [subj_tok_span[0] - tok_level_offset,
+                                rel = copy.deepcopy(rel)
+                                del rel["subj_wd_span"]
+                                del rel["obj_wd_span"]
+                                del rel["subj_subwd_span"]
+                                del rel["obj_subwd_span"]
+                                rel["subj_tok_span"] = [subj_tok_span[0] - tok_level_offset,
                                                             subj_tok_span[1] - tok_level_offset]
-                                new_rel["obj_tok_span"] = [obj_tok_span[0] - tok_level_offset,
+                                rel["obj_tok_span"] = [obj_tok_span[0] - tok_level_offset,
                                                            obj_tok_span[1] - tok_level_offset]
-                                new_rel["subj_char_span"][0] -= char_level_offset
-                                new_rel["subj_char_span"][1] -= char_level_offset
-                                new_rel["obj_char_span"][0] -= char_level_offset
-                                new_rel["obj_char_span"][1] -= char_level_offset
-                                sub_rel_list.append(new_rel)
+                                rel["subj_char_span"][0] -= char_level_offset
+                                rel["subj_char_span"][1] -= char_level_offset
+                                rel["obj_char_span"][0] -= char_level_offset
+                                rel["obj_char_span"][1] -= char_level_offset
+                                sub_rel_list.append(rel)
                         new_sample["relation_list"] = sub_rel_list
 
                     # entity
@@ -1018,6 +1018,36 @@ class Preprocessor:
                 if end_ind > len(tokens):
                     break
         return split_sample_list
+
+    @staticmethod
+    def span_offset(sample, tok_level_offset, char_level_offset):
+        if "relation_list" in sample:
+            for rel in sample["relation_list"]:
+                rel["subj_tok_span"][0] += tok_level_offset
+                rel["subj_tok_span"][1] += tok_level_offset
+                rel["obj_tok_span"][0] += tok_level_offset
+                rel["obj_tok_span"][1] += tok_level_offset
+                rel["subj_char_span"][0] += char_level_offset
+                rel["subj_char_span"][1] += char_level_offset
+                rel["obj_char_span"][0] += char_level_offset
+                rel["obj_char_span"][1] += char_level_offset
+        if "entity_list" in sample:
+            for ent in sample["entity_list"]:
+                ent["tok_span"][0] += tok_level_offset
+                ent["tok_span"][1] += tok_level_offset
+                ent["char_span"][0] += char_level_offset
+                ent["char_span"][1] += char_level_offset
+        if "event_list" in sample:
+            for event in sample["event_list"]:
+                event["trigger_tok_span"][0] += tok_level_offset
+                event["trigger_tok_span"][1] += tok_level_offset
+                event["trigger_char_span"][0] += char_level_offset
+                event["trigger_char_span"][1] += char_level_offset
+                for arg in event["argument_list"]:
+                    arg["tok_span"][0] += tok_level_offset
+                    arg["tok_span"][1] += tok_level_offset
+                    arg["char_span"][0] += char_level_offset
+                    arg["char_span"][1] += char_level_offset
 
     @staticmethod
     def check_splits(data):
