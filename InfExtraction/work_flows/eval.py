@@ -25,16 +25,18 @@ if __name__ == "__main__":
     exp_name = settings.exp_name
 
     # data
-    data_in_dir = settings.data_in_dir
+    data_in_dir = os.path.join(settings.data_in_dir, exp_name)
     data_out_dir = settings.data_out_dir
-    if data_out_dir is not None and not os.path.exists(data_out_dir):
-        os.makedirs(data_out_dir)
+    if data_out_dir is not None:
+        data_out_dir = os.path.join(settings.data_out_dir, exp_name)
+        if not os.path.exists(data_out_dir):
+            os.makedirs(data_out_dir)
 
     test_data_dict = {}
     for filename in settings.test_data_list:
-        test_data_path = os.path.join(data_in_dir, exp_name, filename)
+        test_data_path = os.path.join(data_in_dir, filename)
         test_data_dict[filename] = json.load(open(test_data_path, "r", encoding="utf-8"))
-    dicts_path = os.path.join(data_in_dir, exp_name, settings.dicts)
+    dicts_path = os.path.join(data_in_dir, settings.dicts)
     dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
     statistics = settings.statistics
 
@@ -132,7 +134,7 @@ if __name__ == "__main__":
 
         # save
         if data_out_dir is not None:
-            res_data_save_path = os.path.join(data_out_dir, exp_name, filename)
+            res_data_save_path = os.path.join(data_out_dir, filename)
             json.dump(final_pred_samples, open(res_data_save_path, "w", encoding="utf-8"))
 
     pprint(filename2score_dict)
