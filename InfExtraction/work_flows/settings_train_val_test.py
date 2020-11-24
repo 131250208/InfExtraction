@@ -20,11 +20,13 @@ statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # train, valid, test settings
+run_name = "tp2+dep+pos+ner"
 device_num = 1
 use_bert = True
 token_level = "subword"
 seed = 2333
 epochs = 200
+lr = 5e-5
 batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
@@ -37,7 +39,6 @@ sliding_len_train = 20
 sliding_len_valid = 20
 sliding_len_test = 20
 
-lr = 5e-5
 
 scheduler = "CAWR"
 use_ghm = False
@@ -57,13 +58,12 @@ default_log_path = "./default_log_dir/default.log"
 default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 
 # for test
-model_dir_for_test = "./wandb"
+model_dir_for_test = "./wandb" # "./default_log_dir"
 target_run_ids = ["1zbzg5ml", "11p5ec06"]
 top_k_models = 3
-cal_scores = False # set False if the test sets are not annotated with golden results
+cal_scores = True # set False if the test sets are not annotated with golden results
 
 # model
-run_name = "tp2+dep+pos+ner"
 model_name = "tplinker_plus"
 
 pos_tag_emb_config = {
