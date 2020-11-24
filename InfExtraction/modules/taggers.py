@@ -276,7 +276,7 @@ class HandshakingTagger4EE(HandshakingTagger):
                 if trigger_offset_str not in trigger_offset2vote:
                     trigger_offset2vote[trigger_offset_str] = {}
                 trigger_offset2vote[trigger_offset_str][event_types] = trigger_offset2vote[trigger_offset_str].get(
-                    event_types, 0) + 1.1  # if even, entity type makes the call
+                    event_types, 0) + 1  # if even, entity type makes the call
 
         # choose the final trigger type by votes
         tirigger_offset2event_types = {}
