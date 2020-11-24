@@ -281,8 +281,9 @@ class HandshakingTagger4EE(HandshakingTagger):
         # choose the final trigger type by votes
         tirigger_offset2event_types = {}
         for trigger_offet_str, event_type2score in trigger_offset2vote.items():
-            top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
-            winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
+            # top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
+            # winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
+            winer_event_types = {sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0],}
             tirigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
 
         # generate event list
