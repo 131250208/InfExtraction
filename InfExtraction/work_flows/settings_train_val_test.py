@@ -15,7 +15,9 @@ test_data_list = ["test_data.json", ]
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)
+dicts_path = os.path.join(data_in_dir, exp_name, dicts)
 statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
+dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # train, valid, test settings
 device_num = 1
@@ -41,6 +43,11 @@ scheduler = "CAWR"
 use_ghm = False
 score_threshold = 0
 
+# pretrianed model state
+# dep b8: run-20201123_122929-1zbzg5ml/model_state_dict_11.pt
+# dep b32: run-20201123_123852-11p5ec06/model_state_dict_18.pt
+model_state_dict_path = "./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt"
+
 # logger
 use_wandb = True
 log_interval = 10
@@ -49,10 +56,10 @@ default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
 default_log_path = "./default_log_dir/default.log"
 default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 
-# pretrianed model state
-# dep b8: run-20201123_122929-1zbzg5ml/model_state_dict_11.pt 
-# dep b32: run-20201123_123852-11p5ec06/model_state_dict_18.pt
-model_state_dict_path = "./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt" 
+# for test
+model_dir_for_test = "./wandb"
+target_run_ids = ["", ]
+top_k_models = 3
 
 # model
 run_name = "tp2+dep+pos+ner"
@@ -81,6 +88,7 @@ char_encoder_config = {
 }
 
 word_encoder_config = {
+    "word2id": dicts["word2id"],
     "word_emb_file_path": "../../data/pretrained_emb/glove.6B.100d.txt", # '../../data/pretrained_emb/PubMed-shuffle-win-30.bin'
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
@@ -140,6 +148,7 @@ scheduler_dict = {
 
 # training config
 trainer_config = {
+    "task_type": task_type,
     "run_name": run_name,
     "exp_name": exp_name,
     "score_threshold": score_threshold,

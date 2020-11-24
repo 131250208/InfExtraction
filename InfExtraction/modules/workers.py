@@ -5,12 +5,14 @@ import torch
 import wandb
 from pprint import pprint
 from tqdm import tqdm
-import glob
+from glob import glob
 import time
+import re
 
 
 class Trainer:
     def __init__(self,
+                 task_type,
                  model,
                  tagger,
                  device,
@@ -23,12 +25,14 @@ class Trainer:
         self.device = device
         self.optimizer = optimizer
         self.logger = logger
-        self.max_score = 0.
+
         self.model_state_dict_save_dir = model_state_dict_save_dir
 
+        self.task_type = trainer_config["task_type"]
         self.run_name = trainer_config["run_name"]
         self.exp_name = trainer_config["exp_name"]
         self.score_threshold = trainer_config["score_threshold"]
+        self.model_bag_size = trainer_config["model_bag_size"] # how many models will be save, high score first
         self.use_ghm = trainer_config["use_ghm"]
         self.logger_interval = trainer_config["log_interval"]
 
@@ -165,7 +169,7 @@ class Trainer:
             avg_sample_acc = total_sample_acc / len(dataloader)
 
             log_dict, final_score = None, None
-            if "rel_cpg" in total_cpg_dict:
+            if self.task_type == "re":
                 rel_prf = self.model.metrics_cal.get_prf_scores(*total_cpg_dict["rel_cpg"])
                 ent_prf = self.model.metrics_cal.get_prf_scores(*total_cpg_dict["ent_cpg"])
                 final_score = rel_prf[2]
@@ -179,7 +183,7 @@ class Trainer:
                     "val_ent_f1": ent_prf[2],
                     "time": time.time() - t_ep,
                 }
-            elif "trigger_iden_cpg" in total_cpg_dict:
+            elif self.task_type == "ee":
                 trigger_iden_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["trigger_iden_cpg"][0],
                                                                          total_cpg_dict["trigger_iden_cpg"][1],
                                                                          total_cpg_dict["trigger_iden_cpg"][2])
@@ -192,7 +196,7 @@ class Trainer:
                 arg_class_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["arg_class_cpg"][0],
                                                                       total_cpg_dict["arg_class_cpg"][1],
                                                                       total_cpg_dict["arg_class_cpg"][2])
-                final_score = arg_class_prf[2]
+                final_score = trigger_class_prf[2]
                 log_dict = {
                     "val_shaking_tag_acc": avg_sample_acc,
                     "val_trigger_iden_prec": trigger_iden_prf[0],
@@ -215,15 +219,29 @@ class Trainer:
 
             return final_score
 
+        def get_score_fr_path(model_path):
+            return float(re.search("_([\d\.]+)\.pt", model_path.split("/")[-1]).group(1))
+
         for ep in range(num_epoch):
             train(train_dataloader, ep)
             fin_score = valid(valid_dataloader)
 
+            max_score = 0
             if fin_score > self.score_threshold:
                 torch.save(self.model.state_dict(),
                            os.path.join(self.model_state_dict_save_dir,
-                                        "model_state_dict_{:.2}.pt".format(fin_score)))
-            print("Current score: {}, Best score: {}".format(fin_score, self.max_score))
+                                        "model_state_dict_{}_{:.5}.pt".format(ep, fin_score)))
+
+                model_state_path_list = glob("{}/model_state_*".format(self.model_state_dict_save_dir))
+                sorted_model_state_path_list = sorted(model_state_path_list,
+                                                      key=get_score_fr_path)
+
+                model_path_max_score = sorted_model_state_path_list[-1]
+                max_score = get_score_fr_path(model_path_max_score)
+
+                if len(sorted_model_state_path_list) > self.model_bag_size:
+                    os.remove(sorted_model_state_path_list[0])
+            print("Current score: {:.5}, Best score: {:.5}".format(fin_score, max_score))
 
 
 class Evaluator:

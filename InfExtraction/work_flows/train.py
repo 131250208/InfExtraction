@@ -33,7 +33,7 @@ if __name__ == "__main__":
     # data
     train_data_path = os.path.join(data_in_dir, exp_name, settings.train_data)
     valid_data_path = os.path.join(data_in_dir, exp_name, settings.valid_data)
-    dicts_path = os.path.join(data_in_dir, exp_name, settings.dicts)
+    dicts = settings.dicts
     statistics = settings.statistics
 
     use_wandb = settings.use_wandb
@@ -77,7 +77,6 @@ if __name__ == "__main__":
     # load data
     train_data = json.load(open(train_data_path, "r", encoding="utf-8"))
     valid_data = json.load(open(valid_data_path, "r", encoding="utf-8"))
-    dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
     # logger
     if use_wandb:
@@ -142,15 +141,10 @@ if __name__ == "__main__":
                                                      pretrained_model_padding)
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    # tagging
+    # tagging and init model
     tagger = HandshakingTagger4EE(dicts["rel_type2id"], dicts["ent_type2id"])
     indexed_train_data = tagger.get_tag_points_batch(indexed_train_data)
     indexed_valid_data = tagger.get_tag_points_batch(indexed_valid_data)
-    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
-    # model
-    # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    model_settings["word_encoder_config"]["word2id"] = dicts["word2id"] # set word2id dict
     tag_size = tagger.get_tag_size()
     model = TPLinkerPlus(tag_size, **model_settings)
     model = model.to(device)
