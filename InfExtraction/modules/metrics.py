@@ -72,8 +72,8 @@ class MetricsCalculator():
 
     def get_tag_seq_accuracy(self, pred, truth):
         '''
-        the get_tag_points_batch accuracy in a batch
-        a predicted get_tag_points_batch sequence (matrix) is correct if and only if the whole sequence is congruent to the golden sequence
+        the tag accuracy in a batch
+        a predicted tag sequence (matrix) is correct if and only if the whole sequence is congruent to the golden sequence
         '''
         #         # (batch_size_train, ..., seq_len, tag_size) -> (batch_size_train, ..., seq_len)
         #         pred = torch.argmax(pred, dim = -1)
