@@ -83,7 +83,7 @@ trainer_config = {
 # pretrianed model state
 # dep b8: run-20201123_122929-1zbzg5ml/model_state_dict_11.pt
 # dep b32: run-20201123_123852-11p5ec06/model_state_dict_18.pt
-model_state_dict_path = "./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt"
+model_state_dict_path = None #"./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt"
 
 # for test
 model_dir_for_test = "./wandb" # "./default_log_dir"
@@ -152,7 +152,7 @@ model_settings = {
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "fin_hidden_size": 768,
+    "fin_hidden_size": 1024,
 }
 
 if use_bert:
