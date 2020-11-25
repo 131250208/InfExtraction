@@ -47,9 +47,9 @@ if __name__ == "__main__":
 
     # training settings
     device_num = settings.device_num
-    use_bert = settings.use_bert
+    # use_bert = settings.use_bert
+    token_level = settings.token_level
     seed = settings.seed
-
     epochs = settings.epochs
     batch_size_train = settings.batch_size_train
     batch_size_valid = settings.batch_size_valid
@@ -94,23 +94,27 @@ if __name__ == "__main__":
         if not os.path.exists(dir_to_save_model):
             os.makedirs(dir_to_save_model)
 
-    # splitting
-    if use_bert:
-        max_seq_len_statistics = statistics["max_subword_seq_length"]
-        feature_list_key = "subword_level_features"
-    else:
-        max_seq_len_statistics = statistics["max_word_seq_length"]
-        feature_list_key = "word_level_features"
+    # choose features and spans by token level
+    train_data = Preprocessor.choose_features_by_token_level(train_data, token_level)
+    valid_data = Preprocessor.choose_features_by_token_level(valid_data, token_level)
+    train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
+    valid_data = Preprocessor.choose_spans_by_token_level(valid_data, token_level)
+
+    max_seq_len_statistics = statistics["max_subword_seq_length"] if token_level == "subword" else statistics["max_word_seq_length"]
     if max_seq_len_train > max_seq_len_statistics:
         logging.warning("since max_seq_len_train is larger than the longest sample in the data, " +
                         "reset it to {}".format(max_seq_len_statistics))
         max_seq_len_train = max_seq_len_statistics
+
+    # split
     split_train_data = Preprocessor.split_into_short_samples(train_data, max_seq_len_train, sliding_len_train, "train",
-                                                             wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"],
-                                                             feature_list_key=feature_list_key)
+                                                             token_level=token_level,
+                                                             wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"])
     split_valid_data = Preprocessor.split_into_short_samples(valid_data, max_seq_len_valid, sliding_len_valid, "valid",
-                                                             wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"],
-                                                             feature_list_key=feature_list_key)
+                                                             token_level=token_level,
+                                                             wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"])
+
+    # check spans in split data
     sample_id2mismatched = Preprocessor.check_splits(split_train_data)
     if len(sample_id2mismatched) > 0:
         logging.warning("mismatch errors:")
@@ -124,6 +128,7 @@ if __name__ == "__main__":
     key2dict = {
         "char_list": dicts["char2id"],
         "word_list": dicts["word2id"],
+        "subword_list": dicts["bert_dict"],
         "pos_tag_list": dicts["pos_tag2id"],
         "ner_tag_list": dicts["ner_tag2id"],
         "dependency_list": dicts["deprel_type2id"],
@@ -141,13 +146,15 @@ if __name__ == "__main__":
                                                      pretrained_model_padding)
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    # tagging and init model
-    tagger = HandshakingTagger4EE(dicts["rel_type2id"], dicts["ent_type2id"])
-    indexed_train_data = tagger.get_tag_points_batch(indexed_train_data)
-    indexed_valid_data = tagger.get_tag_points_batch(indexed_valid_data)
+    # tagging
+    tagger = HandshakingTagger4EE(indexed_train_data + indexed_valid_data)
+    indexed_train_data = tagger.tag(indexed_train_data)
+    indexed_valid_data = tagger.tag(indexed_valid_data)
     tag_size = tagger.get_tag_size()
+    # model
     model = TPLinkerPlus(tag_size, **model_settings)
     model = model.to(device)
+    # function for generating data batch
     collate_fn = model.generate_batch
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 

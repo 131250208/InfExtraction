@@ -3,13 +3,14 @@ import copy
 import re
 from abc import ABCMeta, abstractmethod
 from tqdm import tqdm
-from InfExtraction.modules.preprocess import Indexer
+from InfExtraction.modules.preprocess import Indexer, Preprocessor
+
 
 class Tagger(metaclass=ABCMeta):
     @abstractmethod
     def get_tag_points(self, sample):
         '''
-        This function is for generating get_tag_points_batch points
+        This function is for generating tag points
 
         sample: an example
         return points for tagging
@@ -18,23 +19,22 @@ class Tagger(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def get_tag_points_batch(self, data):
+    def tag(self, data):
         '''
-        This function is for generating get_tag_points_batch points in batch
+        This function is for generating tag points in batch
 
         data: examples
-        return points for tagging
-        point: (start_pos, end_pos, tag_id)
+        return: data with points
         '''
         pass
 
     @abstractmethod
     def decode(self, sample, pred_tag):
         '''
-        decoding function: to extract results by the predicted get_tag_points_batch
+        decoding function: to extract results by the predicted tag
 
         :param sample: an example (to offer text, tok2char_span for decoding)
-        :param pred_tag: predicted get_tag_points_batch
+        :param pred_tag: predicted tag
         :return: predicted example
         '''
         pass
@@ -51,34 +51,70 @@ class Tagger(metaclass=ABCMeta):
     
 
 class HandshakingTagger(Tagger):
+    def additional_preprocess(self, data):
+        for sample in data:
+            fin_ent_list = []
+            # add default tag to entities
+            for rel in sample["relation_list"]:
+                fin_ent_list.append({
+                    "text": rel["subject"],
+                    "type": "EXT:DEFAULT",
+                    "char_span": rel["subj_char_span"],
+                    "tok_span": rel["subj_tok_span"],
+                })
+                fin_ent_list.append({
+                    "text": rel["object"],
+                    "type": "EXT:DEFAULT",
+                    "char_span": rel["obj_char_span"],
+                    "tok_span": rel["obj_tok_span"],
+                })
+            fin_ent_list.extend(sample["entity_list"])
+            sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
+        return data
 
-    def __init__(self, rel2id, entity_type2id):
+    def __init__(self, data):
+        '''
+        :param data: all data, used to generate entity type and relation type dicts
+        '''
         super().__init__()
-        self.rel2id = rel2id
-        self.id2rel = {ind: rel for rel, ind in rel2id.items()}
+        # additional preprocessing
+        data = self.additional_preprocess(data)
+
+        # generate entity type and relation type dicts
+        rel_type_set = set()
+        ent_type_set = set()
+        for sample in data:
+            # entity type
+            ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
+            # relation type
+            rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
+        rel_type_set = sorted(rel_type_set)
+        ent_type_set = sorted(ent_type_set)
+        self.rel2id = {rel: ind for ind, rel in enumerate(rel_type_set)}
+        self.ent2id = {ent: ind for ind, ent in enumerate(ent_type_set)}
+
+        self.id2rel = {ind: rel for rel, ind in self.rel2id.items()}
 
         self.separator = "\u2E80"
-        self.link_types = {"SH2OH",  # subject head to object head
-                           "OH2SH",  # object head to subject head
-                           "ST2OT",  # subject tail to object tail
-                           "OT2ST",  # object tail to subject tail
-                           }
-        self.tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.link_types}
+        self.rel_link_types = {"SH2OH",  # subject head to object head
+                               "OH2SH",  # object head to subject head
+                               "ST2OT",  # subject tail to object tail
+                               "OT2ST",  # object tail to subject tail
+                              }
+        self.tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
 
-        self.ent2id = entity_type2id
         self.id2ent = {ind: ent for ent, ind in self.ent2id.items()}
         self.tags |= {self.separator.join([ent, "EH2ET"]) for ent in
                       self.ent2id.keys()}  # EH2ET: entity head to entity tail
 
         self.tags = sorted(self.tags)
-
         self.tag2id = {t: idx for idx, t in enumerate(self.tags)}
         self.id2tag = {idx: t for t, idx in self.tag2id.items()}
 
     def get_tag_size(self):
         return len(self.tag2id)
 
-    def get_tag_points_batch(self, data):
+    def tag(self, data):
         for sample in tqdm(data, desc="tagging"):
             sample["tag_points"] = self.get_tag_points(sample)
         return data
@@ -224,6 +260,43 @@ class HandshakingTagger(Tagger):
 
 
 class HandshakingTagger4EE(HandshakingTagger):
+    def additional_preprocess(self, data):
+        separator = "_"
+        for sample in data:
+            # transform event list to relation list and entity list
+            fin_ent_list = []
+            fin_rel_list = []
+            for event in sample["event_list"]:
+                fin_ent_list.append({
+                    "text": event["trigger"],
+                    "type": "{}{}{}".format("Trigger", separator, event["trigger_type"]),
+                    "char_span": event["trigger_char_span"],
+                    "tok_span": event["trigger_tok_span"],
+                })
+                for arg in event["argument_list"]:
+                    fin_ent_list.append({
+                        "text": arg["text"],
+                        "type": "{}{}{}".format("Argument", separator, arg["type"]),
+                        "char_span": arg["char_span"],
+                        "tok_span": arg["tok_span"],
+                    })
+                    fin_rel_list.append({
+                        "subject": arg["text"],
+                        "subj_char_span": arg["char_span"],
+                        "subj_tok_span": arg["tok_span"],
+                        "object": event["trigger"],
+                        "obj_char_span": event["trigger_char_span"],
+                        "obj_tok_span": event["trigger_tok_span"],
+                        "predicate": "{}{}{}".format(arg["type"], separator, event["trigger_type"]),
+                    })
+            sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
+            # add original entity list
+            if "entity_list" in sample:
+                fin_ent_list.extend(sample["entity_list"])
+            sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
+        data = super(HandshakingTagger4EE, self).additional_preprocess(data)
+        return data
+
     def decode(self, sample, shaking_tag):
         pred_sample = super(HandshakingTagger4EE, self).decode(sample, shaking_tag)
         return {
@@ -232,18 +305,18 @@ class HandshakingTagger4EE(HandshakingTagger):
         }
 
     def _trans2ee(self, rel_list, ent_list):
-        new_rel_list, new_ent_list = [], []
-        for rel in rel_list:
-            if rel["predicate"].split(":")[0] == "EE":
-                new_rel = copy.deepcopy(rel)
-                new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
-                new_rel_list.append(new_rel)
-        for ent in ent_list:
-            if ent["type"].split(":")[0] == "EE":
-                new_ent = copy.deepcopy(ent)
-                new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
-                new_ent_list.append(new_ent)
-        rel_list, ent_list = new_rel_list, new_ent_list
+        # new_rel_list, new_ent_list = [], []
+        # for rel in rel_list:
+        #     if rel["predicate"].split(":")[0] == "EE":
+        #         new_rel = copy.deepcopy(rel)
+        #         new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
+        #         new_rel_list.append(new_rel)
+        # for ent in ent_list:
+        #     if ent["type"].split(":")[0] == "EE":
+        #         new_ent = copy.deepcopy(ent)
+        #         new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
+        #         new_ent_list.append(new_ent)
+        # rel_list, ent_list = new_rel_list, new_ent_list
 
         sepatator = "_"
         trigger_set, arg_iden_set, arg_class_set = set(), set(), set()

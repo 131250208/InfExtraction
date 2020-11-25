@@ -36,7 +36,7 @@ for path, folds, files in os.walk(data_in_dir):
 # preprocessor
 preprocessor = Preprocessor(language, pretrained_model_tokenizer_path)
 
-# transform data
+# transform data: only for relation extraction
 if ori_data_format != "tplinker": # if tplinker, skip transforming
     for file_name, data in file_name2data.items():
         data_type = None
@@ -49,13 +49,18 @@ if ori_data_format != "tplinker": # if tplinker, skip transforming
         data = preprocessor.transform_data(data, ori_format=ori_data_format, dataset_type=data_type, add_id=True)
         file_name2data[file_name] = data
 
-# process and save main data
+# process
 for filename, data in file_name2data.items():
-    # process data
-    data = preprocessor.process_main_data(data, task_type, add_char_span, ignore_subword_match)
+    # add char spans
+    if add_char_span:
+        data = preprocessor.add_char_span(data, ignore_subword_match=ignore_subword_match)
+    # create features
+    data = preprocessor.create_features(data)
+    # add token level spans
+    data = preprocessor.add_tok_span(data)
     file_name2data[filename] = data
 
-# generate supporting data: word and character dict, relation type dict, entity type dict, ...
+
 all_data = []
 for data in file_name2data.values():
     all_data.extend(data)
@@ -69,7 +74,9 @@ if len(sample_id2mismatch) > 0:
     logging.warning(error_info)
     pprint(sample_id2mismatch)
 
+# generate supporting data: word and character dict, relation type dict, entity type dict, ...
 dicts, statistics = preprocessor.generate_supporting_data(all_data, max_word_dict_size, min_word_freq)
+dicts["bert_dict"] = preprocessor.get_subword_tokenizer().get_vocab()
 for filename, data in file_name2data.items():
     statistics[filename] = len(data)
 

@@ -236,8 +236,8 @@ class TPLinkerPlus(nn.Module, IEModel):
             dep_matrix_points_batch = [sample["features"]["dependency_points"] for sample in batch_data]
             batch_dict["dep_adj_matrix"] = Indexer.points2matrix_batch(dep_matrix_points_batch, seq_length)
 
-        # shaking get_tag_points_batch
-        if "tag_points" in batch_data[0]: # no tag_points in test data
+        # shaking tag
+        if "tag_points" in batch_data[0]: # only for train and valid data, no tag_points in test data
             tag_points_batch = [sample["tag_points"] for sample in batch_data]
             batch_dict["shaking_tag"] = Indexer.points2shaking_seq_batch(tag_points_batch, seq_length, self.tag_size)
         return batch_dict
@@ -255,13 +255,13 @@ class TPLinkerPlus(nn.Module, IEModel):
         # features
         features = []
 
-        # ner get_tag_points_batch
+        # ner tag
         if self.ner_tag_emb_config is not None:
             ner_tag_embeddings = self.ner_tag_emb(ner_tag_ids)
             ner_tag_embeddings = self.ner_tag_emb_dropout(ner_tag_embeddings)
             features.append(ner_tag_embeddings)
 
-        # pos get_tag_points_batch
+        # pos tag
         if self.pos_tag_emb_config is not None:
             pos_tag_embeddings = self.pos_tag_emb(pos_tag_ids)
             pos_tag_embeddings = self.pos_tag_emb_dropout(pos_tag_embeddings)
