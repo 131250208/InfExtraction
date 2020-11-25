@@ -12,7 +12,7 @@ Train the model
 
 from InfExtraction.modules.preprocess import Preprocessor, MyDataset
 from InfExtraction.modules.taggers import HandshakingTagger4EE
-from InfExtraction.modules.workers import Trainer
+from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.models import TPLinkerPlus
 from InfExtraction.work_flows import settings_train_val_test as settings
 from InfExtraction.work_flows.utils import DefaultLogger
@@ -24,22 +24,74 @@ import json
 from pprint import pprint
 from torch.utils.data import DataLoader
 import logging
+import re
+from glob import glob
+
+
+def get_dataloader(data,
+                   data_type,
+                   token_level,
+                   wdp_prefix,
+                   max_seq_len,
+                   sliding_len,
+                   batch_size,
+                   key2dict,
+                   max_char_num_in_tok,
+                   tagger,
+                   collate_fn,
+                   ):
+    # split test data
+    split_data = Preprocessor.split_into_short_samples(data,
+                                                       max_seq_len,
+                                                       sliding_len,
+                                                       data_type,
+                                                       token_level=token_level,
+                                                       wordpieces_prefix=wdp_prefix)
+    # check split
+    sample_id2mismatched = Preprocessor.check_splits(split_data)
+    if len(sample_id2mismatched) > 0:
+        logging.warning("mismatch errors in {}".format(data_type))
+        pprint(sample_id2mismatched)
+
+    # inexing
+    indexed_data = Preprocessor.index_features(split_data,
+                                               key2dict,
+                                               max_seq_len,
+                                               max_char_num_in_tok)
+    # tagging
+    indexed_data = tagger.tag(indexed_data)
+    # dataloader
+    dataloader = DataLoader(MyDataset(indexed_data),
+                            batch_size=batch_size,
+                            shuffle=True,
+                            num_workers=0,
+                            drop_last=False,
+                            collate_fn=collate_fn,
+                            )
+    return dataloader
+
+
+def get_score_fr_path(model_path):
+    return float(re.search("_([\d\.]+)\.pt", model_path.split("/")[-1]).group(1))
+
 
 if __name__ == "__main__":
-    # settings
+    # task
     exp_name = settings.exp_name
-    data_in_dir = settings.data_in_dir
+    task_type = settings.task_type
+    run_name = settings.run_name
 
     # data
+    data_in_dir = settings.data_in_dir
     train_data_path = os.path.join(data_in_dir, exp_name, settings.train_data)
     valid_data_path = os.path.join(data_in_dir, exp_name, settings.valid_data)
     dicts = settings.dicts
     statistics = settings.statistics
+    key2dict = settings.key2dict # map from feature key to indexing dict
 
-    use_wandb = settings.use_wandb
-    run_name = settings.run_name
-    config2log = settings.config_to_log
     # logger settings
+    use_wandb = settings.use_wandb
+    config2log = settings.config_to_log
     default_log_path = settings.default_log_path
     default_run_id = settings.default_run_id
     default_dir_to_save_model = settings.default_dir_to_save_model
@@ -47,29 +99,40 @@ if __name__ == "__main__":
 
     # training settings
     device_num = settings.device_num
-    # use_bert = settings.use_bert
     token_level = settings.token_level
     seed = settings.seed
     epochs = settings.epochs
     batch_size_train = settings.batch_size_train
-    batch_size_valid = settings.batch_size_valid
     max_seq_len_train = settings.max_seq_len_train
     sliding_len_train = settings.sliding_len_train
+
+    batch_size_valid = settings.batch_size_valid
     max_seq_len_valid = settings.max_seq_len_valid
     sliding_len_valid = settings.sliding_len_valid
+
+    batch_size_test = settings.batch_size_test
+    max_seq_len_test = settings.max_seq_len_test
+    sliding_len_test = settings.sliding_len_test
+
     trainer_config = settings.trainer_config
     lr = settings.lr
-    model_state_dict_path = settings.model_state_dict_path
+    model_state_dict_path = settings.model_state_dict_path # pretrained model state
+
+    # save model
+    score_threshold = settings.score_threshold
+    model_bag_size = settings.model_bag_size
 
     # model settings
     model_settings = settings.model_settings
+    wdp_prefix = model_settings["subwd_encoder_config"]["wordpieces_prefix"]
+    max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
 
     # env
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    torch.manual_seed(seed) # pytorch random seed
-    torch.backends.cudnn.deterministic = True # for reproductivity
+    torch.manual_seed(seed)  # pytorch random seed
+    torch.backends.cudnn.deterministic = True  # for reproductivity
 
     # reset settings from args
     # ...
@@ -77,6 +140,41 @@ if __name__ == "__main__":
     # load data
     train_data = json.load(open(train_data_path, "r", encoding="utf-8"))
     valid_data = json.load(open(valid_data_path, "r", encoding="utf-8"))
+    filename2test_data = {}
+    for filename in settings.test_data_list:
+        test_data_path = os.path.join(data_in_dir, exp_name, filename)
+        test_data = json.load(open(test_data_path, "r", encoding="utf-8"))
+        filename2test_data[filename] = test_data
+
+    # choose features and spans by token level
+    train_data = Preprocessor.choose_features_by_token_level(train_data, token_level)
+    train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
+    valid_data = Preprocessor.choose_features_by_token_level(valid_data, token_level)
+    valid_data = Preprocessor.choose_spans_by_token_level(valid_data, token_level)
+    for filename, test_data in filename2test_data.items():
+        filename2test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level)
+        filename2test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
+
+    # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    all_data = train_data + valid_data
+    for filename, test_data in filename2test_data.items():
+        all_data.extend(test_data)
+    # tagger
+    tagger = HandshakingTagger4EE(all_data)
+    tag_size = tagger.get_tag_size()
+    # model
+    print("init model...")
+    model = TPLinkerPlus(tag_size, **model_settings)
+    model = model.to(device)
+    print("done!")
+    # function for generating data batch
+    collate_fn = model.generate_batch
+    # optional: additional preprocessing on relation/entity/events
+    train_data = tagger.additional_preprocess(train_data)
+    valid_data = tagger.additional_preprocess(valid_data)
+    for filename, test_data in filename2test_data.items():
+        filename2test_data[filename] = tagger.additional_preprocess(test_data)
+    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     # logger
     if use_wandb:
@@ -94,100 +192,99 @@ if __name__ == "__main__":
         if not os.path.exists(dir_to_save_model):
             os.makedirs(dir_to_save_model)
 
-    # choose features and spans by token level
-    train_data = Preprocessor.choose_features_by_token_level(train_data, token_level)
-    valid_data = Preprocessor.choose_features_by_token_level(valid_data, token_level)
-    train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
-    valid_data = Preprocessor.choose_spans_by_token_level(valid_data, token_level)
-
-    max_seq_len_statistics = statistics["max_subword_seq_length"] if token_level == "subword" else statistics["max_word_seq_length"]
-    if max_seq_len_train > max_seq_len_statistics:
-        logging.warning("since max_seq_len_train is larger than the longest sample in the data, " +
-                        "reset it to {}".format(max_seq_len_statistics))
-        max_seq_len_train = max_seq_len_statistics
-
-    # split
-    split_train_data = Preprocessor.split_into_short_samples(train_data, max_seq_len_train, sliding_len_train, "train",
-                                                             token_level=token_level,
-                                                             wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"])
-    split_valid_data = Preprocessor.split_into_short_samples(valid_data, max_seq_len_valid, sliding_len_valid, "valid",
-                                                             token_level=token_level,
-                                                             wordpieces_prefix=model_settings["subwd_encoder_config"]["wordpieces_prefix"])
-
-    # check spans in split data
-    sample_id2mismatched = Preprocessor.check_splits(split_train_data)
-    if len(sample_id2mismatched) > 0:
-        logging.warning("mismatch errors:")
-        pprint(sample_id2mismatched)
-    sample_id2mismatched = Preprocessor.check_splits(split_valid_data)
-    if len(sample_id2mismatched) > 0:
-        logging.warning("mismatch errors:")
-        pprint(sample_id2mismatched)
-
-    # indexing
-    key2dict = {
-        "char_list": dicts["char2id"],
-        "word_list": dicts["word2id"],
-        "subword_list": dicts["bert_dict"],
-        "pos_tag_list": dicts["pos_tag2id"],
-        "ner_tag_list": dicts["ner_tag2id"],
-        "dependency_list": dicts["deprel_type2id"],
-    }
-    pretrained_model_padding = model_settings["pretrained_model_padding"] if "pretrained_model_padding" in model_settings else 0
-    indexed_train_data = Preprocessor.index_features(split_train_data,
-                                                     key2dict,
-                                                     max_seq_len_train,
-                                                     model_settings["char_encoder_config"]["max_char_num_in_tok"],
-                                                     pretrained_model_padding)
-    indexed_valid_data = Preprocessor.index_features(split_valid_data,
-                                                     key2dict,
-                                                     max_seq_len_valid,
-                                                     model_settings["char_encoder_config"]["max_char_num_in_tok"],
-                                                     pretrained_model_padding)
-
-    # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    # tagging
-    tagger = HandshakingTagger4EE(indexed_train_data + indexed_valid_data)
-    indexed_train_data = tagger.tag(indexed_train_data)
-    indexed_valid_data = tagger.tag(indexed_valid_data)
-    tag_size = tagger.get_tag_size()
-    # model
-    model = TPLinkerPlus(tag_size, **model_settings)
-    model = model.to(device)
-    # function for generating data batch
-    collate_fn = model.generate_batch
-    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
-    # dataset
-    train_dataset = MyDataset(indexed_train_data)
-    train_dataloader = DataLoader(train_dataset,
-                                  batch_size=batch_size_train,
-                                  shuffle=True,
-                                  num_workers=0,
-                                  drop_last=False,
-                                  collate_fn=collate_fn,
-                                 )
-    valid_dataset = MyDataset(indexed_valid_data)
-    valid_dataloader = DataLoader(valid_dataset,
-                                  batch_size=batch_size_valid,
-                                  shuffle=True,
-                                  num_workers=0,
-                                  drop_last=False,
-                                  collate_fn=collate_fn,
-                                 )
-
+    # dataloader
+    train_dataloader = get_dataloader(train_data,
+                                      "train",
+                                      token_level,
+                                      wdp_prefix,
+                                      max_seq_len_train,
+                                      sliding_len_train,
+                                      batch_size_train,
+                                      key2dict,
+                                      max_char_num_in_tok,
+                                      tagger,
+                                      collate_fn,
+                                      )
+    valid_dataloader = get_dataloader(valid_data,
+                                      "valid",
+                                      token_level,
+                                      wdp_prefix,
+                                      max_seq_len_valid,
+                                      sliding_len_valid,
+                                      batch_size_valid,
+                                      key2dict,
+                                      max_char_num_in_tok,
+                                      tagger,
+                                      collate_fn,
+                                      )
     # # # have a look at dataloader
     # train_data_iter = iter(train_dataloader)
     # batch_data = next(train_data_iter)
     # print(batch_data)
 
+    filename2test_data_loader = {}
+    for filename, test_data in filename2test_data.items():
+        filename2test_data_loader[filename] = get_dataloader(test_data,
+                                                             "test",
+                                                             token_level,
+                                                             wdp_prefix,
+                                                             max_seq_len_test,
+                                                             sliding_len_test,
+                                                             batch_size_test,
+                                                             key2dict,
+                                                             max_char_num_in_tok,
+                                                             tagger,
+                                                             collate_fn,
+                                                             )
+
     # optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=float(lr))
 
+    # load pretrained model
     if model_state_dict_path is not None:
         model.load_state_dict(torch.load(model_state_dict_path))
         print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
 
     # trainer
-    trainer = Trainer(model, tagger, device, optimizer, trainer_config, logger, dir_to_save_model)
-    trainer.train_n_valid(train_dataloader, valid_dataloader, epochs)
+    trainer = Trainer(model, tagger, device, optimizer, trainer_config, logger)
+    evaluator = Evaluator(task_type, model, tagger, device, match_pattern=None)
+
+    # train and eval
+    best_val_score = 0.
+    for ep in range(epochs):
+        trainer.train(train_dataloader, ep, epochs)
+        pred_samples = evaluator.predict(valid_dataloader, valid_data)
+        score_dict = evaluator.score(pred_samples, valid_data, "valid", "trigger_class_f1")
+        logger.log(score_dict)
+        dataset2score_dict = {
+            "valid_data.json": score_dict,
+        }
+        current_val_score = score_dict["final_score"]
+
+        for filename, test_data_loader in filename2test_data_loader:
+            gold_test_data = filename2test_data[filename]
+            pred_samples = evaluator.predict(test_data_loader, gold_test_data)
+            score_dict = evaluator.score(pred_samples, gold_test_data, filename, "trigger_class_f1")
+            logger.log(score_dict)
+            dataset2score_dict[filename] = score_dict
+
+        pprint(dataset2score_dict)
+
+        if current_val_score > score_threshold:
+            # save model state
+            torch.save(model.state_dict(),
+                       os.path.join(dir_to_save_model,
+                                    "model_state_dict_{}_{:.5}.pt".format(ep, current_val_score * 100)))
+
+            # all state paths
+            model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model))
+            # sorted by scores
+            sorted_model_state_path_list = sorted(model_state_path_list,
+                                                  key=get_score_fr_path)
+            # best score in the bag
+            model_path_max_score = sorted_model_state_path_list[-1]
+            best_val_score = get_score_fr_path(model_path_max_score)
+            # only save <model_bag_size> model states
+            if len(sorted_model_state_path_list) > model_bag_size:
+                os.remove(sorted_model_state_path_list[0])  # drop the state with minimum score
+        print("Current val score: {:.5}, Best val score: {:.5}".format(current_val_score * 100, best_val_score * 100))

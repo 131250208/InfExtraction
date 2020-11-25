@@ -34,6 +34,7 @@ def get_data_loaders(test_data_dict, collate_fn):
         key2dict = {
             "char_list": dicts["char2id"],
             "word_list": dicts["word2id"],
+            "subword_list": dicts["bert_dict"],
             "pos_tag_list": dicts["pos_tag2id"],
             "ner_tag_list": dicts["ner_tag2id"],
             "dependency_list": dicts["deprel_type2id"],

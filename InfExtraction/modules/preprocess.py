@@ -632,7 +632,7 @@ class Preprocessor:
 
     def create_features(self, data):
         # create features
-        for sample in tqdm(data, desc="processing main data"):
+        for sample in tqdm(data, desc="create features"):
             text = sample["text"]
             # word level
             word_level_feature_keys = {"ner_tag_list", "word_list", "pos_tag_list", "dependency_list", "word2char_span"}
@@ -1405,7 +1405,7 @@ class Preprocessor:
         return sample_id2mismatched_ents
 
     @staticmethod
-    def index_features(data, key2dict, max_seq_len, max_char_num_in_tok, pretrained_model_padding=0):
+    def index_features(data, key2dict, max_seq_len, max_char_num_in_tok):
         '''
         :param data:
         :param key2dict: feature key to dict for indexing

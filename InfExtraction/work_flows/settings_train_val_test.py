@@ -19,12 +19,22 @@ dicts_path = os.path.join(data_in_dir, exp_name, dicts)
 statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
+# for preprocessing
+token_level = "subword"
+key2dict = {
+    "char_list": dicts["char2id"],
+    "word_list": dicts["word2id"],
+    "subword_list": dicts["bert_dict"],
+    "pos_tag_list": dicts["pos_tag2id"],
+    "ner_tag_list": dicts["ner_tag2id"],
+    "dependency_list": dicts["deprel_type2id"],
+}
+
 # train, valid, test settings
 run_name = "tp2+dep+pos+ner"
 model_name = "tplinker_plus"
 device_num = 1
-use_bert = True
-token_level = "subword"
+# use_bert = True
 seed = 2333
 epochs = 200
 lr = 5e-5
@@ -39,7 +49,6 @@ max_seq_len_test = 512
 sliding_len_train = 20
 sliding_len_valid = 20
 sliding_len_test = 20
-
 
 scheduler = "CAWR"
 use_ghm = False
@@ -73,12 +82,14 @@ trainer_config = {
     "task_type": task_type,
     "run_name": run_name,
     "exp_name": exp_name,
-    "score_threshold": score_threshold,
     "scheduler_config": scheduler_dict[scheduler],
     "use_ghm": use_ghm,
-    "model_bag_size": 15,
     "log_interval": log_interval,
 }
+
+# for eval
+score_threshold = score_threshold
+model_bag_size = 15
 
 # pretrianed model state
 # dep b8: run-20201123_122929-1zbzg5ml/model_state_dict_11.pt
@@ -128,7 +139,6 @@ subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",
     "finetune": True,
     "use_last_k_layers": 1,
-    "pretrained_model_padding": 0,
     "wordpieces_prefix": "##",
 }
 
@@ -145,18 +155,17 @@ handshaking_kernel_config = {
     "shaking_type": "cln",
 }
 
+# set None to rm a component
 model_settings = {
     "pos_tag_emb_config": pos_tag_emb_config,
     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
+    "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "fin_hidden_size": 768,
 }
-
-if use_bert:
-    model_settings["subwd_encoder_config"] = subwd_encoder_config
 
 # this dict would be logged
 config_to_log = {
