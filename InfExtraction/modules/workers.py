@@ -230,6 +230,8 @@ class Evaluator:
     def _predict_step(self, batch_predict_data):
         sample_list = batch_predict_data["sample_list"]
         del batch_predict_data["sample_list"]
+        if "shaking_tag" in batch_predict_data:
+            del batch_predict_data["shaking_tag"]
         for k, v in batch_predict_data.items():
             batch_predict_data[k] = v.to(self.device)
 
@@ -238,7 +240,6 @@ class Evaluator:
         pred_tag = (pred_outputs > 0.).long()
 
         pred_sample_list = self.decoder.decode_batch(sample_list, pred_tag)
-        # cpg_dict = self.model.metrics_cal.get_event_cpg_dict(pred_sample_list, sample_list)
         return pred_sample_list
         
     def predict(self, dataloader, golden_data):
