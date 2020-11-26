@@ -20,7 +20,7 @@ statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # for preprocessing
-token_level = "subword"
+token_level = "word"
 key2dict = {
     "char_list": dicts["char2id"],
     "word_list": dicts["word2id"],
@@ -70,7 +70,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -162,11 +162,11 @@ model_settings = {
     "pos_tag_emb_config": pos_tag_emb_config,
     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
-    "subwd_encoder_config": subwd_encoder_config,
+    "subwd_encoder_config": None, # subwd_encoder_config
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "fin_hidden_size": 1024,
+    "fin_hidden_size": 768,
 }
 
 # this dict would be logged

@@ -124,7 +124,10 @@ if __name__ == "__main__":
 
     # model settings
     model_settings = settings.model_settings
-    wdp_prefix = model_settings["subwd_encoder_config"]["wordpieces_prefix"]
+
+    wdp_prefix = None
+    if token_level == "subword":
+        wdp_prefix = model_settings["subwd_encoder_config"]["wordpieces_prefix"]
     max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
 
     # env
@@ -261,7 +264,7 @@ if __name__ == "__main__":
         }
         current_val_score = score_dict["final_score"]
 
-        for filename, test_data_loader in filename2test_data_loader:
+        for filename, test_data_loader in filename2test_data_loader.items():
             gold_test_data = filename2test_data[filename]
             pred_samples = evaluator.predict(test_data_loader, gold_test_data)
             score_dict = evaluator.score(pred_samples, gold_test_data, filename, "trigger_class_f1")
