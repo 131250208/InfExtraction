@@ -21,7 +21,7 @@ statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # for preprocessing
-token_level = "subword"
+token_level = "word"
 key2dict = {
     "char_list": dicts["char2id"],
     "word_list": dicts["word2id"],
@@ -138,6 +138,11 @@ word_encoder_config = {
     "bilstm_hidden_size": [300, 600],
     "bilstm_dropout": [0., 0.1, 0.],
     "freeze_word_emb": False,
+    # "bert": {
+    #     "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",
+    #     "finetune": True,
+    #     "use_last_k_layers": 1,
+    # }
 }
 
 subwd_encoder_config = {
@@ -162,19 +167,19 @@ handshaking_kernel_config = {
 
 # set None to rm a component
 model_settings = {
-    "pos_tag_emb_config": None, # pos_tag_emb_config
-    "ner_tag_emb_config": None, # ner_tag_emb_config
-    "char_encoder_config": None, # char_encoder_config
-    "subwd_encoder_config": subwd_encoder_config, # subwd_encoder_config
+    "pos_tag_emb_config": pos_tag_emb_config,
+    "ner_tag_emb_config": ner_tag_emb_config,
+    "char_encoder_config": char_encoder_config,
+    "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
-    "dep_config": None,
+    "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "fin_hidden_size": 768,
 }
 
 # this dict would be logged
 model_settings_log = copy.deepcopy(model_settings)
-if model_settings_log["word_encoder_config"] is not None:
+if "word_encoder_config" in model_settings_log and model_settings_log["word_encoder_config"] is not None:
     del model_settings_log["word_encoder_config"]["word2id"]
 config_to_log = {
     "model_name": model_name,
