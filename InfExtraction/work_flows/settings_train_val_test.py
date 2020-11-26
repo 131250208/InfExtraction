@@ -137,11 +137,6 @@ word_encoder_config = {
     "bilstm_hidden_size": [300, 600],
     "bilstm_dropout": [0., 0.1, 0.],
     "freeze_word_emb": False,
-    # "bert": {
-    #     "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",
-    #     "finetune": True,
-    #     "use_last_k_layers": 1,
-    # }
 }
 
 subwd_encoder_config = {
