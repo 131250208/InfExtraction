@@ -48,7 +48,7 @@ class Trainer:
             self.scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=decay_steps, gamma=decay_rate)
 
     # train step
-    def train_step(self, batch_train_data):
+    def train_step(self, batch_train_data, ep):
         batch_shaking_tag = batch_train_data["shaking_tag"]
         batch_shaking_tag = batch_shaking_tag.to(self.device)
 
@@ -60,7 +60,8 @@ class Trainer:
         self.optimizer.zero_grad()
 
         pred_outputs = self.model(**batch_train_data)
-        loss = self.model.get_loss(pred_outputs, batch_shaking_tag)
+        use_ghm = self.use_ghm if ep > 2 else False
+        loss = self.model.get_loss(pred_outputs, batch_shaking_tag, use_ghm)
 
         loss.backward()
         self.optimizer.step()
@@ -97,7 +98,7 @@ class Trainer:
         avg_loss, total_loss, avg_seq_acc, total_seq_acc = 0., 0., 0., 0.
         for batch_ind, batch_train_data in enumerate(dataloader):
             t_batch = time.time()
-            loss, seq_acc = self.train_step(batch_train_data)
+            loss, seq_acc = self.train_step(batch_train_data, ep)
 
             total_loss += loss
             total_seq_acc += seq_acc
