@@ -31,14 +31,14 @@ from glob import glob
 def get_dataloader(data,
                    data_type,
                    token_level,
-                   wdp_prefix,
                    max_seq_len,
                    sliding_len,
                    batch_size,
                    key2dict,
-                   max_char_num_in_tok,
                    tagger,
                    collate_fn,
+                   wdp_prefix=None,
+                   max_char_num_in_tok=None,
                    ):
     # split test data
     split_data = Preprocessor.split_into_short_samples(data,
@@ -128,7 +128,9 @@ if __name__ == "__main__":
     wdp_prefix = None
     if token_level == "subword":
         wdp_prefix = model_settings["subwd_encoder_config"]["wordpieces_prefix"]
-    max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
+    max_char_num_in_tok=None
+    if model_settings["char_encoder_config"]:
+        max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
 
     # env
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -199,26 +201,26 @@ if __name__ == "__main__":
     train_dataloader = get_dataloader(train_data,
                                       "train",
                                       token_level,
-                                      wdp_prefix,
                                       max_seq_len_train,
                                       sliding_len_train,
                                       batch_size_train,
                                       key2dict,
-                                      max_char_num_in_tok,
                                       tagger,
                                       collate_fn,
+                                      wdp_prefix,
+                                      max_char_num_in_tok,
                                       )
     valid_dataloader = get_dataloader(valid_data,
                                       "valid",
                                       token_level,
-                                      wdp_prefix,
                                       max_seq_len_valid,
                                       sliding_len_valid,
                                       batch_size_valid,
                                       key2dict,
-                                      max_char_num_in_tok,
                                       tagger,
                                       collate_fn,
+                                      wdp_prefix,
+                                      max_char_num_in_tok,
                                       )
     # # # have a look at dataloader
     # train_data_iter = iter(train_dataloader)
@@ -230,14 +232,14 @@ if __name__ == "__main__":
         filename2test_data_loader[filename] = get_dataloader(test_data,
                                                              "test",
                                                              token_level,
-                                                             wdp_prefix,
                                                              max_seq_len_test,
                                                              sliding_len_test,
                                                              batch_size_test,
                                                              key2dict,
-                                                             max_char_num_in_tok,
                                                              tagger,
                                                              collate_fn,
+                                                             wdp_prefix,
+                                                             max_char_num_in_tok,
                                                              )
 
     # optimizer

@@ -1405,7 +1405,7 @@ class Preprocessor:
         return sample_id2mismatched_ents
 
     @staticmethod
-    def index_features(data, key2dict, max_seq_len, max_char_num_in_tok):
+    def index_features(data, key2dict, max_seq_len, max_char_num_in_tok=None):
         '''
         :param data:
         :param key2dict: feature key to dict for indexing
@@ -1445,7 +1445,7 @@ class Preprocessor:
                     indexer = Indexer(tag2id, max_seq_len, spe_tag_dict)
                     if f_key == "dependency_list":
                         indexed_features[key_map[f_key]] = indexer.index_tag_list_w_matrix_pos(tags)
-                    elif f_key == "char_list":
+                    elif f_key == "char_list" and max_char_num_in_tok is not None:
                         char_input_ids = indexer.index_tag_list(tags)
                         # padding character ids
                         char_input_ids_padded = []
