@@ -279,23 +279,23 @@ class Evaluator:
             id_ = sample["id"]
             fin_pred_samples.append(merged_pred_samples[id_])
 
-        # filter duplicated results
-        def unique(res_list):
-            memory = set()
-            new_res_list = []
-            for res in res_list:
-                if str(res) not in memory:
-                    new_res_list.append(res)
-                    memory.add(str(res))
-            return new_res_list
+        # # filter duplicated results
+        # def unique(res_list):
+        #     memory = set()
+        #     new_res_list = []
+        #     for res in res_list:
+        #         if str(res) not in memory:
+        #             new_res_list.append(res)
+        #             memory.add(str(res))
+        #     return new_res_list
 
         for sample in fin_pred_samples:
             if "entity_list" in sample:
-                sample["entity_list"] = unique(sample["entity_list"])
+                sample["entity_list"] = Preprocessor.unique_list(sample["entity_list"])
             if "relation_list" in sample:
-                sample["relation_list"] = unique(sample["relation_list"])
+                sample["relation_list"] = Preprocessor.unique_list(sample["relation_list"])
             if "event_list" in sample:
-                sample["event_list"] = unique(sample["event_list"])
+                sample["event_list"] = Preprocessor.unique_list(sample["event_list"])
 
         return fin_pred_samples
 

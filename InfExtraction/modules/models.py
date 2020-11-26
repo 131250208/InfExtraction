@@ -135,11 +135,12 @@ class TPLinkerPlus(nn.Module, IEModel):
 
             init_word_embedding_matrix = torch.FloatTensor(init_word_embedding_matrix)
             word_emb_dim = init_word_embedding_matrix.size()[1]
+            combined_hidden_size_1 += word_emb_dim
 
             ## word encoder model
             self.word_emb = nn.Embedding.from_pretrained(init_word_embedding_matrix, freeze=freeze_word_emb)
             self.word_emb_dropout = nn.Dropout(p=word_emb_dropout)
-            self.word_lstm_l1 = nn.LSTM(word_emb_dim,
+            self.word_lstm_l1 = nn.LSTM(combined_hidden_size_1,
                                         word_bilstm_hidden_size[0] // 2,
                                         num_layers=word_bilstm_layers[0],
                                         dropout=word_bilstm_dropout[0],
@@ -285,7 +286,8 @@ class TPLinkerPlus(nn.Module, IEModel):
             # word_input_emb/word_hiddens: batch_size_train, seq_len, word_emb_dim)
             word_input_emb = self.word_emb(word_input_ids)
             word_input_emb = self.word_emb_dropout(word_input_emb)
-            word_hiddens, _ = self.word_lstm_l1(word_input_emb)
+            features.append(word_input_emb)
+            word_hiddens, _ = self.word_lstm_l1(torch.cat(features, dim=-1))
             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
             features.append(word_hiddens)
 

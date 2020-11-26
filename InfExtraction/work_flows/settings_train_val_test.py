@@ -2,6 +2,7 @@ import string
 import random
 import os
 import json
+import copy
 
 exp_name = "ace2005_lu"
 task_type = "ee"
@@ -20,7 +21,7 @@ statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # for preprocessing
-token_level = "word"
+token_level = "subword"
 key2dict = {
     "char_list": dicts["char2id"],
     "word_list": dicts["word2id"],
@@ -129,7 +130,9 @@ char_encoder_config = {
 
 word_encoder_config = {
     "word2id": dicts["word2id"],
-    "word_emb_file_path": "../../data/pretrained_emb/glove.6B.100d.txt", # '../../data/pretrained_emb/PubMed-shuffle-win-30.bin'
+    # eegcn_word_emb.txt
+    # PubMed-shuffle-win-30.bin
+    "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
@@ -159,17 +162,20 @@ handshaking_kernel_config = {
 
 # set None to rm a component
 model_settings = {
-    "pos_tag_emb_config": pos_tag_emb_config,
-    "ner_tag_emb_config": ner_tag_emb_config,
-    "char_encoder_config": char_encoder_config,
-    "subwd_encoder_config": None, # subwd_encoder_config
+    "pos_tag_emb_config": None, # pos_tag_emb_config
+    "ner_tag_emb_config": None, # ner_tag_emb_config
+    "char_encoder_config": None, # char_encoder_config
+    "subwd_encoder_config": subwd_encoder_config, # subwd_encoder_config
     "word_encoder_config": word_encoder_config,
-    "dep_config": dep_config,
+    "dep_config": None,
     "handshaking_kernel_config": handshaking_kernel_config,
     "fin_hidden_size": 768,
 }
 
 # this dict would be logged
+model_settings_log = copy.deepcopy(model_settings)
+if model_settings_log["word_encoder_config"] is not None:
+    del model_settings_log["word_encoder_config"]["word2id"]
 config_to_log = {
     "model_name": model_name,
     "seed": seed,
@@ -183,7 +189,7 @@ config_to_log = {
     "sliding_len_valid": sliding_len_valid,
     "note": "",
     "model_state_dict_path": model_state_dict_path,
-    **model_settings,
+    **model_settings_log,
 }
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
