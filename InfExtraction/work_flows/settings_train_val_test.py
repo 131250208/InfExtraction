@@ -21,7 +21,6 @@ statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # for preprocessing
-token_level = "word"
 key2dict = {
     "char_list": dicts["char2id"],
     "word_list": dicts["word2id"],
@@ -165,7 +164,12 @@ handshaking_kernel_config = {
     "shaking_type": "cln",
 }
 
-# set None to rm a component
+# model settings
+token_level = "word" # token is word or subword
+# subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
+# word: use stanza to get words, wich can be fed into both bilstm and bert
+# to do an ablation study, you can remove components by commenting the configurations below
+# except for handshaking_kernel_config, which is a must for the model
 model_settings = {
     "pos_tag_emb_config": pos_tag_emb_config,
     "ner_tag_emb_config": ner_tag_emb_config,
