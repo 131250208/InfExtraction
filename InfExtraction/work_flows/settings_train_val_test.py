@@ -34,7 +34,6 @@ key2dict = {
 run_name = "tp2+dep+pos+ner"
 model_name = "tplinker_plus"
 device_num = 1
-# use_bert = True
 seed = 2333
 epochs = 200
 lr = 5e-5
@@ -42,9 +41,9 @@ batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
 
-max_seq_len_train = 64
-max_seq_len_valid = 64
-max_seq_len_test = 64
+max_seq_len_train = 100
+max_seq_len_valid = 100
+max_seq_len_test = 100
 
 sliding_len_train = 20
 sliding_len_valid = 20
@@ -70,7 +69,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = False
+use_wandb = True
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -119,10 +118,10 @@ ner_tag_emb_config = {
 
 char_encoder_config = {
     "char_size": statistics["char_num"],
-    "emb_dim": 32,
+    "emb_dim": 16,
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1], # layer num in bilstm1 and bilstm2
-    "bilstm_hidden_size": [32, 64], # hidden sizes of bilstm1 and bilstm2
+    "bilstm_hidden_size": [16, 32], # hidden sizes of bilstm1 and bilstm2
     "bilstm_dropout": [0., 0.1, 0.], # dropout rates for bilstm1, middle dropout layer, bilstm2
     "max_char_num_in_tok": 16,
 }
@@ -137,11 +136,6 @@ word_encoder_config = {
     "bilstm_hidden_size": [300, 600],
     "bilstm_dropout": [0., 0.1, 0.],
     "freeze_word_emb": False,
-    # "bert": {
-    #     "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",
-    #     "finetune": True,
-    #     "use_last_k_layers": 1,
-    # }
 }
 
 subwd_encoder_config = {
@@ -155,17 +149,17 @@ dep_config = {
     "dep_type_num": statistics["deprel_type_num"],
     "dep_type_emb_dim": 64,
     "emb_dropout": 0.1,
-    "gcn_dim": 256,
+    "gcn_dim": 128,
     "gcn_dropout": 0.1,
-    "gcn_layer_num": 2,
+    "gcn_layer_num": 1,
 }
 
 handshaking_kernel_config = {
-    "shaking_type": "cln",
+    "shaking_type": "cln_lstm",
 }
 
 # model settings
-token_level = "word" # token is word or subword
+token_level = "subword" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 # to do an ablation study, you can remove components by commenting the configurations below
@@ -199,6 +193,7 @@ config_to_log = {
     "note": "",
     "model_state_dict_path": model_state_dict_path,
     **model_settings_log,
+    "token_level": token_level,
 }
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
