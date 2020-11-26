@@ -129,7 +129,7 @@ if __name__ == "__main__":
     if token_level == "subword":
         wdp_prefix = model_settings["subwd_encoder_config"]["wordpieces_prefix"]
     max_char_num_in_tok=None
-    if model_settings["char_encoder_config"]:
+    if "char_encoder_config" in model_settings and model_settings["char_encoder_config"] is not None:
         max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
 
     # env

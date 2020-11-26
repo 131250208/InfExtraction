@@ -992,6 +992,7 @@ class Preprocessor:
             else:
                 new_features = {
                     "word_list": features["word_list"],
+                    "subword_list": features["word_list"],
                     "tok2char_span": features["word2char_span"],
                     "ner_tag_list": features["ner_tag_list"],
                     "pos_tag_list": features["pos_tag_list"],
@@ -1068,17 +1069,14 @@ class Preprocessor:
                 tok_level_offset, char_level_offset = start_ind, char_span[0]
 
                 # split features
-                split_features = {
-                    "word_list": features["word_list"][start_ind:end_ind],
-                    "tok2char_span": [[char_sp[0] - char_level_offset, char_sp[1] - char_level_offset] for char_sp in
-                                      features["tok2char_span"][start_ind:end_ind]],
-                    "pos_tag_list": features["pos_tag_list"][start_ind:end_ind],
-                    "ner_tag_list": features["ner_tag_list"][start_ind:end_ind],
-                }
-                if token_level == "subword":
-                    split_features["subword_list"] = features["subword_list"][start_ind:end_ind]
+                split_features = {"word_list": features["word_list"][start_ind:end_ind],
+                                  "subword_list": features["subword_list"][start_ind:end_ind],
+                                  "tok2char_span": [[char_sp[0] - char_level_offset, char_sp[1] - char_level_offset]
+                                                    for char_sp in features["tok2char_span"][start_ind:end_ind]],
+                                  "pos_tag_list": features["pos_tag_list"][start_ind:end_ind],
+                                  "ner_tag_list": features["ner_tag_list"][start_ind:end_ind],
+                                  "dependency_list": []}
 
-                split_features["dependency_list"] = []
                 for dep in features["dependency_list"]:
                     if start_ind <= dep[0] < end_ind and start_ind <= dep[1] < end_ind:
                         new_dep = [dep[0] - tok_level_offset, dep[1] - tok_level_offset, dep[2]]
@@ -1466,8 +1464,6 @@ class Preprocessor:
                     indexed_features[f_key] = torch.LongTensor(Indexer.pad2length(tags, 0, max_seq_len))
                 elif f_key == "tok2char_span":
                     indexed_features[f_key] = Indexer.pad2length(tags, [0, 0], max_seq_len)
-                # elif f_key == "subword_input_ids":
-                #     indexed_features[f_key] = torch.LongTensor(Indexer.pad2length(tags, pretrained_model_padding, max_seq_len))
             sample["features"] = indexed_features
         return data
 
