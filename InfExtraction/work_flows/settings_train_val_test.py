@@ -20,7 +20,7 @@ statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # for preprocessing
-token_level = "word"
+token_level = "subword"
 key2dict = {
     "char_list": dicts["char2id"],
     "word_list": dicts["word2id"],
@@ -44,7 +44,7 @@ batch_size_test = 32
 
 max_seq_len_train = 64
 max_seq_len_valid = 64
-max_seq_len_test = 512
+max_seq_len_test = 64
 
 sliding_len_train = 20
 sliding_len_valid = 20
@@ -162,7 +162,7 @@ model_settings = {
     "pos_tag_emb_config": pos_tag_emb_config,
     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
-    "subwd_encoder_config": None, # subwd_encoder_config
+    "subwd_encoder_config": subwd_encoder_config, # subwd_encoder_config
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
