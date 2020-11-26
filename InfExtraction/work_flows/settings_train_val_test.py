@@ -44,14 +44,14 @@ batch_size_test = 32
 
 max_seq_len_train = 64
 max_seq_len_valid = 64
-max_seq_len_test = 512
+max_seq_len_test = 64
 
 sliding_len_train = 20
 sliding_len_valid = 20
 sliding_len_test = 20
 
 scheduler = "CAWR"
-use_ghm = False
+use_ghm = True
 score_threshold = 0
 
 # schedulers
@@ -155,7 +155,7 @@ dep_config = {
     "dep_type_num": statistics["deprel_type_num"],
     "dep_type_emb_dim": 64,
     "emb_dropout": 0.1,
-    "gcn_dim": 128,
+    "gcn_dim": 256,
     "gcn_dropout": 0.1,
     "gcn_layer_num": 2,
 }
@@ -178,7 +178,7 @@ model_settings = {
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "fin_hidden_size": 768,
+    "fin_hidden_size": 1024,
 }
 
 # this dict would be logged
