@@ -306,6 +306,7 @@ class HandshakingTagger4EE(HandshakingTagger):
         }
 
     def _trans2ee(self, rel_list, ent_list):
+        # choose tags with EE:
         new_rel_list, new_ent_list = [], []
         for rel in rel_list:
             if rel["predicate"].split(":")[0] == "EE":
