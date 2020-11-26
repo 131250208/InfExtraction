@@ -259,7 +259,7 @@ if __name__ == "__main__":
     for ep in range(epochs):
         trainer.train(train_dataloader, ep, epochs)
         pred_samples = evaluator.predict(valid_dataloader, valid_data)
-        score_dict = evaluator.score(pred_samples, valid_data, "valid", "trigger_class_f1")
+        score_dict = evaluator.score(pred_samples, valid_data, "val", "trigger_class_f1")
         logger.log(score_dict)
         dataset2score_dict = {
             "valid_data.json": score_dict,
@@ -269,7 +269,7 @@ if __name__ == "__main__":
         for filename, test_data_loader in filename2test_data_loader.items():
             gold_test_data = filename2test_data[filename]
             pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-            score_dict = evaluator.score(pred_samples, gold_test_data, filename, "trigger_class_f1")
+            score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0], "trigger_class_f1")
             logger.log(score_dict)
             dataset2score_dict[filename] = score_dict
 
