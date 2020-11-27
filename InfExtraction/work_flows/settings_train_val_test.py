@@ -34,16 +34,16 @@ key2dict = {
 run_name = "tp2+dep+pos+ner"
 model_name = "tplinker_plus"
 device_num = 1
-seed = 2333
+seed = 9494
 epochs = 200
-lr = 5e-5
+lr = 1e-5 # 5e-5
 batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
 
-max_seq_len_train = 100
-max_seq_len_valid = 100
-max_seq_len_test = 100
+max_seq_len_train = 128
+max_seq_len_valid = 128
+max_seq_len_test = 128
 
 sliding_len_train = 20
 sliding_len_valid = 20
@@ -59,7 +59,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_steps": 4000,
+        "rewarm_steps": 2000,
     },
     "StepLR": {
         "name": "StepLR",
@@ -69,7 +69,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -91,10 +91,9 @@ score_threshold = score_threshold
 model_bag_size = 15
 
 # pretrianed model state
-# dep b8: run-20201123_122929-1zbzg5ml/model_state_dict_11.pt
-# dep b32: run-20201123_123852-11p5ec06/model_state_dict_18.pt
-
-model_state_dict_path = None # "./wandb/run-20201123_122929-1zbzg5ml/model_state_dict_11.pt"
+# run-20201126_005415-29nsodmj/model_state_dict_0_18.75.pt
+# ./wandb/run-20201126_003324-3c6z9kvu/model_state_dict_13_70.886.pt
+model_state_dict_path = None 
 
 
 # for test
@@ -133,7 +132,7 @@ word_encoder_config = {
     "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
-    "bilstm_hidden_size": [300, 600],
+    "bilstm_hidden_size": [50, 100],
     "bilstm_dropout": [0., 0.1, 0.],
     "freeze_word_emb": False,
 }
@@ -150,16 +149,16 @@ dep_config = {
     "dep_type_emb_dim": 64,
     "emb_dropout": 0.1,
     "gcn_dim": 128,
-    "gcn_dropout": 0.1,
-    "gcn_layer_num": 1,
+    "gcn_dropout": 0.5,
+    "gcn_layer_num": 3,
 }
 
 handshaking_kernel_config = {
-    "shaking_type": "cln_lstm",
+    "shaking_type": "cat",
 }
 
 # model settings
-token_level = "subword" # token is word or subword
+token_level = "word" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 # to do an ablation study, you can remove components by commenting the configurations below
@@ -168,11 +167,11 @@ model_settings = {
     "pos_tag_emb_config": pos_tag_emb_config,
     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
-    "subwd_encoder_config": subwd_encoder_config,
+#     "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "fin_hidden_size": 1024,
+    "fin_hidden_size": 300,
 }
 
 # this dict would be logged
@@ -186,10 +185,13 @@ config_to_log = {
     "epochs": epochs,
     "batch_size_train": batch_size_train,
     "batch_size_valid": batch_size_valid,
+    "batch_size_test": batch_size_test,
     "max_seq_len_train": max_seq_len_train,
-    "sliding_len_train": sliding_len_train,
     "max_seq_len_valid": max_seq_len_valid,
+    "max_seq_len_test": max_seq_len_test,
+    "sliding_len_train": sliding_len_train,
     "sliding_len_valid": sliding_len_valid,
+    "sliding_len_test": sliding_len_test,
     "note": "",
     "model_state_dict_path": model_state_dict_path,
     **model_settings_log,
