@@ -246,6 +246,7 @@ class HandshakingTagger(Tagger):
         res = {
             "id": sample_idx,
             "text": text,
+            "tok2char_span": tok2char_span,
             "relation_list": rel_list,
             "entity_list": ent_list,
             # "tok_level_offset": sample["tok_level_offset"],

@@ -1271,7 +1271,7 @@ class Preprocessor:
         for sample in data:
             if "splits" in sample:
                 text = sample["text"]
-                tok2char_span = sample["features"]["tok2char_span"]
+                tok2char_span = sample["tok2char_span"]
                 for spl in sample["splits"]:
                     split_sample = {
                         "id": spl["id"],
