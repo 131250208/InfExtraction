@@ -250,13 +250,15 @@ class Evaluator:
         for batch_ind, batch_predict_data in enumerate(tqdm(dataloader, desc="predicting")):
             pred_sample_list = self._predict_step(batch_predict_data)
             total_pred_sample_list.extend(pred_sample_list)
+        # decompose splits
+        total_pred_sample_list = Preprocessor.decompose2splits(total_pred_sample_list) # debug
 
         # merge and alignment
         id2text = {sample["id"]:sample["text"] for sample in golden_data}
         merged_pred_samples = {}
         for sample in total_pred_sample_list:
             id_ = sample["id"]
-            # recover spans
+            # recover spans by offsets
             sample = Preprocessor.span_offset(sample, sample["tok_level_offset"], sample["char_level_offset"])
             # merge
             if id_ not in merged_pred_samples:

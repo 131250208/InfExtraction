@@ -1034,6 +1034,58 @@ class Preprocessor:
         return data
 
     @staticmethod
+    def filter_annotations(sample, start_ind, end_ind):
+        '''
+        filter annotations in [start_ind, end_ind]
+        :param sample:
+        :param start_ind:
+        :param end_ind:
+        :return:
+        '''
+        new_sample = copy.deepcopy(sample)
+        if "relation_list" in sample:
+            sub_rel_list = []
+            for rel in sample["relation_list"]:
+                subj_tok_span = rel["subj_tok_span"]
+                obj_tok_span = rel["obj_tok_span"]
+                # if subject and object are both in this subtext, add this spo to new sample
+                if subj_tok_span[0] >= start_ind and subj_tok_span[1] <= end_ind \
+                        and obj_tok_span[0] >= start_ind and obj_tok_span[1] <= end_ind:
+                    rel_cp = copy.deepcopy(rel)
+                    sub_rel_list.append(rel_cp)
+            new_sample["relation_list"] = sub_rel_list
+
+            # entity
+        if "entity_list" in sample:
+            sub_ent_list = []
+            for ent in sample["entity_list"]:
+                tok_span = ent["tok_span"]
+                # if entity in this subtext, add the entity to new sample
+                if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
+                    ent_cp = copy.deepcopy(ent)
+                    sub_ent_list.append(ent_cp)
+            new_sample["entity_list"] = sub_ent_list
+
+            # event
+        if "event_list" in sample:
+            sub_event_list = []
+            for event in sample["event_list"]:
+                trigger_tok_span = event["trigger_tok_span"]
+                if trigger_tok_span[1] > end_ind or trigger_tok_span[0] < start_ind:
+                    continue
+                event_cp = copy.deepcopy(event)
+                new_arg_list = []
+                for arg in event_cp["argument_list"]:
+                    tok_span = arg["tok_span"]
+                    if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
+                        arg_cp = copy.deepcopy(arg)
+                        new_arg_list.append(arg_cp)
+                event_cp["argument_list"] = new_arg_list
+                sub_event_list.append(event_cp)
+            new_sample["event_list"] = sub_event_list
+        return new_sample
+
+    @staticmethod
     def split_into_short_samples(data, max_seq_len, sliding_len, data_type,
                                  token_level, wordpieces_prefix="##"):
         '''
@@ -1143,156 +1195,106 @@ class Preprocessor:
                     break
         return split_sample_list
 
-    # @staticmethod
-    # def _split_into_short_samples(data, max_seq_len, sliding_len, data_type,
-    #                              wordpieces_prefix="##",
-    #                              feature_list_key="word_level_features"):
-    #     '''
-    #     choose features
-    #     choose spans
-    #     offset
-    #
-    #     split samples with long text into samples with short subtexts
-    #     :param data: original data
-    #     :param max_seq_len: the max sequence length of a subtext
-    #     :param sliding_len: the size of the sliding window
-    #     :param data_type: train, valid, test
-    #     :return:
-    #     '''
-    #     split_sample_list = []
-    #     at_subword_level = True if "subword" in feature_list_key else False
-    #     for sample in tqdm(data, desc="splitting"):
-    #         id = sample["id"]
-    #         text = sample["text"]
-    #         features = sample[feature_list_key]
-    #         tokens = features["subword_list"] if at_subword_level else features["word_list"]
-    #         tok2char_span = features["tok2char_span"]
-    #
-    #         # split by sliding window
-    #         for start_ind in range(0, len(tokens), sliding_len):
-    #             if at_subword_level:
-    #                 while wordpieces_prefix in tokens[start_ind]:
-    #                     start_ind -= 1
-    #             end_ind = start_ind + max_seq_len
-    #
-    #             # split text
-    #             char_span_list = tok2char_span[start_ind:end_ind]
-    #             char_span = (char_span_list[0][0], char_span_list[-1][1])
-    #             sub_text = text[char_span[0]:char_span[1]]
-    #
-    #             # offsets
-    #             tok_level_offset, char_level_offset = start_ind, char_span[0]
-    #
-    #             # split features
-    #             new_features = {
-    #                 "word_list": features["word_list"][start_ind:end_ind],
-    #                 "tok2char_span": [[char_sp[0] - char_level_offset, char_sp[1] - char_level_offset] for char_sp in features["tok2char_span"][start_ind:end_ind]],
-    #                 "pos_tag_list": features["pos_tag_list"][start_ind:end_ind],
-    #                 "ner_tag_list": features["ner_tag_list"][start_ind:end_ind],
-    #             }
-    #             if at_subword_level:
-    #                 new_features["subword_list"] = features["subword_list"][start_ind:end_ind]
-    #                 new_features["input_ids"] = features["input_ids"][start_ind:end_ind]
-    #                 new_features["token_type_ids"] = features["token_type_ids"][start_ind:end_ind]
-    #                 new_features["attention_mask"] = features["attention_mask"][start_ind:end_ind]
-    #
-    #             new_features["dependency_list"] = []
-    #             for dep in features["dependency_list"]:
-    #                 if start_ind <= dep[0] < end_ind and start_ind <= dep[1] < end_ind:
-    #                     new_dep = [dep[0] - tok_level_offset, dep[1] - tok_level_offset, dep[2]]
-    #                     new_features["dependency_list"].append(new_dep)
-    #
-    #             new_sample = {
-    #                 "id": id,
-    #                 "text": sub_text,
-    #                 "features": new_features,
-    #                 "tok_level_offset": tok_level_offset,
-    #                 "char_level_offset": char_level_offset,
-    #             }
-    #             if data_type == "test":
-    #                 if len(sub_text) > 0:
-    #                     split_sample_list.append(new_sample)
-    #             else: # filter entities, relations, and events in the subtext
-    #                 # spo
-    #                 if "relation_list" in sample:
-    #                     sub_rel_list = []
-    #                     for rel in sample["relation_list"]:
-    #                         subj_tok_span = rel["subj_subwd_span"] if at_subword_level else rel["subj_wd_span"]
-    #                         obj_tok_span = rel["obj_subwd_span"] if at_subword_level else rel["obj_wd_span"]
-    #                         # if subject and object are both in this subtext, add this spo to new sample
-    #                         if subj_tok_span[0] >= start_ind and subj_tok_span[1] <= end_ind \
-    #                                 and obj_tok_span[0] >= start_ind and obj_tok_span[1] <= end_ind:
-    #                             rel = copy.deepcopy(rel)
-    #                             del rel["subj_wd_span"]
-    #                             del rel["obj_wd_span"]
-    #                             del rel["subj_subwd_span"]
-    #                             del rel["obj_subwd_span"]
-    #                             rel["subj_tok_span"] = [subj_tok_span[0] - tok_level_offset,
-    #                                                         subj_tok_span[1] - tok_level_offset]
-    #                             rel["obj_tok_span"] = [obj_tok_span[0] - tok_level_offset,
-    #                                                        obj_tok_span[1] - tok_level_offset]
-    #                             rel["subj_char_span"][0] -= char_level_offset
-    #                             rel["subj_char_span"][1] -= char_level_offset
-    #                             rel["obj_char_span"][0] -= char_level_offset
-    #                             rel["obj_char_span"][1] -= char_level_offset
-    #                             sub_rel_list.append(rel)
-    #                     new_sample["relation_list"] = sub_rel_list
-    #
-    #                 # entity
-    #                 if "entity_list" in sample:
-    #                     sub_ent_list = []
-    #                     for ent in sample["entity_list"]:
-    #                         tok_span = ent["subwd_span"] if at_subword_level else ent["wd_span"]
-    #                         # if entity in this subtext, add the entity to new sample
-    #                         if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
-    #                             new_ent = copy.deepcopy(ent)
-    #                             del new_ent["subwd_span"]
-    #                             del new_ent["wd_span"]
-    #                             new_ent["tok_span"] = [tok_span[0] - tok_level_offset,
-    #                                                    tok_span[1] - tok_level_offset]
-    #
-    #                             new_ent["char_span"][0] -= char_level_offset
-    #                             new_ent["char_span"][1] -= char_level_offset
-    #
-    #                             sub_ent_list.append(new_ent)
-    #                     new_sample["entity_list"] = sub_ent_list
-    #
-    #                 # event
-    #                 if "event_list" in sample:
-    #                     sub_event_list = []
-    #                     for event in sample["event_list"]:
-    #                         trigger_tok_span = event["trigger_subwd_span"] if at_subword_level else event["trigger_wd_span"]
-    #                         if trigger_tok_span[1] > end_ind or trigger_tok_span[0] < start_ind:
-    #                             continue
-    #                         new_event = copy.deepcopy(event)
-    #                         del new_event["trigger_subwd_span"]
-    #                         del new_event["trigger_wd_span"]
-    #                         new_event["trigger_tok_span"] = [trigger_tok_span[0] - tok_level_offset,
-    #                                                          trigger_tok_span[1] - tok_level_offset]
-    #                         new_event["trigger_char_span"][0] -= char_level_offset
-    #                         new_event["trigger_char_span"][1] -= char_level_offset
-    #
-    #                         new_arg_list = []
-    #                         for arg in new_event["argument_list"]:
-    #                             tok_span = arg["subwd_span"] if at_subword_level else arg["wd_span"]
-    #                             if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
-    #                                 new_arg = copy.deepcopy(arg)
-    #                                 del new_arg["subwd_span"]
-    #                                 del new_arg["wd_span"]
-    #                                 new_arg["tok_span"] = [tok_span[0] - tok_level_offset,
-    #                                                        tok_span[1] - tok_level_offset]
-    #                                 new_arg["char_span"][0] -= char_level_offset
-    #                                 new_arg["char_span"][1] -= char_level_offset
-    #                                 new_arg_list.append(new_arg)
-    #                         new_event["argument_list"] = new_arg_list
-    #                         sub_event_list.append(new_event)
-    #                     new_sample["event_list"] = sub_event_list
-    #
-    #                 split_sample_list.append(new_sample)
-    #
-    #             if end_ind > len(tokens):
-    #                 break
-    #     return split_sample_list
+    @staticmethod
+    def combine(data, max_seq_len):
+
+        def get_new_com_sample():
+            return {
+                "id": "combined_{}".format(len(new_data)),
+                "text": "",
+                "features": {
+                    "word_list": [],
+                    "subword_list": [],
+                    "tok2char_span": [],
+                    "pos_tag_list": [],
+                    "ner_tag_list": [],
+                    "dependency_list": []
+                },
+                "splits": [],
+                "entity_list": [],
+                "relation_list": [],
+                "event_list": [],
+            }
+
+        new_data = []
+        combined_sample = get_new_com_sample()
+        for sample in data:
+            if len(combined_sample["features"]["tok2char_span"] + sample["features"]["tok2char_span"]) > max_seq_len:
+                new_data.append(combined_sample)
+                combined_sample = get_new_com_sample()
+            # combine features
+            if len(combined_sample["text"]) > 0:
+                combined_sample["text"] += " "
+            combined_sample["text"] += sample["text"]
+            combined_sample["features"]["word_list"].extend(sample["features"]["word_list"])
+            combined_sample["features"]["subword_list"].extend(sample["features"]["subword_list"])
+            combined_sample["features"]["pos_tag_list"].extend(sample["features"]["pos_tag_list"])
+            combined_sample["features"]["ner_tag_list"].extend(sample["features"]["ner_tag_list"])
+            token_offset = len(combined_sample["features"]["tok2char_span"])
+            char_offset = 0
+            if token_offset > 0:
+                char_offset = combined_sample["features"]["tok2char_span"][-1][1] + 1 # +1: whitespace
+            new_tok2char_span = [[char_sp[0] + char_offset, char_sp[1] + char_offset] for char_sp in sample["features"]["tok2char_span"]]
+            combined_sample["features"]["tok2char_span"].extend(new_tok2char_span)
+            new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in sample["features"]["dependency_list"]]
+            combined_sample["features"]["dependency_list"].extend(new_dependency_list)
+            # record split offsets
+            combined_sample["splits"].append({
+                "id": sample["id"],
+                "offset_in_this_seg": [token_offset, token_offset + len(sample["features"]["tok2char_span"])],
+                "ori_offset": {
+                    "tok_level_offset": sample["tok_level_offset"],
+                    "char_level_offset": sample["char_level_offset"],
+                }
+            })
+
+            # combine annotations
+            sample_cp = copy.deepcopy(sample)
+            Preprocessor.span_offset(sample_cp, token_offset, char_offset)
+            if "entity_list" in sample_cp:
+                combined_sample["entity_list"].extend(sample_cp["entity_list"])
+            if "relation_list" in sample_cp:
+                combined_sample["relation_list"].extend(sample_cp["relation_list"])
+            if "event_list" in sample_cp:
+                combined_sample["event_list"].extend(sample_cp["event_list"])
+
+        return new_data
+
+    @staticmethod
+    def decompose2splits(data):
+        '''
+        decompose combined samples to splits by "splits"
+        :param data:
+        :return:
+        '''
+        new_data = []
+        for sample in data:
+            if "splits" in sample:
+                text = sample["text"]
+                tok2char_span = sample["features"]["tok2char_span"]
+                for spl in sample["splits"]:
+                    split_sample = {
+                        "id": spl["id"],
+                        "tok_level_offset": spl["ori_offset"]["tok_level_offset"],
+                        "char_level_offset": spl["ori_offset"]["char_level_offset"],
+                    }
+                    text_tok_span = spl["offset_in_this_seg"]
+                    char_sp_list = tok2char_span[text_tok_span[0]:text_tok_span[1]]
+                    text_char_span = [char_sp_list[0][0], char_sp_list[-1][1]]
+                    # text
+                    split_sample["text"] = text[text_char_span[0]:text_char_span[1]]
+                    # annotations
+                    filtered_sample = Preprocessor.filter_annotations(sample, text_tok_span[0], text_tok_span[1])
+                    if "entity_list" in filtered_sample:
+                        split_sample["entity_list"] = filtered_sample["entity_list"]
+                    if "relation_list" in filtered_sample:
+                        split_sample["relation_list"] = filtered_sample["relation_list"]
+                    if "event_list" in filtered_sample:
+                        split_sample["event_list"] = filtered_sample["event_list"]
+                    new_data.append(split_sample)
+            else:
+                new_data.append(sample)
+        return new_data
 
     @staticmethod
     def span_offset(sample, tok_level_offset, char_level_offset):
@@ -1326,7 +1328,7 @@ class Preprocessor:
         return sample
 
     @staticmethod
-    def check_splits(data):
+    def check_spans(data):
         sample_id2mismatched_ents = {}
         for sample in tqdm(data, desc="checking splits"):
             text = sample["text"]
@@ -1340,6 +1342,7 @@ class Preprocessor:
                     tok_span = ent["tok_span"]
                     extr_ent = Preprocessor._extract_ent(tok_span, tok2char_span, text)
                     extr_ent_c = text[ent["char_span"][0]:ent["char_span"][1]]
+
                     if not (extr_ent == ent["text"] == extr_ent_c):
                         bad_ent = copy.deepcopy(ent)
                         bad_ent["extr_ent"] = extr_ent

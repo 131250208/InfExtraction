@@ -47,14 +47,16 @@ def get_dataloader(data,
                                                        data_type,
                                                        token_level=token_level,
                                                        wordpieces_prefix=wdp_prefix)
-    # check split
-    sample_id2mismatched = Preprocessor.check_splits(split_data)
+    combined_data = Preprocessor.combine(split_data, max_seq_len)
+
+    # check spans
+    sample_id2mismatched = Preprocessor.check_spans(combined_data)
     if len(sample_id2mismatched) > 0:
         logging.warning("mismatch errors in {}".format(data_type))
         pprint(sample_id2mismatched)
 
     # inexing
-    indexed_data = Preprocessor.index_features(split_data,
+    indexed_data = Preprocessor.index_features(combined_data,
                                                key2dict,
                                                max_seq_len,
                                                max_char_num_in_tok)

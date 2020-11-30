@@ -41,6 +41,7 @@ class Tagger(metaclass=ABCMeta):
 
     @abstractmethod
     def decode_batch(self, data, pred_tag_batch):
+
         '''
         decoding function for batch data, based on decode()
         :param data: examples (to offer text, tok2char_span for decoding)
@@ -241,14 +242,23 @@ class HandshakingTagger(Tagger):
                 ent["tok_span"] = [ent["tok_span"][0], ent["tok_span"][1]]
 
         ent_list = [ent for ent in ent_list if ent["type"].split(":")[0] != "EXT"]
-        return {
+
+        res = {
             "id": sample_idx,
             "text": text,
             "relation_list": rel_list,
             "entity_list": ent_list,
-            "tok_level_offset": sample["tok_level_offset"],
-            "char_level_offset": sample["char_level_offset"],
+            # "tok_level_offset": sample["tok_level_offset"],
+            # "char_level_offset": sample["char_level_offset"],
         }
+        # these three keys are for span recovering (to original text)
+        if "tok_level_offset" in sample:
+            res["tok_level_offset"] = sample["tok_level_offset"]
+        if "char_level_offset" in sample:
+            res["char_level_offset"] = sample["char_level_offset"]
+        if "splits" in sample: # it is a combined sample
+            res["splits"] = sample["splits"]
+        return res
 
     def decode_batch(self, sample_list, pred_tag_batch):
         pred_sample_list = []
