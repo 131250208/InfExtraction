@@ -1257,7 +1257,8 @@ class Preprocessor:
                 combined_sample["relation_list"].extend(sample_cp["relation_list"])
             if "event_list" in sample_cp:
                 combined_sample["event_list"].extend(sample_cp["event_list"])
-
+        if combined_sample["text"] != "": # do not forget the last one
+            new_data.append(combined_sample)
         return new_data
 
     @staticmethod
