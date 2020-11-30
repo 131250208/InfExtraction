@@ -41,9 +41,9 @@ batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
 
-max_seq_len_train = 128
-max_seq_len_valid = 128
-max_seq_len_test = 128
+max_seq_len_train = 64
+max_seq_len_valid = 64
+max_seq_len_test = 64
 
 sliding_len_train = 20
 sliding_len_valid = 20
@@ -69,7 +69,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = False
+use_wandb = True
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -131,9 +131,9 @@ word_encoder_config = {
     # PubMed-shuffle-win-30.bin
     "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
     "emb_dropout": 0.1,
-    "bilstm_layers": [1, 1],
-    "bilstm_hidden_size": [50, 100],
-    "bilstm_dropout": [0., 0.1, 0.],
+    "bilstm_layers": [2, 1],
+    "bilstm_hidden_size": [300, 600],
+    "bilstm_dropout": [0.1, 0.1, 0.],
     "freeze_word_emb": False,
 }
 
@@ -148,8 +148,8 @@ dep_config = {
     "dep_type_num": statistics["deprel_type_num"],
     "dep_type_emb_dim": 64,
     "emb_dropout": 0.1,
-    "gcn_dim": 128,
-    "gcn_dropout": 0.5,
+    "gcn_dim": 300,
+    "gcn_dropout": 0.1,
     "gcn_layer_num": 3,
 }
 
@@ -171,7 +171,7 @@ model_settings = {
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "fin_hidden_size": 300,
+    "fin_hidden_size": 1024,
 }
 
 # this dict would be logged
