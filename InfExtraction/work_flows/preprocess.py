@@ -59,6 +59,7 @@ for filename, data in file_name2data.items():
     # add token level spans
     data = preprocessor.add_tok_span(data)
     file_name2data[filename] = data
+    # additional preprocessing
 
 
 all_data = []

@@ -110,6 +110,7 @@ class TPLinkerPlus(nn.Module, IEModel):
             word_bilstm_dropout = word_encoder_config["bilstm_dropout"]
             freeze_word_emb = word_encoder_config["freeze_word_emb"]
             word_emb_file_path = word_encoder_config["word_emb_file_path"]
+            # self.bert_config4word = word_encoder_config["bert"] if "bert" in word_encoder_config else None
 
             ## init word embedding
             emb_file_suffix = word_emb_file_path.split(".")[-1]
@@ -135,11 +136,12 @@ class TPLinkerPlus(nn.Module, IEModel):
 
             init_word_embedding_matrix = torch.FloatTensor(init_word_embedding_matrix)
             word_emb_dim = init_word_embedding_matrix.size()[1]
+            combined_hidden_size_1 += word_emb_dim
 
-            ## word encoder model
+            ## use lstm to encode word
             self.word_emb = nn.Embedding.from_pretrained(init_word_embedding_matrix, freeze=freeze_word_emb)
             self.word_emb_dropout = nn.Dropout(p=word_emb_dropout)
-            self.word_lstm_l1 = nn.LSTM(word_emb_dim,
+            self.word_lstm_l1 = nn.LSTM(combined_hidden_size_1,
                                         word_bilstm_hidden_size[0] // 2,
                                         num_layers=word_bilstm_layers[0],
                                         dropout=word_bilstm_dropout[0],
@@ -153,6 +155,15 @@ class TPLinkerPlus(nn.Module, IEModel):
                                         bidirectional=True,
                                         batch_first=True)
             combined_hidden_size_1 += word_bilstm_hidden_size[1]
+
+            # ## use bert to encode word
+            # if self.bert_config4word is not None:
+            #     self.use_last_k_layers_word_bert = self.bert_config4word["use_last_k_layers"]
+            #     self.word_bert = BertModel.from_pretrained(self.bert_config4word["pretrained_model_path"])
+            #     if not self.bert_config4word["finetune"]:  # do not finetune
+            #         for param in self.word_bert.parameters():
+            #             param.requires_grad = False
+            #     combined_hidden_size_1 += self.word_bert.config.hidden_size
 
         # subword_encoder
         self.subwd_encoder_config = subwd_encoder_config
@@ -269,9 +280,9 @@ class TPLinkerPlus(nn.Module, IEModel):
 
         # char
         if self.char_encoder_config is not None:
-            # char_input_ids: (batch_size_train, seq_len * max_char_num_in_subword)
-            # char_input_emb/char_hiddens: (batch_size_train, seq_len * max_char_num_in_subword, char_emb_dim)
-            # char_conv_oudtut: (batch_size_train, seq_len, char_emb_dim)
+            # char_input_ids: (batch_size, seq_len * max_char_num_in_subword)
+            # char_input_emb/char_hiddens: (batch_size, seq_len * max_char_num_in_subword, char_emb_dim)
+            # char_conv_oudtut: (batch_size, seq_len, char_emb_dim)
             char_input_emb = self.char_emb(char_input_ids)
             char_input_emb = self.char_emb_dropout(char_input_emb)
             char_hiddens, _ = self.char_lstm_l1(char_input_emb)
@@ -281,33 +292,43 @@ class TPLinkerPlus(nn.Module, IEModel):
 
         # word
         if self.word_encoder_config is not None:
-            # word_input_ids: (batch_size_train, seq_len)
+            # word_input_ids: (batch_size, seq_len)
             # word_input_emb/word_hiddens: batch_size_train, seq_len, word_emb_dim)
             word_input_emb = self.word_emb(word_input_ids)
             word_input_emb = self.word_emb_dropout(word_input_emb)
-            word_hiddens, _ = self.word_lstm_l1(word_input_emb)
+            features.append(word_input_emb)
+            word_hiddens, _ = self.word_lstm_l1(torch.cat(features, dim=-1))
             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
             features.append(word_hiddens)
 
+            # if self.bert_config4word is not None:
+            #     # word_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
+            #     context_oudtuts = self.word_bert(word_input_ids, attention_mask, token_type_ids)
+            #     hidden_states = context_oudtuts[2]
+            #     # word_hiddens: (batch_size, seq_len, hidden_size)
+            #     word_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_word_bert:], dim=0),
+            #                                  dim=0)
+            #     features.append(word_hiddens)
+
         # subword
         if self.subwd_encoder_config is not None:
-            # subword_input_ids, attention_mask, token_type_ids: (batch_size_train, seq_len)
+            # subword_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
             context_oudtuts = self.bert(subword_input_ids, attention_mask, token_type_ids)
-            # last_hidden_state: (batch_size_train, seq_len, hidden_size)
             hidden_states = context_oudtuts[2]
+            # subword_hiddens: (batch_size, seq_len, hidden_size)
             subword_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_bert:], dim=0), dim=0)
             features.append(subword_hiddens)
 
         # combine features
-        # combined_hiddens: (batch_size_train, seq_len, combined_size)
+        # combined_hiddens: (batch_size, seq_len, combined_size)
         combined_hiddens = self.aggr_fc_1(torch.cat(features, dim=-1))
 #         set_trace()
         # dependencies
         if self.dep_config is not None:
-            # dep_adj_matrix: (batch_size_train, seq_len, seq_len)
+            # dep_adj_matrix: (batch_size, seq_len, seq_len)
             dep_adj_matrix = torch.transpose(dep_adj_matrix, 1, 2)
             dep_type_embeddings = self.dep_type_emb(dep_adj_matrix)
-            # dep_type_embeddings: (batch_size_train, seq_len, seq_len, dep_emb_dim)
+            # dep_type_embeddings: (batch_size, seq_len, seq_len, dep_emb_dim)
             weight_adj = self.dep_type_emb_dropout(dep_type_embeddings)
             gcn_outputs = combined_hiddens
             for gcn_l in self.gcn_layers:
@@ -317,11 +338,11 @@ class TPLinkerPlus(nn.Module, IEModel):
                 features.append(gcn_outputs)
             combined_hiddens = self.aggr_fc_2(torch.cat(features, dim=-1))
 
-        # shaking_hiddens: (batch_size_train, shaking_seq_len, hidden_size)
+        # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # shaking_seq_len: max_seq_len * vf - sum(1, vf)
         shaking_hiddens = self.handshaking_kernel(combined_hiddens)
 
-        # predicted_oudtuts: (batch_size_train, shaking_seq_len, tag_num)
+        # predicted_oudtuts: (batch_size, shaking_seq_len, tag_num)
         predicted_oudtuts = self.dec_fc(shaking_hiddens)
 
         return predicted_oudtuts

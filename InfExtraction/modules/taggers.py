@@ -168,8 +168,8 @@ class HandshakingTagger(Tagger):
         for sp in matrix_points:
             tag = self.id2tag[sp[2]]
             ent_type, link_type = tag.split(self.separator)
-            if link_type != "EH2ET" or sp[0] > sp[
-                1]:  # for an entity, the start position can not be larger than the end pos.
+            # for an entity, the start position can not be larger than the end pos.
+            if link_type != "EH2ET" or sp[0] > sp[1]:
                 continue
 
             char_span_list = tok2char_span[sp[0]:sp[1] + 1]
@@ -240,6 +240,7 @@ class HandshakingTagger(Tagger):
                 ent["char_span"] = [ent["char_span"][0], ent["char_span"][1]]
                 ent["tok_span"] = [ent["tok_span"][0], ent["tok_span"][1]]
 
+        ent_list = [ent for ent in ent_list if ent["type"].split(":")[0] != "EXT"]
         return {
             "id": sample_idx,
             "text": text,
@@ -269,14 +270,14 @@ class HandshakingTagger4EE(HandshakingTagger):
             for event in sample["event_list"]:
                 fin_ent_list.append({
                     "text": event["trigger"],
-                    "type": "{}{}{}".format("Trigger", separator, event["trigger_type"]),
+                    "type": "EE:{}{}{}".format("Trigger", separator, event["trigger_type"]),
                     "char_span": event["trigger_char_span"],
                     "tok_span": event["trigger_tok_span"],
                 })
                 for arg in event["argument_list"]:
                     fin_ent_list.append({
                         "text": arg["text"],
-                        "type": "{}{}{}".format("Argument", separator, arg["type"]),
+                        "type": "EE:{}{}{}".format("Argument", separator, arg["type"]),
                         "char_span": arg["char_span"],
                         "tok_span": arg["tok_span"],
                     })
@@ -287,10 +288,10 @@ class HandshakingTagger4EE(HandshakingTagger):
                         "object": event["trigger"],
                         "obj_char_span": event["trigger_char_span"],
                         "obj_tok_span": event["trigger_tok_span"],
-                        "predicate": "{}{}{}".format(arg["type"], separator, event["trigger_type"]),
+                        "predicate": "EE:{}{}{}".format(arg["type"], separator, event["trigger_type"]),
                     })
             sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
-            # add original entity list
+            # extend original entity list
             if "entity_list" in sample:
                 fin_ent_list.extend(sample["entity_list"])
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
@@ -305,21 +306,21 @@ class HandshakingTagger4EE(HandshakingTagger):
         }
 
     def _trans2ee(self, rel_list, ent_list):
-        # new_rel_list, new_ent_list = [], []
-        # for rel in rel_list:
-        #     if rel["predicate"].split(":")[0] == "EE":
-        #         new_rel = copy.deepcopy(rel)
-        #         new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
-        #         new_rel_list.append(new_rel)
-        # for ent in ent_list:
-        #     if ent["type"].split(":")[0] == "EE":
-        #         new_ent = copy.deepcopy(ent)
-        #         new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
-        #         new_ent_list.append(new_ent)
-        # rel_list, ent_list = new_rel_list, new_ent_list
+        # choose tags with EE:
+        new_rel_list, new_ent_list = [], []
+        for rel in rel_list:
+            if rel["predicate"].split(":")[0] == "EE":
+                new_rel = copy.deepcopy(rel)
+                new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
+                new_rel_list.append(new_rel)
+        for ent in ent_list:
+            if ent["type"].split(":")[0] == "EE":
+                new_ent = copy.deepcopy(ent)
+                new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
+                new_ent_list.append(new_ent)
+        rel_list, ent_list = new_rel_list, new_ent_list
 
         sepatator = "_"
-        trigger_set, arg_iden_set, arg_class_set = set(), set(), set()
         trigger_offset2vote = {}
         trigger_offset2trigger_text = {}
         trigger_offset2trigger_char_span = {}
