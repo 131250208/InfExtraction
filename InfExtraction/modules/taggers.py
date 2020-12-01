@@ -55,8 +55,22 @@ class HandshakingTagger(Tagger):
     def additional_preprocess(self, data):
         for sample in data:
             fin_ent_list = []
-            # add default tag to entities
+
             for rel in sample["relation_list"]:
+                # add relation type to entities
+                fin_ent_list.append({
+                    "text": rel["subject"],
+                    "type": rel["predicate"],
+                    "char_span": rel["subj_char_span"],
+                    "tok_span": rel["subj_tok_span"],
+                })
+                fin_ent_list.append({
+                    "text": rel["object"],
+                    "type": rel["predicate"],
+                    "char_span": rel["obj_char_span"],
+                    "tok_span": rel["obj_tok_span"],
+                })
+                # add default tag to entities
                 fin_ent_list.append({
                     "text": rel["subject"],
                     "type": "EXT:DEFAULT",
@@ -182,11 +196,12 @@ class HandshakingTagger(Tagger):
                 "tok_span": [sp[0], sp[1] + 1],
                 "char_span": char_sp,
             }
-            head_key = str(sp[0])  # take ent_head_pos as the key to entity list
+            ent_list.append(entity)
+
+            head_key = "{},{}".format(ent_type, str(sp[0]))
             if head_key not in head_ind2entities:
                 head_ind2entities[head_key] = []
             head_ind2entities[head_key].append(entity)
-            ent_list.append(entity)
 
         # tail link
         tail_link_memory_set = set()
@@ -206,9 +221,9 @@ class HandshakingTagger(Tagger):
             rel, link_type = tag.split(self.separator)
 
             if link_type == "SH2OH":
-                subj_head_key, obj_head_key = str(sp[0]), str(sp[1])
+                subj_head_key, obj_head_key = "{},{}".format(rel, str(sp[0])), "{},{}".format(rel, str(sp[1]))
             elif link_type == "OH2SH":
-                subj_head_key, obj_head_key = str(sp[1]), str(sp[0])
+                subj_head_key, obj_head_key = "{},{}".format(rel, str(sp[1])), "{},{}".format(rel, str(sp[0]))
             else:
                 continue
 
@@ -216,8 +231,10 @@ class HandshakingTagger(Tagger):
                 # no entity start with subj_head_key and obj_head_key
                 continue
 
-            subj_list = head_ind2entities[subj_head_key]  # all entities start with this subject head
-            obj_list = head_ind2entities[obj_head_key]  # all entities start with this object head
+            # all entities start with this subject head
+            subj_list = Preprocessor.unique_list(head_ind2entities[subj_head_key])
+            # all entities start with this object head
+            obj_list = Preprocessor.unique_list(head_ind2entities[obj_head_key])
 
             # go over all subj-obj pair to check whether the tail link exists
             for subj in subj_list:
@@ -236,10 +253,6 @@ class HandshakingTagger(Tagger):
                         "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
                         "predicate": rel,
                     })
-            # recover the positons in the original text
-            for ent in ent_list:
-                ent["char_span"] = [ent["char_span"][0], ent["char_span"][1]]
-                ent["tok_span"] = [ent["tok_span"][0], ent["tok_span"][1]]
 
         res = {
             "id": sample_idx,
@@ -349,7 +362,7 @@ class HandshakingTagger4EE(HandshakingTagger):
         # get candidate trigger types from entity tags
         for ent in ent_list:
             t1, t2 = ent["type"].split(sepatator)
-            assert t1 == "Trigger" or t1 == "Argument"
+            # assert t1 == "Trigger" or t1 == "Argument"
             if t1 == "Trigger":  # trigger
                 event_types = t2
                 trigger_span = ent["tok_span"]
@@ -364,9 +377,9 @@ class HandshakingTagger4EE(HandshakingTagger):
         # choose the final trigger type by votes
         tirigger_offset2event_types = {}
         for trigger_offet_str, event_type2score in trigger_offset2vote.items():
-            # top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
-            # winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
-            winer_event_types = {sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0],}
+            top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
+            winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
+            # winer_event_types = {sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0],} # ignore draw
             tirigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
 
         # generate event list

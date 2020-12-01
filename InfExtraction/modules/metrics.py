@@ -192,6 +192,8 @@ class MetricsCalculator():
 
         self._cal_cpg(pred_trigger_iden_set, gold_trigger_iden_set, ee_cpg_dict["trigger_iden_cpg"])
         self._cal_cpg(pred_trigger_class_set, gold_trigger_class_set, ee_cpg_dict["trigger_class_cpg"])
+        # if len(pred_arg_iden_set) != len(gold_arg_iden_set): # 解码算法引入的错误，可以作为下一个研究点，即群里讨论过的极端嵌套情况
+        #     print("!")
         self._cal_cpg(pred_arg_iden_set, gold_arg_iden_set, ee_cpg_dict["arg_iden_cpg"])
         self._cal_cpg(pred_arg_class_set, gold_arg_class_set, ee_cpg_dict["arg_class_cpg"])
 
@@ -231,7 +233,7 @@ class MetricsCalculator():
         :param gold_num:
         :return:
         '''
-        minimum = 1e-12
+        minimum = 1e-20
         precision = correct_num / (pred_num + minimum)
         recall = correct_num / (gold_num + minimum)
         f1 = 2 * precision * recall / (precision + recall + minimum)
