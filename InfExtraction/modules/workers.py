@@ -227,10 +227,30 @@ class Evaluator:
         self.device = device
         self.match_pattern = match_pattern # only for relation extraction
 
+    def _predict_step_debug(self, batch_predict_data):
+        sample_list = batch_predict_data["sample_list"]
+        pred_tag = batch_predict_data["shaking_tag"]
+        pred_sample_list = self.decoder.decode_batch(sample_list, pred_tag)
+        return pred_sample_list
+
+    def _predict_debug(self, dataloader, golden_data):
+        # predict
+        total_pred_sample_list = []
+        for batch_ind, batch_predict_data in enumerate(tqdm(dataloader, desc="predicting")):
+            pred_sample_list = self._predict_step_debug(batch_predict_data)
+            total_pred_sample_list.extend(pred_sample_list)
+        pred_data = self._alignment(total_pred_sample_list, golden_data)
+        return pred_data
+
+    def check_tagging_n_decoding(self, dataloader, golden_data):
+        pred_data = self._predict_debug(dataloader, golden_data)
+        return self.score(pred_data, golden_data, "debug")
+
     # predict step
     def _predict_step(self, batch_predict_data):
         sample_list = batch_predict_data["sample_list"]
         del batch_predict_data["sample_list"]
+
         if "shaking_tag" in batch_predict_data:
             del batch_predict_data["shaking_tag"]
         for k, v in batch_predict_data.items():
@@ -242,21 +262,15 @@ class Evaluator:
 
         pred_sample_list = self.decoder.decode_batch(sample_list, pred_tag)
         return pred_sample_list
-        
-    def predict(self, dataloader, golden_data):
-        # predict
-        self.model.eval()
-        total_pred_sample_list = []
-        for batch_ind, batch_predict_data in enumerate(tqdm(dataloader, desc="predicting")):
-            pred_sample_list = self._predict_step(batch_predict_data)
-            total_pred_sample_list.extend(pred_sample_list)
+
+    def _alignment(self, pred_sample_list, golden_data):
         # decompose splits
-        total_pred_sample_list = Preprocessor.decompose2splits(total_pred_sample_list) # debug
+        pred_sample_list = Preprocessor.decompose2splits(pred_sample_list)  # debug
 
         # merge and alignment
-        id2text = {sample["id"]:sample["text"] for sample in golden_data}
+        id2text = {sample["id"]: sample["text"] for sample in golden_data}
         merged_pred_samples = {}
-        for sample in total_pred_sample_list:
+        for sample in pred_sample_list:
             id_ = sample["id"]
             # recover spans by offsets
             sample = Preprocessor.span_offset(sample, sample["tok_level_offset"], sample["char_level_offset"])
@@ -277,22 +291,12 @@ class Evaluator:
                 merged_pred_samples[id_]["event_list"].extend(sample["event_list"])
 
         # alignment (order)
-        fin_pred_samples = []
+        pred_data = []
         for sample in golden_data:
             id_ = sample["id"]
-            fin_pred_samples.append(merged_pred_samples[id_])
+            pred_data.append(merged_pred_samples[id_])
 
-        # # filter duplicated results
-        # def unique(res_list):
-        #     memory = set()
-        #     new_res_list = []
-        #     for res in res_list:
-        #         if str(res) not in memory:
-        #             new_res_list.append(res)
-        #             memory.add(str(res))
-        #     return new_res_list
-
-        for sample in fin_pred_samples:
+        for sample in pred_data:
             if "entity_list" in sample:
                 sample["entity_list"] = Preprocessor.unique_list(sample["entity_list"])
             if "relation_list" in sample:
@@ -300,13 +304,37 @@ class Evaluator:
             if "event_list" in sample:
                 sample["event_list"] = Preprocessor.unique_list(sample["event_list"])
 
-        return fin_pred_samples
+        return pred_data
 
-    def score(self, fin_pred_samples, golden_data, data_type, final_score_key):
+    def predict(self, dataloader, golden_data):
+        # predict
+        self.model.eval()
+        total_pred_sample_list = []
+        for batch_ind, batch_predict_data in enumerate(tqdm(dataloader, desc="predicting")):
+            pred_sample_list = self._predict_step(batch_predict_data)
+            total_pred_sample_list.extend(pred_sample_list)
+        pred_data = self._alignment(total_pred_sample_list, golden_data)
+        return pred_data
+    
+    def clean_data(self, data):
+        for sample in data:
+            sample["entity_list"] = [ent for ent in sample["entity_list"] if ent["type"].split(":")[0] != "EXT"]
+        
+    def score(self, pred_data, golden_data, data_type):
+        '''
+        :param pred_data:
+        :param golden_data:
+        :param data_type: test or valid, for logging
+        :param final_score_key: which score is the final score: trigger_class_f1, rel_f1
+        :return:
+        '''
+        # clean extra info added by preprocessing
+        self.clean_data(pred_data)
+        self.clean_data(golden_data)
+        
         score_dict = None
-
         if self.task_type == "re":
-            total_cpg_dict = self.model.metrics_cal.get_rel_cpg_dict(fin_pred_samples,
+            total_cpg_dict = self.model.metrics_cal.get_rel_cpg_dict(pred_data,
                                                                      golden_data,
                                                                      self.match_pattern)
             rel_prf = self.model.metrics_cal.get_prf_scores(*total_cpg_dict["rel_cpg"])
@@ -319,10 +347,9 @@ class Evaluator:
                 "{}_ent_recall".format(data_type): ent_prf[1],
                 "{}_ent_f1".format(data_type): ent_prf[2]
             }
-            score_dict["final_score"] = score_dict["{}_{}".format(data_type, final_score_key)]
 
         elif self.task_type == "ee":
-            total_cpg_dict = self.model.metrics_cal.get_event_cpg_dict(fin_pred_samples, golden_data)
+            total_cpg_dict = self.model.metrics_cal.get_event_cpg_dict(pred_data, golden_data)
             trigger_iden_prf = self.model.metrics_cal.get_prf_scores(total_cpg_dict["trigger_iden_cpg"][0],
                                                                      total_cpg_dict["trigger_iden_cpg"][1],
                                                                      total_cpg_dict["trigger_iden_cpg"][2])
@@ -350,6 +377,5 @@ class Evaluator:
                 "{}_arg_class_recall".format(data_type): arg_class_prf[1],
                 "{}_arg_class_f1".format(data_type): arg_class_prf[2],
             }
-            score_dict["final_score"] = score_dict["{}_{}".format(data_type, final_score_key)]
 
         return score_dict

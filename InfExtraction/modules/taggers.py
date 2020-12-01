@@ -241,8 +241,6 @@ class HandshakingTagger(Tagger):
                 ent["char_span"] = [ent["char_span"][0], ent["char_span"][1]]
                 ent["tok_span"] = [ent["tok_span"][0], ent["tok_span"][1]]
 
-        ent_list = [ent for ent in ent_list if ent["type"].split(":")[0] != "EXT"]
-
         res = {
             "id": sample_idx,
             "text": text,

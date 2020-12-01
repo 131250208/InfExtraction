@@ -248,9 +248,9 @@ class TPLinkerPlus(nn.Module, IEModel):
             batch_dict["dep_adj_matrix"] = Indexer.points2matrix_batch(dep_matrix_points_batch, seq_length)
 
         # shaking tag
-        if "tag_points" in batch_data[0]: # only for train and valid data, no tag_points in test data
-            tag_points_batch = [sample["tag_points"] for sample in batch_data]
-            batch_dict["shaking_tag"] = Indexer.points2shaking_seq_batch(tag_points_batch, seq_length, self.tag_size)
+        tag_points_batch = [sample["tag_points"] for sample in batch_data]
+        batch_dict["shaking_tag"] = Indexer.points2shaking_seq_batch(tag_points_batch, seq_length, self.tag_size)
+
         return batch_dict
 
     def forward(self,

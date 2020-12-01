@@ -54,6 +54,8 @@ def get_dataloader(data,
     if len(sample_id2mismatched) > 0:
         logging.warning("mismatch errors in {}".format(data_type))
         pprint(sample_id2mismatched)
+    # check decoding
+
 
     # inexing
     indexed_data = Preprocessor.index_features(combined_data,
@@ -256,32 +258,37 @@ if __name__ == "__main__":
     trainer = Trainer(model, tagger, device, optimizer, trainer_config, logger)
     evaluator = Evaluator(task_type, model, tagger, device, match_pattern=None)
 
+    # debug: checking data and decoding
+    pprint(evaluator.check_tagging_n_decoding(valid_dataloader, valid_data))
+
     # train and eval
     best_val_score = 0.
     for ep in range(epochs):
+        # train
         trainer.train(train_dataloader, ep, epochs)
+        # valid
         pred_samples = evaluator.predict(valid_dataloader, valid_data)
-        score_dict = evaluator.score(pred_samples, valid_data, "val", "trigger_class_f1")
+        score_dict, final_score = evaluator.score(pred_samples, valid_data, "val")
         logger.log(score_dict)
         dataset2score_dict = {
             "valid_data.json": score_dict,
         }
-        current_val_score = score_dict["final_score"]
-
+        current_val_fin_score = score_dict["{}_{}".format("val", "trigger_class_f1")] # 将trigger_class_f1设为参数
+        # test
         for filename, test_data_loader in filename2test_data_loader.items():
             gold_test_data = filename2test_data[filename]
             pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-            score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0], "trigger_class_f1")
+            score_dict, _ = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
             logger.log(score_dict)
             dataset2score_dict[filename] = score_dict
 
         pprint(dataset2score_dict)
 
-        if current_val_score > score_threshold:
+        if current_val_fin_score > score_threshold:
             # save model state
             torch.save(model.state_dict(),
                        os.path.join(dir_to_save_model,
-                                    "model_state_dict_{}_{:.5}.pt".format(ep, current_val_score * 100)))
+                                    "model_state_dict_{}_{:.5}.pt".format(ep, current_val_fin_score * 100)))
 
             # all state paths
             model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model))
@@ -294,4 +301,4 @@ if __name__ == "__main__":
             # only save <model_bag_size> model states
             if len(sorted_model_state_path_list) > model_bag_size:
                 os.remove(sorted_model_state_path_list[0])  # drop the state with minimum score
-        print("Current val score: {:.5}, Best val score: {:.5}".format(current_val_score * 100, best_val_score * 100))
+        print("Current val score: {:.5}, Best val score: {:.5}".format(current_val_fin_score * 100, best_val_score * 100))

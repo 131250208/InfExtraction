@@ -1273,6 +1273,7 @@ class Preprocessor:
             if "splits" in sample:
                 text = sample["text"]
                 tok2char_span = sample["tok2char_span"]
+                # decompose
                 for spl in sample["splits"]:
                     split_sample = {
                         "id": spl["id"],
@@ -1284,7 +1285,7 @@ class Preprocessor:
                     text_char_span = [char_sp_list[0][0], char_sp_list[-1][1]]
                     # text
                     split_sample["text"] = text[text_char_span[0]:text_char_span[1]]
-                    # annotations
+                    # filter annotations
                     filtered_sample = Preprocessor.filter_annotations(sample, text_tok_span[0], text_tok_span[1])
                     if "entity_list" in filtered_sample:
                         split_sample["entity_list"] = filtered_sample["entity_list"]
@@ -1292,6 +1293,8 @@ class Preprocessor:
                         split_sample["relation_list"] = filtered_sample["relation_list"]
                     if "event_list" in filtered_sample:
                         split_sample["event_list"] = filtered_sample["event_list"]
+                    # recover spans
+                    split_sample = Preprocessor.span_offset(split_sample, -text_tok_span[0], -text_char_span[0]) # debug
                     new_data.append(split_sample)
             else:
                 new_data.append(sample)
