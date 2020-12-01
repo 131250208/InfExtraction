@@ -268,17 +268,18 @@ if __name__ == "__main__":
         trainer.train(train_dataloader, ep, epochs)
         # valid
         pred_samples = evaluator.predict(valid_dataloader, valid_data)
-        score_dict, final_score = evaluator.score(pred_samples, valid_data, "val")
+        score_dict = evaluator.score(pred_samples, valid_data, "val")
         logger.log(score_dict)
         dataset2score_dict = {
             "valid_data.json": score_dict,
         }
         current_val_fin_score = score_dict["{}_{}".format("val", "trigger_class_f1")] # 将trigger_class_f1设为参数
+
         # test
         for filename, test_data_loader in filename2test_data_loader.items():
             gold_test_data = filename2test_data[filename]
             pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-            score_dict, _ = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
+            score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
             logger.log(score_dict)
             dataset2score_dict[filename] = score_dict
 
