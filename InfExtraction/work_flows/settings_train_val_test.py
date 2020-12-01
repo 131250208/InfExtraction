@@ -69,7 +69,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -183,6 +183,7 @@ config_to_log = {
     "seed": seed,
     "task_type": task_type,
     "epochs": epochs,
+    "learning_rate": lr,
     "batch_size_train": batch_size_train,
     "batch_size_valid": batch_size_valid,
     "batch_size_test": batch_size_test,
