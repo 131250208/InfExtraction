@@ -33,6 +33,7 @@ def get_dataloader(data,
                    token_level,
                    max_seq_len,
                    sliding_len,
+                   combine,
                    batch_size,
                    key2dict,
                    tagger,
@@ -41,16 +42,18 @@ def get_dataloader(data,
                    max_char_num_in_tok=None,
                    ):
     # split test data
-    split_data = Preprocessor.split_into_short_samples(data,
+    data = Preprocessor.split_into_short_samples(data,
                                                        max_seq_len,
                                                        sliding_len,
                                                        data_type,
                                                        token_level=token_level,
                                                        wordpieces_prefix=wdp_prefix)
-    combined_data = Preprocessor.combine(split_data, max_seq_len)
+
+    if combine:
+        data = Preprocessor.combine(data, max_seq_len)
 
     # check spans
-    sample_id2mismatched = Preprocessor.check_spans(combined_data)
+    sample_id2mismatched = Preprocessor.check_spans(data)
     if len(sample_id2mismatched) > 0:
         logging.warning("mismatch errors in {}".format(data_type))
         pprint(sample_id2mismatched)
@@ -58,7 +61,7 @@ def get_dataloader(data,
 
 
     # inexing
-    indexed_data = Preprocessor.index_features(combined_data,
+    indexed_data = Preprocessor.index_features(data,
                                                key2dict,
                                                max_seq_len,
                                                max_char_num_in_tok)
@@ -117,6 +120,8 @@ if __name__ == "__main__":
     batch_size_test = settings.batch_size_test
     max_seq_len_test = settings.max_seq_len_test
     sliding_len_test = settings.sliding_len_test
+
+    combine = settings.combine
 
     trainer_config = settings.trainer_config
     lr = settings.lr

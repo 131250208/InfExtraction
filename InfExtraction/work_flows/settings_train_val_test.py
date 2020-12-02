@@ -49,6 +49,8 @@ sliding_len_train = 128
 sliding_len_valid = 128
 sliding_len_test = 128
 
+combine = True
+
 scheduler = "CAWR"
 use_ghm = False
 score_threshold = 0
@@ -69,7 +71,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
