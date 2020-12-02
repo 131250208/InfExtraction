@@ -310,4 +310,4 @@ if __name__ == "__main__":
             # only save <model_bag_size> model states
             if len(sorted_model_state_path_list) > model_bag_size:
                 os.remove(sorted_model_state_path_list[0])  # drop the state with minimum score
-        print("Current val score: {:.5}, Best val score: {:.5}".format(current_val_fin_score * 100, best_val_score * 100))
+        print("Current val score: {:.5}, Best val score: {:.5}".format(current_val_fin_score * 100, best_val_score))
