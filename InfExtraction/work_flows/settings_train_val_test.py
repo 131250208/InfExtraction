@@ -49,6 +49,8 @@ sliding_len_train = 20
 sliding_len_valid = 20
 sliding_len_test = 20
 
+combine = True
+
 scheduler = "CAWR"
 use_ghm = True
 score_threshold = 0
