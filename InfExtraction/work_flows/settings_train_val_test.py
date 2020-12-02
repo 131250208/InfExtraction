@@ -36,21 +36,21 @@ model_name = "tplinker_plus"
 device_num = 1
 seed = 9494
 epochs = 200
-lr = 1e-4 # 5e-5
+lr = 5e-5 # 5e-5
 batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
 
-max_seq_len_train = 64
-max_seq_len_valid = 64
-max_seq_len_test = 64
+max_seq_len_train = 128
+max_seq_len_valid = 128
+max_seq_len_test = 128
 
-sliding_len_train = 20
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_train = 128
+sliding_len_valid = 128
+sliding_len_test = 128
 
 scheduler = "CAWR"
-use_ghm = True
+use_ghm = False
 score_threshold = 0
 
 # schedulers
@@ -58,8 +58,8 @@ scheduler_dict = {
     "CAWR": {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
-        "T_mult": 1,
-        "rewarm_steps": 2000,
+        "T_mult": 2,
+        "rewarm_steps": 4000,
     },
     "StepLR": {
         "name": "StepLR",
@@ -146,15 +146,15 @@ subwd_encoder_config = {
 
 dep_config = {
     "dep_type_num": statistics["deprel_type_num"],
-    "dep_type_emb_dim": 64,
+    "dep_type_emb_dim": 50,
     "emb_dropout": 0.1,
     "gcn_dim": 300,
     "gcn_dropout": 0.1,
-    "gcn_layer_num": 3,
+    "gcn_layer_num": 1,
 }
 
 handshaking_kernel_config = {
-    "shaking_type": "cat",
+    "shaking_type": "cln",
 }
 
 # model settings
@@ -167,7 +167,7 @@ model_settings = {
     "pos_tag_emb_config": pos_tag_emb_config,
     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
-#     "subwd_encoder_config": subwd_encoder_config,
+    "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
@@ -183,6 +183,7 @@ config_to_log = {
     "seed": seed,
     "task_type": task_type,
     "epochs": epochs,
+    "learning_rate": lr,
     "batch_size_train": batch_size_train,
     "batch_size_valid": batch_size_valid,
     "batch_size_test": batch_size_test,
