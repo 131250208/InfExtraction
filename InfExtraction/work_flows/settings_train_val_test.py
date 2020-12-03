@@ -3,6 +3,7 @@ import random
 import os
 import json
 import copy
+import re
 
 exp_name = "ace2005_lu"
 task_type = "ee"
@@ -33,11 +34,11 @@ key2dict = {
 }
 
 # train, valid, test settings
-run_name = "tp2+dep+pos+ner"
+run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 device_num = 1
-seed = 9494
+seed = 2333
 epochs = 200
-lr = 1e-4 # 5e-5, 1e-4
+lr = 5e-5 # 5e-5, 1e-4
 batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
@@ -46,14 +47,14 @@ max_seq_len_train = 64
 max_seq_len_valid = 64
 max_seq_len_test = 64
 
-sliding_len_train = 20
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_train = 64
+sliding_len_valid = 64
+sliding_len_test = 64
 
 combine = True
 
 scheduler = "CAWR"
-use_ghm = True
+use_ghm = False
 score_threshold = 0
 
 # schedulers
@@ -62,7 +63,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_steps": 2000,
+        "rewarm_steps": 3000,
     },
     "StepLR": {
         "name": "StepLR",
@@ -134,9 +135,9 @@ word_encoder_config = {
     # PubMed-shuffle-win-30.bin
     "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
     "emb_dropout": 0.1,
-    "bilstm_layers": [2, 1],
+    "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
-    "bilstm_dropout": [0.1, 0.1, 0.],
+    "bilstm_dropout": [0., 0.1, 0.],
     "freeze_word_emb": False,
 }
 
@@ -149,15 +150,15 @@ subwd_encoder_config = {
 
 dep_config = {
     "dep_type_num": statistics["deprel_type_num"],
-    "dep_type_emb_dim": 64,
+    "dep_type_emb_dim": 50,
     "emb_dropout": 0.1,
     "gcn_dim": 128,
     "gcn_dropout": 0.1,
-    "gcn_layer_num": 3,
+    "gcn_layer_num": 1,
 }
 
 handshaking_kernel_config = {
-    "shaking_type": "cat",
+    "shaking_type": "cln",
 }
 
 # model settings
@@ -170,7 +171,7 @@ model_settings = {
     "pos_tag_emb_config": pos_tag_emb_config,
     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
-#     "subwd_encoder_config": subwd_encoder_config,
+    "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
