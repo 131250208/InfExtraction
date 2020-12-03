@@ -121,6 +121,8 @@ class HandshakingTaggerRel(Tagger):
                                "OH2SH",  # object head to subject head
                                "ST2OT",  # subject tail to object tail
                                "OT2ST",  # object tail to subject tail
+                               "S2O", # won't be used in decoding
+                               "O2S" # won't be used in decoding
                               }
         self.tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
 
@@ -163,6 +165,16 @@ class HandshakingTaggerRel(Tagger):
                 subj_tok_span = rel["subj_tok_span"]
                 obj_tok_span = rel["obj_tok_span"]
                 rel = rel["predicate"]
+
+                # add relation points
+                for i in range(*subj_tok_span):
+                    for j in range(*obj_tok_span):
+                        if i <= j:
+                            add_point((i, j, self.tag2id[self.separator.join([rel, "S2O"])]))
+                        else:
+                            add_point((j, i, self.tag2id[self.separator.join([rel, "O2S"])]))
+
+                # add related boundaries
                 if subj_tok_span[0] <= obj_tok_span[0]:
                     add_point((subj_tok_span[0], obj_tok_span[0], self.tag2id[self.separator.join([rel, "SH2OH"])]))
                 else:
