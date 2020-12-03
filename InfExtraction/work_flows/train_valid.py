@@ -11,9 +11,11 @@ Train the model
 '''
 
 from InfExtraction.modules.preprocess import Preprocessor, MyDataset
-from InfExtraction.modules.taggers import HandshakingTagger4EE
+from InfExtraction.modules import taggers
+from InfExtraction.modules import models
+from InfExtraction.modules.taggers import HandshakingTaggerEE, MatrixTaggerEE
 from InfExtraction.modules.workers import Trainer, Evaluator
-from InfExtraction.modules.models import TPLinkerPlus
+from InfExtraction.modules.models import TPLinkerPlus, TriggerFreeEventExtractor
 from InfExtraction.work_flows import settings_train_val_test as settings
 from InfExtraction.work_flows.utils import DefaultLogger
 
@@ -87,6 +89,8 @@ if __name__ == "__main__":
     exp_name = settings.exp_name
     task_type = settings.task_type
     run_name = settings.run_name
+    model_name = settings.model_name
+    tagger_name = settings.tagger_name
 
     # data
     data_in_dir = settings.data_in_dir
@@ -174,11 +178,13 @@ if __name__ == "__main__":
     for filename, test_data in filename2test_data.items():
         all_data.extend(test_data)
     # tagger
-    tagger = HandshakingTagger4EE(all_data)
+    tagger_class_name = getattr(taggers, tagger_name)
+    tagger = tagger_class_name(all_data)  # HandshakingTaggerEE
     tag_size = tagger.get_tag_size()
     # model
     print("init model...")
-    model = TPLinkerPlus(tag_size, **model_settings)
+    model_class_name = getattr(models, model_name)
+    model = model_class_name(tag_size, **model_settings) # TPLinkerPlus
     model = model.to(device)
     print("done!")
     # function for generating data batch

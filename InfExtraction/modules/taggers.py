@@ -1,4 +1,3 @@
-import torch
 import copy
 import re
 from abc import ABCMeta, abstractmethod
@@ -7,6 +6,13 @@ from InfExtraction.modules.preprocess import Indexer, Preprocessor
 
 
 class Tagger(metaclass=ABCMeta):
+    @abstractmethod
+    def get_tag_size(self):
+        pass
+
+    def additional_preprocess(self, data):
+        return data
+
     @abstractmethod
     def get_tag_points(self, sample):
         '''
@@ -51,7 +57,7 @@ class Tagger(metaclass=ABCMeta):
         pass
     
 
-class HandshakingTagger(Tagger):
+class HandshakingTaggerRel(Tagger):
     def additional_preprocess(self, data):
         for sample in data:
             fin_ent_list = []
@@ -254,23 +260,28 @@ class HandshakingTagger(Tagger):
                         "predicate": rel,
                     })
 
-        res = {
-            "id": sample_idx,
-            "text": text,
-            "tok2char_span": tok2char_span,
-            "relation_list": rel_list,
-            "entity_list": ent_list,
-            # "tok_level_offset": sample["tok_level_offset"],
-            # "char_level_offset": sample["char_level_offset"],
-        }
-        # these three keys are for span recovering (to original text)
-        if "tok_level_offset" in sample:
-            res["tok_level_offset"] = sample["tok_level_offset"]
-        if "char_level_offset" in sample:
-            res["char_level_offset"] = sample["char_level_offset"]
-        if "splits" in sample: # it is a combined sample
-            res["splits"] = sample["splits"]
-        return res
+        pred_sample = copy.deepcopy(sample)
+        # change to predicted relation list and entity list
+        pred_sample["relation_list"] = rel_list
+        pred_sample["entity_list"] = ent_list
+
+        # res = {
+        #     "id": sample_idx,
+        #     "text": text,
+        #     "tok2char_span": tok2char_span,
+        #     "relation_list": rel_list,
+        #     "entity_list": ent_list,
+        #     # "tok_level_offset": sample["tok_level_offset"],
+        #     # "char_level_offset": sample["char_level_offset"],
+        # }
+        # # these three keys are for span recovering (to original text)
+        # if "tok_level_offset" in sample:
+        #     res["tok_level_offset"] = sample["tok_level_offset"]
+        # if "char_level_offset" in sample:
+        #     res["char_level_offset"] = sample["char_level_offset"]
+        # if "splits" in sample: # it is a combined sample
+        #     res["splits"] = sample["splits"]
+        return pred_sample
 
     def decode_batch(self, sample_list, pred_tag_batch):
         pred_sample_list = []
@@ -282,7 +293,7 @@ class HandshakingTagger(Tagger):
         return pred_sample_list
 
 
-class HandshakingTagger4EE(HandshakingTagger):
+class HandshakingTaggerEE(HandshakingTaggerRel):
     def additional_preprocess(self, data):
         separator = "_"
         for sample in data:
@@ -317,11 +328,11 @@ class HandshakingTagger4EE(HandshakingTagger):
             if "entity_list" in sample:
                 fin_ent_list.extend(sample["entity_list"])
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
-        data = super(HandshakingTagger4EE, self).additional_preprocess(data)
+        data = super(HandshakingTaggerEE, self).additional_preprocess(data)
         return data
 
     def decode(self, sample, shaking_tag):
-        pred_sample = super(HandshakingTagger4EE, self).decode(sample, shaking_tag)
+        pred_sample = super(HandshakingTaggerEE, self).decode(sample, shaking_tag)
         return {
             **pred_sample,
             "event_list": self._trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
@@ -419,3 +430,94 @@ class HandshakingTagger4EE(HandshakingTagger):
                 }
                 event_list.append(event)
         return event_list
+
+
+class MatrixTaggerEE(Tagger):
+    def __init__(self, data):
+        '''
+        :param data: all data, used to generate entity type and relation type dicts
+        '''
+        super().__init__()
+        # generate unified tag
+        tag_set = set()
+        self.separator = "\u2E80"
+        for sample in data:
+            tag_triplets = self._get_tags(sample)
+            tag_set |= {t[-1] for t in tag_triplets}
+
+        self.tag2id = {tag: ind for ind, tag in enumerate(sorted(tag_set))}
+        self.id2tag = {id_: t for t, id_ in self.tag2id.items()}
+
+    def get_tag_size(self):
+        return len(self.tag2id)
+
+    def _get_tags(self, sample):
+        tag_list = []
+        for event in sample["event_list"]:
+            event_type = event["trigger_type"]
+            pseudo_argument = {
+                "type": "Trigger",
+                "tok_span": event["trigger_tok_span"],
+            }
+            argument_list = [pseudo_argument, ] + event["argument_list"]
+            for guide_arg in argument_list:
+                for arg in argument_list:
+                    arg_type = arg["type"]
+                    ea_tag = "{}{}{}".format(event_type, self.separator, arg_type)
+                    for i in range(*guide_arg["tok_span"]):
+                        for j in range(*arg["tok_span"]):
+                            pos_tag = "I"
+                            if j == arg["tok_span"][0]:
+                                pos_tag = "B"
+                            eap_tag = "{}{}{}".format(ea_tag, self.separator, pos_tag)
+                            tag_list.append([i, j, eap_tag])
+        return tag_list
+
+    def get_tag_points(self, sample):
+        tag_list = self._get_tags(sample)
+        for tag in tag_list:
+            tag[-1] = self.tag2id[tag[-1]]
+        return tag_list
+
+    def tag(self, data):
+        for sample in tqdm(data, desc="tagging"):
+            sample["tag_points"] = self.get_tag_points(sample)
+        return data
+
+    def decode(self, sample, predicted_matrix_tag):
+        matrix_points = Indexer.matrix2points(predicted_matrix_tag)
+        tags = [[p[0], p[1], self.id2tag[p[2]]] for p in matrix_points]
+        sample_idx, text = sample["id"], sample["text"]
+        tok2char_span = sample["features"]["tok2char_span"]
+
+        # decoding
+        # ...
+
+        # event = {
+        #     "trigger": None, # "trigger_text
+        #     "trigger_char_span": None,
+        #     "trigger_tok_span": None,
+        #     "trigger_type": None,
+        #     "argument_list": [
+        #         {
+        #             "text": None, # argument text,
+        #             "tok_span": None,
+        #             "char_span": None,
+        #         }
+        #     ],
+        # }
+        event_list = [] # predicted event list
+
+        pred_sample = copy.deepcopy(sample)
+        # change to the predicted one, if not, will use ground truth to score
+        pred_sample["event_list"] = event_list
+        return pred_sample
+
+    def decode_batch(self, sample_list, pred_tag_batch):
+        pred_sample_list = []
+        for ind in range(len(sample_list)):
+            sample = sample_list[ind]
+            pred_tag = pred_tag_batch[ind]
+            pred_sample = self.decode(sample, pred_tag)  # decoding one sample
+            pred_sample_list.append(pred_sample)
+        return pred_sample_list

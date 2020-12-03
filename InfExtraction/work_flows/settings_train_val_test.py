@@ -6,6 +6,8 @@ import copy
 
 exp_name = "ace2005_lu"
 task_type = "ee"
+model_name = "TriggerFreeEventExtractor" # TPLinkerPlus, TriggerFreeEventExtractor
+tagger_name = "MatrixTaggerEE" # HandshakingTaggerRel, HandshakingTaggerEE, MatrixTaggerEE
 
 # data
 data_in_dir = "../../data/normal_data"
@@ -32,11 +34,10 @@ key2dict = {
 
 # train, valid, test settings
 run_name = "tp2+dep+pos+ner"
-model_name = "tplinker_plus"
 device_num = 1
 seed = 9494
 epochs = 200
-lr = 1e-4 # 5e-5
+lr = 1e-4 # 5e-5, 1e-4
 batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
@@ -150,7 +151,7 @@ dep_config = {
     "dep_type_num": statistics["deprel_type_num"],
     "dep_type_emb_dim": 64,
     "emb_dropout": 0.1,
-    "gcn_dim": 300,
+    "gcn_dim": 128,
     "gcn_dropout": 0.1,
     "gcn_layer_num": 3,
 }
