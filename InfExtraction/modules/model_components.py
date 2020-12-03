@@ -96,32 +96,30 @@ class LayerNorm(nn.Module):
 
 
 class HandshakingKernel(nn.Module):
-    def __init__(self, hidden_size, shaking_type):
+    def __init__(self, guide_hidden_size, vis_hidden_size, shaking_type, only_look_after=True):
+        '''
+            guide_hidden_size = seq_hiddens_x.size()[-1]
+            vis_hidden_size = seq_hiddens_y.size()[-1]
+            output_size = vis_hidden_size, guide_hidden_size is not necessary equal to vis_hidden_size
+        '''
         super().__init__()
         self.shaking_type = shaking_type
+        self.only_look_after = only_look_after
         if shaking_type == "cat":
-            self.combine_fc = nn.Linear(hidden_size * 2, hidden_size)
+            self.combine_fc = nn.Linear(guide_hidden_size + vis_hidden_size, vis_hidden_size)
         elif shaking_type == "cat_lstm":
-            self.combine_fc = nn.Linear(hidden_size * 3, hidden_size)
+            self.combine_fc = nn.Linear(vis_hidden_size * 2 + guide_hidden_size, vis_hidden_size)
         elif shaking_type == "cln":
-            self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
+            self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
         elif shaking_type == "cln_lstm":
-            self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-            self.inner_context_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-        elif shaking_type == "cln_att":
-            self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-            self.W_q = nn.Linear(hidden_size, hidden_size)
-            self.W_k = nn.Linear(hidden_size, hidden_size)
-        elif shaking_type == "cat_att":
-            self.combine_fc = nn.Linear(hidden_size * 2, hidden_size)
-            self.W_q = nn.Linear(hidden_size, hidden_size)
-            self.W_k = nn.Linear(hidden_size, hidden_size)
+            self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
+            self.inner_context_cln = LayerNorm(vis_hidden_size, vis_hidden_size, conditional=True)
 
         if "mix" in shaking_type:
-            self.lamtha = Parameter(torch.rand(hidden_size))
+            self.lamtha = Parameter(torch.rand(vis_hidden_size))
         if "lstm" in shaking_type:
-            self.inner_context_lstm = nn.LSTM(hidden_size,
-                                              hidden_size,
+            self.inner_context_lstm = nn.LSTM(vis_hidden_size,
+                                              vis_hidden_size,
                                               num_layers=1,
                                               bidirectional=False,
                                               batch_first=True)
@@ -147,88 +145,44 @@ class HandshakingKernel(nn.Module):
 
         return inner_context
 
-    def forward(self, seq_hiddens):
+    def forward(self, seq_hiddens_x, seq_hiddens_y):
         '''
-        seq_hiddens: (batch_size_train, seq_len, hidden_size)
+        seq_hiddens_x: (batch_size, seq_len, hidden_size)
+        seq_hiddens_y: (batch_size, seq_len, hidden_size)
         return:
-            shaking_hiddenss: (batch_size_train, (1 + seq_len) * seq_len / 2, hidden_size) (32, 5+4+3+2+1, 5)
+            if only look after:
+                shaking_hiddenss: (batch_size, (1 + seq_len) * seq_len / 2, hidden_size); e.g. (32, 5+4+3+2+1, 5)
+            else:
+                shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
         '''
-        seq_len = seq_hiddens.size()[-2]
+        seq_len = seq_hiddens_x.size()[-2]
         shaking_hiddens_list = []
         for ind in range(seq_len):
-            hidden_each_step = seq_hiddens[:, ind, :]
-            visible_hiddens = seq_hiddens[:, ind:, :]  # ind: only look back
-            repeat_hiddens = hidden_each_step[:, None, :].repeat(1, seq_len - ind, 1)
+            vis_start_ind = ind if self.only_look_after else 0
+            guide_hiddens = seq_hiddens_x[:, ind:ind+1, :].repeat(1, seq_len - vis_start_ind, 1)
+            visible_hiddens = seq_hiddens_y[:, vis_start_ind:, :]
 
             shaking_hiddens = None
             if self.shaking_type == "cat":
-                shaking_hiddens = torch.cat([repeat_hiddens, visible_hiddens], dim=-1)
+                shaking_hiddens = torch.cat([guide_hiddens, visible_hiddens], dim=-1)
                 shaking_hiddens = torch.tanh(self.combine_fc(shaking_hiddens))
             elif self.shaking_type == "cat_lstm":
                 inner_context = self.enc_inner_hiddens(visible_hiddens, "lstm")
-                shaking_hiddens = torch.cat([repeat_hiddens, visible_hiddens, inner_context], dim=-1)
+                shaking_hiddens = torch.cat([guide_hiddens, visible_hiddens, inner_context], dim=-1)
                 shaking_hiddens = torch.tanh(self.combine_fc(shaking_hiddens))
             elif self.shaking_type == "cln":
-                shaking_hiddens = self.tp_cln(visible_hiddens, repeat_hiddens)
+                shaking_hiddens = self.tp_cln(visible_hiddens, guide_hiddens)
             elif self.shaking_type == "cln_lstm":
+                shaking_hiddens = self.tp_cln(visible_hiddens, guide_hiddens)
                 inner_context = self.enc_inner_hiddens(visible_hiddens, "lstm")
-                shaking_hiddens = self.tp_cln(visible_hiddens, repeat_hiddens)
                 shaking_hiddens = self.inner_context_cln(shaking_hiddens, inner_context)
-            elif self.shaking_type == "cln_att":
-                shaking_hiddens = self.tp_cln(visible_hiddens, repeat_hiddens)
-                query = self.W_q(shaking_hiddens)
-                key = torch.transpose(self.W_k(seq_hiddens), 1, 2)
-                att = F.softmax(torch.matmul(query, key) / (query.size()[-1] ** 0.5), dim=-1)
-                shaking_hiddens = torch.matmul(att, seq_hiddens)
-            elif self.shaking_type == "cat_att":
-                shaking_hiddens = torch.cat([repeat_hiddens, visible_hiddens], dim=-1)
-                shaking_hiddens = torch.tanh(self.combine_fc(shaking_hiddens))
-                query = self.W_q(shaking_hiddens)
-                key = torch.transpose(self.W_k(seq_hiddens), 1, 2)
-                att = F.softmax(torch.matmul(query, key) / (query.size()[-1] ** 0.5), dim=-1)
-                shaking_hiddens = torch.matmul(att, seq_hiddens)
-            #                 weighted_shaking_hiddens = []
-            #                 for tp_ind in range(shaking_hiddens.size()[-2]):
-            #                     query = shaking_hiddens[:, tp_ind: (tp_ind + 1), :].repeat(1, seq_len, 1)
-            #                     keys = seq_hiddens
-            # #                     set_trace()
-            #                     att = self.V(torch.tanh(self.W(torch.cat([query, keys], dim = -1))))
-            #                     weighted_shaking_hiddens.append(torch.sum(att * seq_hiddens, dim = -2)[:, None, :])
-            #                 shaking_hiddens = torch.cat(weighted_shaking_hiddens, dim = -2)
 
             shaking_hiddens_list.append(shaking_hiddens)
-        long_shaking_hiddens = torch.cat(shaking_hiddens_list, dim=1)
-        return long_shaking_hiddens
-
-
-import copy
-import torch
-import torch.nn as nn
-from torch.autograd import Variable
-
-entity_subtype_dict = {'O': 0, '2_Individual': 1, '2_Time': 2, '2_Group': 3, '2_Nation': 4,
-                       '2_Indeterminate': 5, '2_Population_Center': 6, '2_Government': 7,
-                       '2_Commercial': 8, '2_Non_Governmental': 9, '2_Media': 10, '2_Building_Grounds': 11,
-                       '2_Numeric': 12, '2_State_or_Province': 13, '2_Region_General': 14, '2_Sports': 15,
-                       '2_Crime': 16, '2_Land': 17, '2_Air': 18, '2_Water': 19, '2_Airport': 20,
-                       '2_Sentence': 21, '2_Educational': 22, '2_Celestial': 23, '2_Underspecified': 24,
-                       '2_Shooting': 25, '2_Special': 26, '2_Subarea_Facility': 27, '2_Path': 28,
-                       '2_GPE_Cluster': 29, '2_Exploding': 30, '2_Water_Body': 31, '2_Land_Region_Natural': 32,
-                       '2_Nuclear': 33, '2_Projectile': 34, '2_Region_International': 35, '2_Medical_Science': 36,
-                       '2_Continent': 37, '2_Job_Title': 38, '2_County_or_District': 39, '2_Religious': 40,
-                       '2_Contact_Info': 41, '2_Chemical': 42, '2_Subarea_Vehicle': 43, '2_Entertainment': 44,
-                       '2_Biological': 45, '2_Boundary': 46, '2_Plant': 47, '2_Address': 48, '2_Sharp': 49,
-                       '2_Blunt': 50
-                       }
-
-dep_dict = {'O': 0, 'punct': 1, 'iobj': 2, 'parataxis': 3, 'auxpass': 4, 'aux': 5,
-            'conj': 6, 'advcl': 7, 'acl:relcl': 8, 'nsubjpass': 9, 'csubj': 10, 'compound': 11,
-            'compound:prt': 12, 'mwe': 13, 'cop': 14, 'neg': 15, 'nmod:poss': 16, 'appos': 17,
-            'cc:preconj': 18, 'nmod': 19, 'nsubj': 20, 'xcomp': 21, 'det:predet': 22,
-            'nmod:npmod': 23, 'acl': 24, 'amod': 25, 'expl': 26, 'csubjpass': 27, 'case': 28,
-            'ccomp': 29, 'dobj': 30, 'ROOT': 31, 'discourse': 32, 'nmod:tmod': 33, 'dep': 34,
-            'nummod': 35, 'mark': 36, 'advmod': 37, 'cc': 38, 'det': 39
-            }
+        if self.only_look_after:
+            fin_shaking_hiddens = torch.cat(shaking_hiddens_list, dim=1)
+        else:
+            fin_shaking_hiddens = torch.stack(shaking_hiddens_list, dim=1)
+        return fin_shaking_hiddens
 
 
 class GraphConvLayer(nn.Module):
@@ -295,116 +249,3 @@ class Edgeupdate(nn.Module):
         edge = self.W(torch.cat([edge, node], dim=-1))
         return edge  # [batch, seq, seq, dim_e]
 
-
-class EDModel(nn.Module):
-
-    def __init__(self, args, id_to_tag, device, pre_word_embed):
-        super(EDModel, self).__init__()
-
-        self.device = device
-        self.gcn_model = EEGCN(device, pre_word_embed, args)
-        self.gcn_dim = args.gcn_dim
-        self.classifier = nn.Linear(self.gcn_dim, len(id_to_tag))
-
-    def forward(self, word_sequence, x_len, entity_type_sequence, adj, dep):
-        outputs, weight_adj = self.gcn_model(word_sequence, x_len, entity_type_sequence, adj, dep)
-        logits = self.classifier(outputs)
-        return logits, weight_adj
-
-
-def rnn_zero_state(batch_size, hidden_dim, num_layers, bidirectional=True):
-    total_layers = num_layers * 2 if bidirectional else num_layers
-    state_shape = (total_layers, batch_size, hidden_dim)
-    h0 = c0 = Variable(torch.zeros(*state_shape), requires_grad=False)
-    return h0, c0
-
-
-class EEGCN(nn.Module):
-    def __init__(self, device, pre_word_embeds, args):
-        super().__init__()
-
-        self.device = device
-        self.in_dim = args.word_embed_dim + args.bio_embed_dim
-        self.maxLen = args.num_steps
-
-        self.rnn_hidden = args.rnn_hidden
-        self.rnn_dropout = args.rnn_dropout
-        self.rnn_layers = args.rnn_layers
-
-        self.gcn_dropout = args.gcn_dropout
-        self.num_layers = args.num_layers
-        self.gcn_dim = args.gcn_dim
-
-        # Word Embedding Layer
-        self.word_embed_dim = args.word_embed_dim
-        self.wembeddings = nn.Embedding.from_pretrained(torch.FloatTensor(pre_word_embeds), freeze=False)
-
-        # Entity Label Embedding Layer
-        self.bio_size = len(entity_subtype_dict)
-        self.bio_embed_dim = args.bio_embed_dim
-        if self.bio_embed_dim:
-            self.bio_embeddings = nn.Embedding(num_embeddings=self.bio_size,
-                                               embedding_dim=self.bio_embed_dim)
-
-        self.dep_size = len(dep_dict)
-        self.dep_embed_dim = args.dep_embed_dim
-        self.edge_embeddings = nn.Embedding(num_embeddings=self.dep_size,
-                                            embedding_dim=self.dep_embed_dim,
-                                            padding_idx=0)
-
-        self.rnn = nn.LSTM(self.in_dim, self.rnn_hidden, self.rnn_layers, batch_first=True,
-                           dropout=self.rnn_dropout, bidirectional=True)
-        self.rnn_drop = nn.Dropout(self.rnn_dropout)  # use on last layer output
-
-        self.input_W_G = nn.Linear(self.rnn_hidden * 2, self.gcn_dim)
-        self.pooling = args.pooling
-        self.gcn_layers = nn.ModuleList()
-        self.gcn_drop = nn.Dropout(self.gcn_dropout)
-        for i in range(self.num_layers):
-            self.gcn_layers.append(
-                GraphConvLayer(self.device, self.gcn_dim, self.dep_embed_dim, args.pooling))
-        self.aggregate_W = nn.Linear(self.gcn_dim + self.num_layers * self.gcn_dim, self.gcn_dim)
-
-    def encode_with_rnn(self, rnn_inputs, seq_lens, batch_size):
-        # seq_lens = list(masks.data.eq(constant.PAD_ID).long().sum(1).squeeze())
-        h0, c0 = rnn_zero_state(batch_size, self.rnn_hidden, self.rnn_layers)
-        h0, c0 = h0.to(self.device), c0.to(self.device)
-        rnn_inputs = nn.utils.rnn.pack_padded_sequence(rnn_inputs, seq_lens, batch_first=True)
-        rnn_outputs, (ht, ct) = self.rnn(rnn_inputs, (h0, c0))
-        rnn_outputs, _ = nn.utils.rnn.pad_packed_sequence(rnn_outputs, batch_first=True)
-        return rnn_outputs
-
-    def forward(self, word_sequence, x_len, entity_type_sequence, adj, edge):
-
-        BATCH_SIZE = word_sequence.shape[0]
-        BATCH_MAX_LEN = x_len[0]
-
-        word_sequence = word_sequence[:, :BATCH_MAX_LEN].contiguous()
-        adj = adj[:, :BATCH_MAX_LEN, :BATCH_MAX_LEN].contiguous()
-        edge = edge[:, :BATCH_MAX_LEN, :BATCH_MAX_LEN].contiguous()
-        weight_adj = self.edge_embeddings(edge)  # [batch, seq, seq, dim_e]
-
-        word_emb = self.wembeddings(word_sequence)
-        x_emb = word_emb
-        if self.bio_embed_dim:
-            entity_type_sequence = entity_type_sequence[:, :BATCH_MAX_LEN].contiguous()
-            entity_label_emb = self.bio_embeddings(entity_type_sequence)
-            x_emb = torch.cat([x_emb, entity_label_emb], dim=2)
-
-        rnn_outputs = self.rnn_drop(self.encode_with_rnn(x_emb, x_len, BATCH_SIZE))
-        gcn_inputs = self.input_W_G(rnn_outputs)
-        gcn_outputs = gcn_inputs
-        layer_list = [gcn_inputs]
-
-        src_mask = (word_sequence != 0)
-        src_mask = src_mask[:, :BATCH_MAX_LEN].unsqueeze(-2).contiguous()
-
-        for _layer in range(self.num_layers):
-            gcn_outputs, weight_adj = self.gcn_layers[_layer](weight_adj, gcn_outputs)  # [batch, seq, dim]
-            gcn_outputs = self.gcn_drop(gcn_outputs)
-            weight_adj = self.gcn_drop(weight_adj)
-            layer_list.append(gcn_outputs)
-
-        outputs = torch.cat(layer_list, dim=-1)
-        aggregate_out = self.aggregate_W(outputs)
-        return aggregate_out, weight_adj

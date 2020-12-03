@@ -3,9 +3,12 @@ import random
 import os
 import json
 import copy
+import re
 
 exp_name = "ace2005_lu"
 task_type = "ee"
+model_name = "TriggerFreeEventExtractor" # TPLinkerPlus, TriggerFreeEventExtractor
+tagger_name = "MatrixTaggerEE" # HandshakingTaggerRel, HandshakingTaggerEE, MatrixTaggerEE
 
 # data
 data_in_dir = "../../data/normal_data"
@@ -31,13 +34,12 @@ key2dict = {
 }
 
 # train, valid, test settings
-run_name = "tp2+dep+pos+ner"
-model_name = "tplinker_plus"
+run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 device_num = 1
 seed = 2333
 epochs = 200
-lr = 1e-5 # 5e-5
-batch_size_train = 32
+lr = 5e-5 # 5e-5, 1e-4
+batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
 

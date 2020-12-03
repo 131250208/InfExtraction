@@ -125,10 +125,27 @@ class Indexer:
         return batch_matrix
 
     @staticmethod
+    def points2multilabel_matrix_batch(batch_points, matrix_size, tag_size):
+        '''
+        Convert points to a matrix tensor for multi-label tasks
+
+        batch_points: a batch of points, [points1, points2, ...]
+            points: [(i, j, tag_id), ]
+        return:
+            batch_matrix: shape: (batch_size_train, matrix_size, matrix_size, tag_size) # element 0 or 1
+        '''
+        batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size, tag_size).long()
+        for batch_id, points in enumerate(batch_points):
+            for pt in points:
+                batch_matrix[batch_id][pt[0]][pt[1]][pt[2]] = 1
+        return batch_matrix
+
+
+    @staticmethod
     def shaking_seq2points(shaking_tag):
         '''
         shaking_tag -> points
-        shaking_tag: (shaking_seq_len, tag_id)
+        shaking_tag: shape: (shaking_seq_len, tag_size)
         points: [(start_ind, end_ind, tag_id), ]
         '''
         points = []
@@ -140,6 +157,21 @@ class Indexer:
             shaking_idx, tag_idx = point[0].item(), point[1].item()
             pos1, pos2 = shaking_idx2matrix_idx[shaking_idx]
             point = (pos1, pos2, tag_idx)
+            points.append(point)
+        return points
+
+    @staticmethod
+    def matrix2points(matrix_tag):
+        '''
+        matrix_tag -> points
+        matrix_tag: shape: (matrix_size, matrix_size, tag_size)
+        points: [(i, j, tag_id), ]
+        '''
+        points = []
+        nonzero_points = torch.nonzero(matrix_tag, as_tuple=False)
+        for point in nonzero_points:
+            i, j, tag_idx = point[0].item(), point[1].item(), point[2].item()
+            point = (i, j, tag_idx)
             points.append(point)
         return points
 
@@ -1272,7 +1304,7 @@ class Preprocessor:
         for sample in data:
             if "splits" in sample:
                 text = sample["text"]
-                tok2char_span = sample["tok2char_span"]
+                tok2char_span = sample["features"]["tok2char_span"]
                 # decompose
                 for spl in sample["splits"]:
                     split_sample = {
