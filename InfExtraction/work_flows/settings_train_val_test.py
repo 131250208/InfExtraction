@@ -34,20 +34,20 @@ key2dict = {
 run_name = "tp2+dep+pos+ner"
 model_name = "tplinker_plus"
 device_num = 1
-seed = 9494
+seed = 2333
 epochs = 200
-lr = 5e-5 # 5e-5
-batch_size_train = 8
+lr = 1e-5 # 5e-5
+batch_size_train = 32
 batch_size_valid = 32
 batch_size_test = 32
 
-max_seq_len_train = 128
-max_seq_len_valid = 128
-max_seq_len_test = 128
+max_seq_len_train = 64
+max_seq_len_valid = 64
+max_seq_len_test = 64
 
-sliding_len_train = 128
-sliding_len_valid = 128
-sliding_len_test = 128
+sliding_len_train = 64
+sliding_len_valid = 64
+sliding_len_test = 64
 
 combine = True
 
@@ -60,8 +60,8 @@ scheduler_dict = {
     "CAWR": {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
-        "T_mult": 2,
-        "rewarm_steps": 4000,
+        "T_mult": 1,
+        "rewarm_steps": 3000,
     },
     "StepLR": {
         "name": "StepLR",
@@ -71,7 +71,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = False
+use_wandb = True
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -133,9 +133,9 @@ word_encoder_config = {
     # PubMed-shuffle-win-30.bin
     "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
     "emb_dropout": 0.1,
-    "bilstm_layers": [2, 1],
+    "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
-    "bilstm_dropout": [0.1, 0.1, 0.],
+    "bilstm_dropout": [0., 0.1, 0.],
     "freeze_word_emb": False,
 }
 
@@ -150,7 +150,7 @@ dep_config = {
     "dep_type_num": statistics["deprel_type_num"],
     "dep_type_emb_dim": 50,
     "emb_dropout": 0.1,
-    "gcn_dim": 300,
+    "gcn_dim": 128,
     "gcn_dropout": 0.1,
     "gcn_layer_num": 1,
 }
