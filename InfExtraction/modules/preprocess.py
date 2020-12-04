@@ -604,7 +604,8 @@ class Preprocessor:
                         bad_ent["extr_ent_wd"] = ent_wd
                         bad_ent["extr_ent_subwd"] = ent_subwd
                         bad_entities.append(bad_ent)
-                sample_id2mismatched_ents[sample["id"]]["bad_entites"] = bad_entities
+                if len(bad_entities) > 0:
+                    sample_id2mismatched_ents[sample["id"]]["bad_entites"] = bad_entities
 
             if "relation_list" in sample:
                 bad_rels = []
@@ -626,33 +627,39 @@ class Preprocessor:
                         bad_rel["extr_obj_wd"] = obj_wd
                         bad_rel["extr_obj_subwd"] = obj_subwd
                         bad_rels.append(bad_rel)
-                sample_id2mismatched_ents[sample["id"]]["bad_relations"] = bad_rels
+                if len(bad_rels) > 0:
+                    sample_id2mismatched_ents[sample["id"]]["bad_relations"] = bad_rels
 
             if "event_list" in sample:
                 bad_events = []
                 for event in sample["event_list"]:
+                    event_cp = copy.deepcopy(event)
                     bad = False
                     trigger_wd_span = event["trigger_wd_span"]
                     trigger_subwd_span = event["trigger_subwd_span"]
                     trigger_wd = Preprocessor._extract_ent(trigger_wd_span, word2char_span, text)
                     trigger_subwd = Preprocessor._extract_ent(trigger_subwd_span, subword2char_span, text)
+
                     if not (trigger_wd == trigger_subwd == event["trigger"]):
                         bad = True
+                        event_cp["extr_trigger_wd"] = trigger_wd
+                        event_cp["extr_trigger_subwd"] = trigger_subwd
 
-                    for arg in event["argument_list"]:
+                    for arg in event_cp["argument_list"]:
                         arg_wd_span = arg["wd_span"]
                         arg_subwd_span = arg["subwd_span"]
                         arg_wd = Preprocessor._extract_ent(arg_wd_span, word2char_span, text)
                         arg_subwd = Preprocessor._extract_ent(arg_subwd_span, subword2char_span, text)
                         if not (arg_wd == arg_subwd == arg["text"]):
                             bad = True
+                            arg["extr_arg_wd"] = arg_wd
+                            arg["extr_arg_subwd"] = arg_subwd
                     if bad:
                         bad_events.append(event)
-                sample_id2mismatched_ents[sample["id"]]["bad_events"] = bad_events
+                if len(bad_events) > 0:
+                    sample_id2mismatched_ents[sample["id"]]["bad_events"] = bad_events
 
-            if len(sample_id2mismatched_ents[sample["id"]]["bad_entities"]) == 0 and \
-                    len(sample_id2mismatched_ents[sample["id"]]["bad_relations"]) == 0 and \
-                    len(sample_id2mismatched_ents[sample["id"]]["bad_events"]) == 0:
+            if len(sample_id2mismatched_ents[sample["id"]]) == 0:
                 del sample_id2mismatched_ents[sample["id"]]
         return sample_id2mismatched_ents
 
