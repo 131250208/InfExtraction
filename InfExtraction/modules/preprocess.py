@@ -590,10 +590,9 @@ class Preprocessor:
             word2char_span = sample["features"]["word2char_span"]
             subword2char_span = sample["features"]["subword2char_span"]
 
-            bad_entities = []
-            bad_rels = []
-            bad_events = []
+            sample_id2mismatched_ents[sample["id"]] = {}
             if "entity_list" in sample:
+                bad_entities = []
                 for ent in sample["entity_list"]:
                     word_span = ent["wd_span"]
                     subword_span = ent["subwd_span"]
@@ -605,12 +604,10 @@ class Preprocessor:
                         bad_ent["extr_ent_wd"] = ent_wd
                         bad_ent["extr_ent_subwd"] = ent_subwd
                         bad_entities.append(bad_ent)
-                sample_id2mismatched_ents[sample["id"]] = {
-                    "bad_entites": bad_entities,
-                }
+                sample_id2mismatched_ents[sample["id"]]["bad_entites"] = bad_entities
 
             if "relation_list" in sample:
-
+                bad_rels = []
                 for rel in sample["relation_list"]:
                     subj_wd_span = rel["subj_wd_span"]
                     obj_wd_span = rel["obj_wd_span"]
@@ -632,6 +629,7 @@ class Preprocessor:
                 sample_id2mismatched_ents[sample["id"]]["bad_relations"] = bad_rels
 
             if "event_list" in sample:
+                bad_events = []
                 for event in sample["event_list"]:
                     bad = False
                     trigger_wd_span = event["trigger_wd_span"]
@@ -650,15 +648,11 @@ class Preprocessor:
                             bad = True
                     if bad:
                         bad_events.append(event)
-
-            sample_id2mismatched_ents[sample["id"]] = {}
-            if len(bad_entities) > 0:
-                sample_id2mismatched_ents[sample["id"]]["bad_entities"] = bad_entities
-            if len(bad_rels) > 0:
-                sample_id2mismatched_ents[sample["id"]]["bad_relations"] = bad_rels
-            if len(bad_events) > 0:
                 sample_id2mismatched_ents[sample["id"]]["bad_events"] = bad_events
-            if len(sample_id2mismatched_ents[sample["id"]]) == 0:
+
+            if len(sample_id2mismatched_ents[sample["id"]]["bad_entities"]) == 0 and \
+                    len(sample_id2mismatched_ents[sample["id"]]["bad_relations"]) == 0 and \
+                    len(sample_id2mismatched_ents[sample["id"]]["bad_events"]) == 0:
                 del sample_id2mismatched_ents[sample["id"]]
         return sample_id2mismatched_ents
 
