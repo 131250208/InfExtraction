@@ -289,7 +289,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             dep_matrix_points_batch = [sample["features"]["dependency_points"] for sample in batch_data]
             batch_dict["dep_adj_matrix"] = Indexer.points2matrix_batch(dep_matrix_points_batch, seq_length)
 
-        # batch_dict["gold_tags"] need to be set by sons
+        # batch_dict["golden_tags"] need to be set by inheritors
         return batch_dict
 
     @abstractmethod

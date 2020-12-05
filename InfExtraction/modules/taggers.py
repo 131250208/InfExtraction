@@ -90,7 +90,8 @@ class HandshakingTaggerRel4TPLPlus(Tagger):
                     "char_span": rel["obj_char_span"],
                     "tok_span": rel["obj_tok_span"],
                 })
-            fin_ent_list.extend(sample["entity_list"])
+            if "entity_list" in sample:
+                fin_ent_list.extend(sample["entity_list"])
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
         return data
 
