@@ -160,6 +160,7 @@ if __name__ == "__main__":
     # ...
 
     # load data
+    print("load data...")
     train_data = json.load(open(train_data_path, "r", encoding="utf-8"))
     valid_data = json.load(open(valid_data_path, "r", encoding="utf-8"))
     filename2test_data = {}
@@ -167,6 +168,7 @@ if __name__ == "__main__":
         test_data_path = os.path.join(data_in_dir, exp_name, filename)
         test_data = json.load(open(test_data_path, "r", encoding="utf-8"))
         filename2test_data[filename] = test_data
+    print("done!")
 
     # choose features and spans by token level
     train_data = Preprocessor.choose_features_by_token_level(train_data, token_level)
@@ -274,7 +276,7 @@ if __name__ == "__main__":
         print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
 
     # trainer and evaluator
-    trainer = Trainer(model, device, optimizer, trainer_config, logger)
+    trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
     evaluator = Evaluator(model, device)
 
     # debug: checking data and decoding
@@ -284,7 +286,7 @@ if __name__ == "__main__":
     best_val_score = 0.
     for ep in range(epochs):
         # train
-        trainer.train(train_dataloader, ep, epochs)
+        trainer.train(ep, epochs)
         # valid
         pred_samples = evaluator.predict(valid_dataloader, valid_data)
         score_dict = evaluator.score(pred_samples, valid_data, "val")

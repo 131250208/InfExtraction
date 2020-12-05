@@ -71,7 +71,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_steps": 2,
+        "rewarm_epochs": 2,
     },
     "StepLR": {
         "name": "StepLR",
