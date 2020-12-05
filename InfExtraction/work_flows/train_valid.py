@@ -13,9 +13,8 @@ Train the model
 from InfExtraction.modules.preprocess import Preprocessor, MyDataset
 from InfExtraction.modules import taggers
 from InfExtraction.modules import models
-from InfExtraction.modules.taggers import HandshakingTaggerEE, MatrixTaggerEE
 from InfExtraction.modules.workers import Trainer, Evaluator
-from InfExtraction.modules.models import TPLinkerPlus, TriggerFreeEventExtractor
+from InfExtraction.modules.metrics import MetricsCalculator
 from InfExtraction.work_flows import settings_train_val_test as settings
 from InfExtraction.work_flows.utils import DefaultLogger
 
@@ -128,12 +127,17 @@ if __name__ == "__main__":
     combine = settings.combine
 
     trainer_config = settings.trainer_config
+    use_ghm = settings.use_ghm
     lr = settings.lr
     model_state_dict_path = settings.model_state_dict_path # pretrained model state
+
+    # match_pattern, only for relation extraction
+    match_pattern = settings.match_pattern
 
     # save model
     score_threshold = settings.score_threshold
     model_bag_size = settings.model_bag_size
+    fin_score_key = settings.final_score_key
 
     # model settings
     model_settings = settings.model_settings
@@ -179,12 +183,14 @@ if __name__ == "__main__":
         all_data.extend(test_data)
     # tagger
     tagger_class_name = getattr(taggers, tagger_name)
-    tagger = tagger_class_name(all_data)  # HandshakingTaggerEE
-    tag_size = tagger.get_tag_size()
+    tagger = tagger_class_name(all_data)  # HandshakingTaggerEE4TPLPlus
+    # tag_size = tagger.get_tag_size()
+    # metrics_calculator
+    metrics_cal = MetricsCalculator(task_type, match_pattern, use_ghm)
     # model
     print("init model...")
     model_class_name = getattr(models, model_name)
-    model = model_class_name(tag_size, **model_settings) # TPLinkerPlus
+    model = model_class_name(tagger, metrics_cal, **model_settings)
     model = model.to(device)
     print("done!")
     # function for generating data batch
@@ -268,9 +274,9 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(model_state_dict_path))
         print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
 
-    # trainer
-    trainer = Trainer(model, tagger, device, optimizer, trainer_config, logger)
-    evaluator = Evaluator(task_type, model, tagger, device, match_pattern=None)
+    # trainer and evaluator
+    trainer = Trainer(model, device, optimizer, trainer_config, logger)
+    evaluator = Evaluator(model, device)
 
     # debug: checking data and decoding
     pprint(evaluator.check_tagging_n_decoding(valid_dataloader, valid_data))
@@ -287,7 +293,7 @@ if __name__ == "__main__":
         dataset2score_dict = {
             "valid_data.json": score_dict,
         }
-        current_val_fin_score = score_dict["{}_{}".format("val", "trigger_class_f1")] # 将trigger_class_f1设为参数
+        current_val_fin_score = score_dict["{}_{}".format("val", fin_score_key)] # 将trigger_class_f1设为参数
 
         # test
         for filename, test_data_loader in filename2test_data_loader.items():

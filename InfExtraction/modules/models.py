@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 from transformers import BertModel
 from InfExtraction.modules.model_components import HandshakingKernel, GraphConvLayer
-from InfExtraction.modules.metrics import MetricsCalculator
 from InfExtraction.modules.preprocess import Indexer
 from gensim.models import KeyedVectors
 import logging
@@ -15,6 +14,8 @@ from IPython.core.debugger import set_trace
 
 class IEModel(nn.Module, metaclass=ABCMeta):
     def __init__(self,
+                 tagger,
+                 metrics_cal,
                  char_encoder_config=None,
                  subwd_encoder_config=None,
                  word_encoder_config=None,
@@ -26,8 +27,8 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         '''
         :parameters: see model settings in settings_train_val_test.py
         '''
-
-        # self.metrics_cal = MetricsCalculator()
+        self.tagger = tagger
+        self.metrics_cal = metrics_cal
         self.cat_hidden_size = 0
 
         # ner
@@ -287,21 +288,38 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         if self.dep_config is not None:
             dep_matrix_points_batch = [sample["features"]["dependency_points"] for sample in batch_data]
             batch_dict["dep_adj_matrix"] = Indexer.points2matrix_batch(dep_matrix_points_batch, seq_length)
+
+        # batch_dict["gold_tags"] need to be set by sons
         return batch_dict
 
     @abstractmethod
-    def get_loss(self, pred_tag, gold_tag):
+    def pred_output2pred_tag(self, pred_output):
+        '''
+        output to tag id
+        :param pred_output: the output of the forward function
+        :return:
+        '''
+        pass
+
+    @abstractmethod
+    def get_metrics(self, pred_outputs, gold_tags):
+        '''
+        :param pred_outputs: the outputs of the forward function
+        :param gold_tags: golden tags from batch_dict["gold_tags"]
+        :return:
+        '''
         pass
 
 
 class TPLinkerPlus(IEModel):
     def __init__(self,
-                 tag_size,
+                 tagger,
+                 metrics_cal,
                  handshaking_kernel_config=None,
                  fin_hidden_size=None,
                  **kwargs,
                  ):
-        super().__init__(**kwargs)
+        super().__init__(tagger, metrics_cal, **kwargs)
         '''
         :parameters: see model settings in settings_train_val_test.py
         '''
@@ -451,8 +469,8 @@ class TPLinkerPlus(IEModel):
         #     # aggregate fc 2
         #     self.aggr_fc4handshaking_kernal = nn.Linear(combined_hidden_size_2, fin_hidden_size)
 
-        self.tag_size = tag_size
-        self.metrics_cal = MetricsCalculator()
+        self.tag_size = tagger.get_tag_size()
+        self.metrics_cal = metrics_cal
 
         self.aggr_fc4handshaking_kernal = nn.Linear(self.cat_hidden_size, fin_hidden_size)
 
@@ -461,14 +479,14 @@ class TPLinkerPlus(IEModel):
         self.handshaking_kernel = HandshakingKernel(fin_hidden_size, fin_hidden_size, shaking_type)
 
         # decoding fc
-        self.dec_fc = nn.Linear(fin_hidden_size, tag_size)
+        self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
         batch_dict = super(TPLinkerPlus, self).generate_batch(batch_data)
         # shaking tag
         tag_points_batch = [sample["tag_points"] for sample in batch_data]
-        batch_dict["shaking_tag"] = Indexer.points2shaking_seq_batch(tag_points_batch, seq_length, self.tag_size)
+        batch_dict["golden_tags"] = [Indexer.points2shaking_seq_batch(tag_points_batch, seq_length, self.tag_size), ]
         return batch_dict
 
     def forward(self, **kwargs):
@@ -559,20 +577,29 @@ class TPLinkerPlus(IEModel):
 
         return predicted_oudtuts
 
-    def get_loss(self, pred_tag, gold_tag, ghm=False):
-        return self.metrics_cal.multilabel_categorical_crossentropy(pred_tag, gold_tag, ghm)
+    def pred_output2pred_tag(self, pred_output):
+        return (pred_output > 0.).long()
+
+    def get_metrics(self, pred_outputs, gold_tags):
+        pred_out, gold_tag = pred_outputs, gold_tags[0]
+        pred_tag = self.pred_output2pred_tag(pred_out)
+        return {
+            "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag),
+            "seq_accuracy": self.metrics_cal.get_tag_seq_accuracy(pred_tag, gold_tag),
+        }
 
 
 class TriggerFreeEventExtractor(IEModel):
     def __init__(self,
-                 tag_size,
+                 tagger,
+                 metrics_cal,
                  handshaking_kernel_config=None,
                  fin_hidden_size=None,
                  **kwargs,
                  ):
-        super().__init__(**kwargs)
-        self.tag_size = tag_size
-        self.metrics_cal = MetricsCalculator()
+        super().__init__(tagger, metrics_cal, **kwargs)
+        self.tag_size = tagger.get_tag_size()
+        self.metrics_cal = metrics_cal
 
         self.aggr_fc4handshaking_kernal = nn.Linear(self.cat_hidden_size, fin_hidden_size)
 
@@ -585,14 +612,14 @@ class TriggerFreeEventExtractor(IEModel):
                                                     )
 
         # decoding fc
-        self.dec_fc = nn.Linear(fin_hidden_size, tag_size)
+        self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
 
     def generate_batch(self, batch_data):
         batch_dict = super(TriggerFreeEventExtractor, self).generate_batch(batch_data)
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
         # shaking tag
         tag_points_batch = [sample["tag_points"] for sample in batch_data]
-        batch_dict["shaking_tag"] = Indexer.points2multilabel_matrix_batch(tag_points_batch, seq_length, self.tag_size)
+        batch_dict["golden_tags"] = [Indexer.points2multilabel_matrix_batch(tag_points_batch, seq_length, self.tag_size), ]
         return batch_dict
 
     def forward(self, **kwargs):
@@ -607,5 +634,13 @@ class TriggerFreeEventExtractor(IEModel):
 
         return predicted_oudtuts
 
-    def get_loss(self, pred_tag, gold_tag, ghm=False):
-        return self.metrics_cal.multilabel_categorical_crossentropy(pred_tag, gold_tag, ghm)
+    def pred_output2pred_tag(self, pred_output):
+        return (pred_output > 0.).long()
+
+    def get_metrics(self, pred_outputs, gold_tags):
+        pred_out, gold_tag = pred_outputs, gold_tags[0]
+        pred_tag = self.pred_output2pred_tag(pred_out)
+        return {
+            "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag),
+            "seq_accuracy": self.metrics_cal.get_tag_seq_accuracy(pred_tag, gold_tag),
+        }

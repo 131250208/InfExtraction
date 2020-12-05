@@ -35,29 +35,30 @@ class Tagger(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def decode(self, sample, pred_tag):
+    def decode(self, sample, pred_tags):
         '''
         decoding function: to extract results by the predicted tag
 
         :param sample: an example (to offer text, tok2char_span for decoding)
-        :param pred_tag: predicted tag
+        :param pred_tags: predicted tag id tensors converted from the outputs of the forward function,
+                          it is a tuple or a single tag tensor
         :return: predicted example
         '''
         pass
 
     @abstractmethod
-    def decode_batch(self, data, pred_tag_batch):
+    def decode_batch(self, data, batch_pred_tags):
 
         '''
         decoding function for batch data, based on decode()
         :param data: examples (to offer text, tok2char_span for decoding)
-        :param pred_tag_batch:
+        :param batch_pred_tags:
         :return:predicted example list
         '''
         pass
     
 
-class HandshakingTaggerRel(Tagger):
+class HandshakingTaggerRel4TPLPlus(Tagger):
     def additional_preprocess(self, data):
         for sample in data:
             fin_ent_list = []
@@ -185,12 +186,13 @@ class HandshakingTaggerRel(Tagger):
                     add_point((obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "OT2ST"])]))
         return matrix_points
 
-    def decode(self, sample, predicted_shaking_tag):
+    def decode(self, sample, pred_tags):
         '''
         sample: to provide tok2char_span map and text
-        predicted_shaking_tag: (shaking_seq_len, tag_id_num)
+        pred_tags: predicted tags
         '''
         rel_list, ent_list = [], []
+        predicted_shaking_tag = pred_tags[0]
         matrix_points = Indexer.shaking_seq2points(predicted_shaking_tag)
 
         sample_idx, text = sample["id"], sample["text"]
@@ -295,17 +297,17 @@ class HandshakingTaggerRel(Tagger):
         #     res["splits"] = sample["splits"]
         return pred_sample
 
-    def decode_batch(self, sample_list, pred_tag_batch):
+    def decode_batch(self, sample_list, batch_pred_tags):
         pred_sample_list = []
         for ind in range(len(sample_list)):
             sample = sample_list[ind]
-            pred_tag = pred_tag_batch[ind]
-            pred_sample = self.decode(sample, pred_tag)  # decoding
+            pred_tags = [batch_pred_tag[ind] for batch_pred_tag in batch_pred_tags]
+            pred_sample = self.decode(sample, pred_tags)  # decoding one sample
             pred_sample_list.append(pred_sample)
         return pred_sample_list
 
 
-class HandshakingTaggerEE(HandshakingTaggerRel):
+class HandshakingTaggerEE4TPLPlus(HandshakingTaggerRel4TPLPlus):
     def additional_preprocess(self, data):
         separator = "_"
         for sample in data:
@@ -340,11 +342,11 @@ class HandshakingTaggerEE(HandshakingTaggerRel):
             if "entity_list" in sample:
                 fin_ent_list.extend(sample["entity_list"])
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
-        data = super(HandshakingTaggerEE, self).additional_preprocess(data)
+        data = super(HandshakingTaggerEE4TPLPlus, self).additional_preprocess(data)
         return data
 
-    def decode(self, sample, shaking_tag):
-        pred_sample = super(HandshakingTaggerEE, self).decode(sample, shaking_tag)
+    def decode(self, sample, pred_outs):
+        pred_sample = super(HandshakingTaggerEE4TPLPlus, self).decode(sample, pred_outs)
         return {
             **pred_sample,
             "event_list": self._trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
@@ -496,7 +498,9 @@ class MatrixTaggerEE(Tagger):
             sample["tag_points"] = self.get_tag_points(sample)
         return data
 
-    def decode(self, sample, predicted_matrix_tag):
+    def decode(self, sample, pred_tags):
+        predicted_matrix_tag = pred_tags[0]
+
         matrix_points = Indexer.matrix2points(predicted_matrix_tag)
         tags = [[p[0], p[1], self.id2tag[p[2]]] for p in matrix_points]
         sample_idx, text = sample["id"], sample["text"]
@@ -525,11 +529,11 @@ class MatrixTaggerEE(Tagger):
         pred_sample["event_list"] = event_list
         return pred_sample
 
-    def decode_batch(self, sample_list, pred_tag_batch):
+    def decode_batch(self, sample_list, batch_pred_tags):
         pred_sample_list = []
         for ind in range(len(sample_list)):
             sample = sample_list[ind]
-            pred_tag = pred_tag_batch[ind]
-            pred_sample = self.decode(sample, pred_tag)  # decoding one sample
+            pred_tags = [batch_pred_tag[ind] for batch_pred_tag in batch_pred_tags]
+            pred_sample = self.decode(sample, pred_tags)  # decoding one sample
             pred_sample_list.append(pred_sample)
         return pred_sample_list

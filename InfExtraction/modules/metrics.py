@@ -1,8 +1,13 @@
 import torch
 
 
-class MetricsCalculator():
-    def __init__(self):
+class MetricsCalculator:
+    def __init__(self, task_type, match_pattern=None, use_ghm=False):
+        self.task_type = task_type # for scoring
+        self.match_pattern = match_pattern # for scoring of relation extraction
+        # for multilabel_categorical_crossentropy
+        self.use_ghm = use_ghm
+        self.bp_steps = 0
         self.last_weights = None  # for exponential moving averaging
 
     def GHM(self, gradient, bins=10, beta=0.9):
@@ -46,7 +51,7 @@ class MetricsCalculator():
         weights4examples /= torch.sum(weights4examples)
         return weights4examples * gradient  # return weighted gradients
 
-    def multilabel_categorical_crossentropy(self, y_pred, y_true, ghm=True):
+    def multilabel_categorical_crossentropy(self, y_pred, y_true):
         """
         This function is a loss function for multi-label learning
         ref: https://kexue.fm/archives/7359
@@ -65,7 +70,10 @@ class MetricsCalculator():
         neg_loss = torch.logsumexp(y_pred_neg, dim=-1)
         pos_loss = torch.logsumexp(y_pred_pos, dim=-1)
 
-        if ghm:
+        # count steps
+        self.bp_steps += 1
+
+        if self.use_ghm and self.bp_steps > 1000:
             return (self.GHM(neg_loss + pos_loss, bins=1000)).sum()
         else:
             return (neg_loss + pos_loss).mean()
@@ -238,3 +246,45 @@ class MetricsCalculator():
         recall = correct_num / (gold_num + minimum)
         f1 = 2 * precision * recall / (precision + recall + minimum)
         return precision, recall, f1
+    
+    def score(self, pred_data, golden_data, data_type):
+        score_dict = None
+        if self.task_type == "re":
+            assert self.match_pattern is not None
+            total_cpg_dict = self.get_rel_cpg_dict(pred_data,
+                                                 golden_data,
+                                                 self.match_pattern)
+            rel_prf = self.get_prf_scores(*total_cpg_dict["rel_cpg"])
+            ent_prf = self.get_prf_scores(*total_cpg_dict["ent_cpg"])
+            score_dict = {
+                "{}_rel_prec".format(data_type): rel_prf[0],
+                "{}_rel_recall".format(data_type): rel_prf[1],
+                "{}_rel_f1".format(data_type): rel_prf[2],
+                "{}_ent_prec".format(data_type): ent_prf[0],
+                "{}_ent_recall".format(data_type): ent_prf[1],
+                "{}_ent_f1".format(data_type): ent_prf[2]
+            }
+
+        elif self.task_type == "ee":
+            total_cpg_dict = self.get_event_cpg_dict(pred_data, golden_data)
+            trigger_iden_prf = self.get_prf_scores(*total_cpg_dict["trigger_iden_cpg"])
+            trigger_class_prf = self.get_prf_scores(*total_cpg_dict["trigger_class_cpg"])
+            arg_iden_prf = self.get_prf_scores(*total_cpg_dict["arg_iden_cpg"])
+            arg_class_prf = self.get_prf_scores(*total_cpg_dict["arg_class_cpg"])
+
+            score_dict = {
+                "{}_trigger_iden_prec".format(data_type): trigger_iden_prf[0],
+                "{}_trigger_iden_recall".format(data_type): trigger_iden_prf[1],
+                "{}_trigger_iden_f1".format(data_type): trigger_iden_prf[2],
+                "{}_trigger_class_prec".format(data_type): trigger_class_prf[0],
+                "{}_trigger_class_recall".format(data_type): trigger_class_prf[1],
+                "{}_trigger_class_f1".format(data_type): trigger_class_prf[2],
+                "{}_arg_iden_prec".format(data_type): arg_iden_prf[0],
+                "{}_arg_iden_recall".format(data_type): arg_iden_prf[1],
+                "{}_arg_iden_f1".format(data_type): arg_iden_prf[2],
+                "{}_arg_class_prec".format(data_type): arg_class_prf[0],
+                "{}_arg_class_recall".format(data_type): arg_class_prf[1],
+                "{}_arg_class_f1".format(data_type): arg_class_prf[2],
+            }
+
+        return score_dict

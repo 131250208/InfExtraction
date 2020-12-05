@@ -7,8 +7,16 @@ import re
 
 exp_name = "ace2005_lu"
 task_type = "ee"
-model_name = "TriggerFreeEventExtractor" # TPLinkerPlus, TriggerFreeEventExtractor
-tagger_name = "MatrixTaggerEE" # HandshakingTaggerRel, HandshakingTaggerEE, MatrixTaggerEE
+# match_pattern: for joint entity and relation extraction
+# only_head_text (nyt_star, webnlg_star),
+# whole_text (nyt, webnlg),
+# only_head_index,
+# whole_span
+match_pattern = None
+
+# model and tagger(decoder)
+model_name = "TPLinkerPlus" # TPLinkerPlus, TriggerFreeEventExtractor
+tagger_name = "HandshakingTaggerEE4TPLPlus" # HandshakingTaggerRel4TPLPlus, HandshakingTaggerEE4TPLPlus, MatrixTaggerEE
 
 # data
 data_in_dir = "../../data/normal_data"
@@ -82,15 +90,14 @@ default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 
 # training config
 trainer_config = {
-    "task_type": task_type,
     "run_name": run_name,
     "exp_name": exp_name,
     "scheduler_config": scheduler_dict[scheduler],
-    "use_ghm": use_ghm,
     "log_interval": log_interval,
 }
 
 # for eval
+final_score_key = "trigger_class_f1"
 score_threshold = score_threshold
 model_bag_size = 15
 
@@ -182,6 +189,7 @@ model_settings = {
 model_settings_log = copy.deepcopy(model_settings)
 if "word_encoder_config" in model_settings_log and model_settings_log["word_encoder_config"] is not None:
     del model_settings_log["word_encoder_config"]["word2id"]
+
 config_to_log = {
     "model_name": model_name,
     "seed": seed,
@@ -199,12 +207,8 @@ config_to_log = {
     "sliding_len_test": sliding_len_test,
     "note": "",
     "model_state_dict_path": model_state_dict_path,
+    **trainer_config,
     **model_settings_log,
     "token_level": token_level,
 }
-# match_pattern: for joint entity and relation extraction
-# only_head_text (nyt_star, webnlg_star),
-# whole_text (nyt, webnlg),
-# only_head_index,
-# whole_span
-match_pattern = None
+
