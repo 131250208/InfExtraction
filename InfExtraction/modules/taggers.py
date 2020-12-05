@@ -6,10 +6,6 @@ from InfExtraction.modules.preprocess import Indexer, Preprocessor
 
 
 class Tagger(metaclass=ABCMeta):
-    @abstractmethod
-    def get_tag_size(self):
-        pass
-
     def additional_preprocess(self, data):
         return data
 

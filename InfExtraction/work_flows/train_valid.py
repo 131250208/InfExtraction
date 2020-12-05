@@ -183,8 +183,7 @@ if __name__ == "__main__":
         all_data.extend(test_data)
     # tagger
     tagger_class_name = getattr(taggers, tagger_name)
-    tagger = tagger_class_name(all_data)  # HandshakingTaggerEE4TPLPlus
-    # tag_size = tagger.get_tag_size()
+    tagger = tagger_class_name(all_data)
     # metrics_calculator
     metrics_cal = MetricsCalculator(task_type, match_pattern, use_ghm)
     # model
