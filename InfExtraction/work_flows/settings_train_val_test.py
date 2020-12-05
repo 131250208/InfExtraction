@@ -12,11 +12,11 @@ task_type = "re"
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-match_pattern = "only_head_text"
+match_pattern = "whole_text"
 
 # model and tagger(decoder)
-model_name = "TPLinkerPlus" # TPLinkerPlus, TPLinkerPP, TriggerFreeEventExtractor
-tagger_name = "HandshakingTaggerEE4TPLPlus" # HandshakingTaggerRel4TPLPlus, HandshakingTaggerRel4TPLPP, HandshakingTaggerEE4TPLPlus, MatrixTaggerEE
+model_name = "TPLinkerPP" # TPLinkerPlus, TPLinkerPP, TriggerFreeEventExtractor
+tagger_name = "HandshakingTaggerRel4TPLPP" # HandshakingTaggerRel4TPLPlus, HandshakingTaggerRel4TPLPP, HandshakingTaggerEE4TPLPlus, MatrixTaggerEE
 
 # data
 data_in_dir = "../../data/normal_data"
@@ -47,7 +47,7 @@ device_num = 0
 seed = 2333
 epochs = 200
 lr = 5e-5 # 5e-5, 1e-4
-batch_size_train = 24
+batch_size_train = 16
 batch_size_valid = 32
 batch_size_test = 32
 
@@ -71,7 +71,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_steps": 3000,
+        "rewarm_steps": 2,
     },
     "StepLR": {
         "name": "StepLR",
@@ -165,7 +165,9 @@ dep_config = {
 }
 
 handshaking_kernel_config = {
-    "shaking_type": "cln",
+#     "shaking_type": "cln",
+    "ent_shaking_type": "cln_lstm",
+    "rel_shaking_type": "cln",
 }
 
 # model settings
@@ -175,14 +177,16 @@ token_level = "word" # token is word or subword
 # to do an ablation study, you can remove components by commenting the configurations below
 # except for handshaking_kernel_config, which is a must for the model
 model_settings = {
-    "pos_tag_emb_config": pos_tag_emb_config,
-    "ner_tag_emb_config": ner_tag_emb_config,
+#     "pos_tag_emb_config": pos_tag_emb_config,
+#     "ner_tag_emb_config": ner_tag_emb_config,
     "char_encoder_config": char_encoder_config,
     "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
-    "dep_config": dep_config,
+#     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "fin_hidden_size": 1024,
+#     "fin_hidden_size": 1024,
+    "ent_fc_in_dim": 768,
+    "rel_fc_in_dim": 768,
 }
 
 # this dict would be logged
