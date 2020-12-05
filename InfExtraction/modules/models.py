@@ -93,7 +93,6 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             word_bilstm_dropout = word_encoder_config["bilstm_dropout"]
             freeze_word_emb = word_encoder_config["freeze_word_emb"]
             word_emb_file_path = word_encoder_config["word_emb_file_path"]
-            # self.bert_config4word = word_encoder_config["bert"] if "bert" in word_encoder_config else None
 
             ## init word embedding
             emb_file_suffix = word_emb_file_path.split(".")[-1]
@@ -112,9 +111,13 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             init_word_embedding_matrix = np.random.normal(-0.5, 0.5, size=(len(word2id), word_emb_dim))
             hit_count = 0
             for word, idx in tqdm(word2id.items(), desc="init word embedding matrix"):
+                word_lower = word.lower()
                 if word in pretrained_emb:
                     hit_count += 1
                     init_word_embedding_matrix[idx] = pretrained_emb[word]
+                elif word_lower in pretrained_emb:
+                    hit_count += 1
+                    init_word_embedding_matrix[idx] = pretrained_emb[word_lower]
             print("pretrained word embedding hit rate: {}".format(hit_count / len(word2id)))
 
             init_word_embedding_matrix = torch.FloatTensor(init_word_embedding_matrix)
