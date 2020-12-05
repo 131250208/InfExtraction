@@ -619,6 +619,8 @@ class TPLinkerPP(IEModel):
         self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_fc_in_dim)
         self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_fc_in_dim)
 
+        self.rel_multihead_attn = nn.MultiheadAttention(rel_fc_in_dim, 16)
+
         # handshaking kernel
         ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
         rel_shaking_type = handshaking_kernel_config["rel_shaking_type"]
@@ -657,10 +659,14 @@ class TPLinkerPP(IEModel):
         super(TPLinkerPP, self).forward()
 
         cat_hiddens = self._cat_features(**kwargs)
+
         ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
         rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
+
         ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens, ent_hiddens)
-        rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
+
+        rel_attn_hiddens, _ = self.rel_multihead_attn(rel_hiddens, rel_hiddens, rel_hiddens)
+        rel_hs_hiddens = self.rel_handshaking_kernel(rel_attn_hiddens, rel_attn_hiddens)
 
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
         pred_rel_output = self.rel_fc(rel_hs_hiddens)

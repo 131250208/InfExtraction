@@ -1251,7 +1251,7 @@ class Preprocessor:
 
         new_data = []
         combined_sample = get_new_com_sample()
-        for sample in data:
+        for sample in tqdm(data, desc="combining splits"):
             if len(combined_sample["features"]["tok2char_span"] + sample["features"]["tok2char_span"]) > max_seq_len:
                 new_data.append(combined_sample)
                 combined_sample = get_new_com_sample()
