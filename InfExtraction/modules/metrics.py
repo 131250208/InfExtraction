@@ -7,7 +7,6 @@ class MetricsCalculator:
         self.match_pattern = match_pattern # for scoring of relation extraction
         # for multilabel_categorical_crossentropy
         self.use_ghm = use_ghm
-        self.bp_steps = 0
         self.last_weights = None  # for exponential moving averaging
 
     def GHM(self, gradient, bins=10, beta=0.9):
@@ -51,7 +50,7 @@ class MetricsCalculator:
         weights4examples /= torch.sum(weights4examples)
         return weights4examples * gradient  # return weighted gradients
 
-    def multilabel_categorical_crossentropy(self, y_pred, y_true):
+    def multilabel_categorical_crossentropy(self, y_pred, y_true, bp_steps):
         """
         This function is a loss function for multi-label learning
         ref: https://kexue.fm/archives/7359
@@ -70,10 +69,7 @@ class MetricsCalculator:
         neg_loss = torch.logsumexp(y_pred_neg, dim=-1)
         pos_loss = torch.logsumexp(y_pred_pos, dim=-1)
 
-        # count steps
-        self.bp_steps += 1
-
-        if self.use_ghm and self.bp_steps > 1000:
+        if self.use_ghm and bp_steps > 1000:
             return (self.GHM(neg_loss + pos_loss, bins=1000)).sum()
         else:
             return (neg_loss + pos_loss).mean()

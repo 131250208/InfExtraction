@@ -538,3 +538,231 @@ class MatrixTaggerEE(Tagger):
             pred_sample = self.decode(sample, pred_tags)  # decoding one sample
             pred_sample_list.append(pred_sample)
         return pred_sample_list
+
+
+class HandshakingTaggerRel4TPLPP(Tagger):
+    def additional_preprocess(self, data):
+        for sample in data:
+            fin_ent_list = []
+
+            for rel in sample["relation_list"]:
+                # add relation type to entities
+                fin_ent_list.append({
+                    "text": rel["subject"],
+                    "type": rel["predicate"],
+                    "char_span": rel["subj_char_span"],
+                    "tok_span": rel["subj_tok_span"],
+                })
+                fin_ent_list.append({
+                    "text": rel["object"],
+                    "type": rel["predicate"],
+                    "char_span": rel["obj_char_span"],
+                    "tok_span": rel["obj_tok_span"],
+                })
+                # add default tag to entities
+                fin_ent_list.append({
+                    "text": rel["subject"],
+                    "type": "EXT:DEFAULT",
+                    "char_span": rel["subj_char_span"],
+                    "tok_span": rel["subj_tok_span"],
+                })
+                fin_ent_list.append({
+                    "text": rel["object"],
+                    "type": "EXT:DEFAULT",
+                    "char_span": rel["obj_char_span"],
+                    "tok_span": rel["obj_tok_span"],
+                })
+            if "entity_list" in sample:
+                fin_ent_list.extend(sample["entity_list"])
+            sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
+        return data
+
+    def __init__(self, data):
+        '''
+        :param data: all data, used to generate entity type and relation type dicts
+        '''
+        super().__init__()
+        # additional preprocessing
+        data = self.additional_preprocess(data)
+
+        # generate entity type and relation type dicts
+        rel_type_set = set()
+        ent_type_set = set()
+        for sample in data:
+            # entity type
+            ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
+            # relation type
+            rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
+        rel_type_set = sorted(rel_type_set)
+        ent_type_set = sorted(ent_type_set)
+        self.rel2id = {rel: ind for ind, rel in enumerate(rel_type_set)}
+        self.ent2id = {ent: ind for ind, ent in enumerate(ent_type_set)}
+
+        self.separator = "\u2E80"
+        self.rel_link_types = {"SH2OH",  # subject head to object head
+                               "OH2SH",  # object head to subject head
+                               "ST2OT",  # subject tail to object tail
+                               "OT2ST",  # object tail to subject tail
+                               "S2O",  # won't be used in decoding
+                               "O2S"  # won't be used in decoding
+                              }
+        self.rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
+        self.ent_tags = {self.separator.join([ent, "EH2ET"]) for ent in self.ent2id.keys()}
+
+        self.rel_tag2id = {t: idx for idx, t in enumerate(sorted(self.rel_tags))}
+        self.id2rel_tag = {idx: t for t, idx in self.rel_tag2id.items()}
+
+        self.ent_tag2id = {t: idx for idx, t in enumerate(sorted(self.ent_tags))}
+        self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
+
+    def get_rel_tag_size(self):
+        return len(self.rel_tag2id)
+
+    def get_ent_tag_size(self):
+        return len(self.ent_tag2id)
+
+    def tag(self, data):
+        for sample in tqdm(data, desc="tagging"):
+            ent_points, rel_points = self.get_tag_points(sample)
+            sample["ent_points"] = ent_points
+            sample["rel_points"] = rel_points
+        return data
+
+    def get_tag_points(self, sample):
+        '''
+        matrix_points: [(tok_pos1, tok_pos2, tag_id), ]
+        '''
+        ent_matrix_points, rel_matrix_points = [], []
+
+        if "entity_list" in sample:
+            for ent in sample["entity_list"]:
+                point = (ent["tok_span"][0], ent["tok_span"][1] - 1, self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
+                ent_matrix_points.append(point)
+
+        if "relation_list" in sample:
+            for rel in sample["relation_list"]:
+                subj_tok_span = rel["subj_tok_span"]
+                obj_tok_span = rel["obj_tok_span"]
+                rel = rel["predicate"]
+
+                # add relation points
+                for i in range(*subj_tok_span):
+                    for j in range(*obj_tok_span):
+                        point = (i, j, self.rel_tag2id[self.separator.join([rel, "S2O"])])
+                        rel_matrix_points.append(point)
+                        point = (j, i, self.rel_tag2id[self.separator.join([rel, "O2S"])])
+                        rel_matrix_points.append(point)
+
+                # add related boundaries
+                rel_matrix_points.append((subj_tok_span[0], obj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "SH2OH"])]))
+                rel_matrix_points.append((obj_tok_span[0], subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OH2SH"])]))
+                rel_matrix_points.append((subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "ST2OT"])]))
+                rel_matrix_points.append((obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OT2ST"])]))
+
+        return Preprocessor.unique_list(ent_matrix_points), Preprocessor.unique_list(rel_matrix_points)
+
+    def decode(self, sample, pred_tags):
+        '''
+        sample: to provide tok2char_span map and text
+        pred_tags: predicted tags
+        '''
+        rel_list, ent_list = [], []
+        pred_ent_tag, pred_rel_tag = pred_tags[0], pred_tags[1]
+        ent_points = Indexer.shaking_seq2points(pred_ent_tag)
+        rel_points = Indexer.matrix2points(pred_rel_tag)
+
+        sample_idx, text = sample["id"], sample["text"]
+        tok2char_span = sample["features"]["tok2char_span"]
+
+        # entity
+        head_ind2entities = {}
+        for pt in ent_points:
+            ent_tag = self.id2ent_tag[pt[2]]
+            ent_type, link_type = ent_tag.split(self.separator)
+            # for an entity, the start position can not be larger than the end pos.
+            assert link_type == "EH2ET" and pt[0] <= pt[1]
+
+            char_span_list = tok2char_span[pt[0]:pt[1] + 1]
+            char_sp = [char_span_list[0][0], char_span_list[-1][1]]
+            ent_text = text[char_sp[0]:char_sp[1]]
+            entity = {
+                "type": ent_type,
+                "text": ent_text,
+                "tok_span": [pt[0], pt[1] + 1],
+                "char_span": char_sp,
+            }
+            ent_list.append(entity)
+
+            head_key = "{},{}".format(ent_type, str(pt[0]))
+            if head_key not in head_ind2entities:
+                head_ind2entities[head_key] = []
+            head_ind2entities[head_key].append(entity)
+
+        # tail link
+        tail_link_memory_set = set()
+        for pt in rel_points:
+            tag = self.id2rel_tag[pt[2]]
+            rel, link_type = tag.split(self.separator)
+            if link_type == "ST2OT":
+                tail_link_memory = self.separator.join([rel, str(pt[0]), str(pt[1])])
+                tail_link_memory_set.add(tail_link_memory)
+            elif link_type == "OT2ST":
+                tail_link_memory = self.separator.join([rel, str(pt[1]), str(pt[0])])
+                tail_link_memory_set.add(tail_link_memory)
+            else:
+                continue
+
+        # head link
+        for pt in rel_points:
+            tag = self.id2rel_tag[pt[2]]
+            rel, link_type = tag.split(self.separator)
+
+            if link_type == "SH2OH":
+                subj_head_key, obj_head_key = "{},{}".format(rel, str(pt[0])), "{},{}".format(rel, str(pt[1]))
+            elif link_type == "OH2SH":
+                subj_head_key, obj_head_key = "{},{}".format(rel, str(pt[1])), "{},{}".format(rel, str(pt[0]))
+            else:
+                continue
+
+            if subj_head_key not in head_ind2entities or obj_head_key not in head_ind2entities:
+                # no entity start with subj_head_key or obj_head_key
+                continue
+
+            # all entities start with this subject head
+            subj_list = Preprocessor.unique_list(head_ind2entities[subj_head_key])
+            # all entities start with this object head
+            obj_list = Preprocessor.unique_list(head_ind2entities[obj_head_key])
+
+            # go over all subj-obj pair to check whether the tail link exists
+            for subj in subj_list:
+                for obj in obj_list:
+                    tail_link_memory = self.separator.join(
+                        [rel, str(subj["tok_span"][1] - 1), str(obj["tok_span"][1] - 1)])
+                    if tail_link_memory not in tail_link_memory_set:
+                        # no such relation
+                        continue
+                    rel_list.append({
+                        "subject": subj["text"],
+                        "object": obj["text"],
+                        "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
+                        "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
+                        "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
+                        "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
+                        "predicate": rel,
+                    })
+
+        pred_sample = copy.deepcopy(sample)
+        # change to predicted relation list and entity list
+        pred_sample["relation_list"] = rel_list
+        pred_sample["entity_list"] = ent_list
+
+        return pred_sample
+
+    def decode_batch(self, sample_list, batch_pred_tags):
+        pred_sample_list = []
+        for ind in range(len(sample_list)):
+            sample = sample_list[ind]
+            pred_tags = [batch_pred_tag[ind] for batch_pred_tag in batch_pred_tags]
+            pred_sample = self.decode(sample, pred_tags)  # decoding one sample
+            pred_sample_list.append(pred_sample)
+        return pred_sample_list

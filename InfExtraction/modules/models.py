@@ -31,6 +31,9 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         self.metrics_cal = metrics_cal
         self.cat_hidden_size = 0
 
+        # count bp steps
+        self.bp_steps = 0
+
         # ner
         self.ner_tag_emb_config = ner_tag_emb_config
         if ner_tag_emb_config is not None:
@@ -252,6 +255,10 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         cat_hiddens = torch.cat(features, dim=-1)
 
         return cat_hiddens
+
+    def forward(self):
+        if self.training:
+            self.bp_steps += 1
 
     def generate_batch(self, batch_data):
         assert len(batch_data) > 0
@@ -569,6 +576,7 @@ class TPLinkerPlus(IEModel):
 #                 features.append(gcn_outputs)
 #             combined_hiddens = self.aggr_fc4handshaking_kernal(torch.cat(features, dim=-1))
 
+        super(TPLinkerPlus, self).forward()
         cat_hiddens = self._cat_features(**kwargs)
         cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
         # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
@@ -587,8 +595,92 @@ class TPLinkerPlus(IEModel):
         pred_out, gold_tag = pred_outputs, gold_tags[0]
         pred_tag = self.pred_output2pred_tag(pred_out)
         return {
-            "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag),
+            "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
             "seq_accuracy": self.metrics_cal.get_tag_seq_accuracy(pred_tag, gold_tag),
+        }
+
+
+class TPLinkerPP(IEModel):
+    def __init__(self,
+                 tagger,
+                 metrics_cal,
+                 handshaking_kernel_config=None,
+                 ent_fc_in_dim=None,
+                 rel_fc_in_dim=None,
+                 **kwargs,
+                 ):
+        super().__init__(tagger, metrics_cal, **kwargs)
+
+        self.ent_tag_size = tagger.get_ent_tag_size()
+        self.rel_tag_size = tagger.get_rel_tag_size()
+
+        self.metrics_cal = metrics_cal
+
+        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_fc_in_dim)
+        self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_fc_in_dim)
+
+        # handshaking kernel
+        ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
+        rel_shaking_type = handshaking_kernel_config["rel_shaking_type"]
+        self.ent_handshaking_kernel = HandshakingKernel(ent_fc_in_dim,
+                                                        ent_fc_in_dim,
+                                                        ent_shaking_type,
+                                                        )
+        self.rel_handshaking_kernel = HandshakingKernel(rel_fc_in_dim,
+                                                        rel_fc_in_dim,
+                                                        rel_shaking_type,
+                                                        only_look_after=False,
+                                                        )
+
+        # decoding fc
+        self.ent_fc = nn.Linear(ent_fc_in_dim, self.ent_tag_size)
+        self.rel_fc = nn.Linear(rel_fc_in_dim, self.rel_tag_size)
+
+    def generate_batch(self, batch_data):
+        seq_length = len(batch_data[0]["features"]["tok2char_span"])
+        batch_dict = super(TPLinkerPP, self).generate_batch(batch_data)
+        # tags
+        batch_ent_points = [sample["ent_points"] for sample in batch_data]
+        batch_rel_points = [sample["rel_points"] for sample in batch_data]
+        batch_dict["golden_tags"] = [Indexer.points2shaking_seq_batch(batch_ent_points,
+                                                                      seq_length,
+                                                                      self.ent_tag_size,
+                                                                      ),
+                                     Indexer.points2multilabel_matrix_batch(batch_rel_points,
+                                                                            seq_length,
+                                                                            self.rel_tag_size,
+                                                                            ),
+                                     ]
+        return batch_dict
+
+    def forward(self, **kwargs):
+        super(TPLinkerPP, self).forward()
+
+        cat_hiddens = self._cat_features(**kwargs)
+        ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
+        rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
+        ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens, ent_hiddens)
+        rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
+
+        pred_ent_output = self.ent_fc(ent_hs_hiddens)
+        pred_rel_output = self.rel_fc(rel_hs_hiddens)
+
+        return pred_ent_output, pred_rel_output
+
+    def pred_output2pred_tag(self, pred_output):
+        return (pred_output > 0.).long()
+
+    def get_metrics(self, pred_outputs, gold_tags):
+        ent_pred_out, rel_pred_out, ent_gold_tag, rel_gold_tag = pred_outputs[0], pred_outputs[1], gold_tags[0], gold_tags[1]
+        ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
+        rel_pred_tag = self.pred_output2pred_tag(rel_pred_out)
+        loss = self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
+               self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out, rel_gold_tag, self.bp_steps)
+
+        return {
+            "loss": loss,
+            "ent_seq_acc": self.metrics_cal.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
+            "rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(rel_pred_tag, rel_gold_tag),
         }
 
 
@@ -626,6 +718,8 @@ class TriggerFreeEventExtractor(IEModel):
         return batch_dict
 
     def forward(self, **kwargs):
+        super(TriggerFreeEventExtractor, self).forward()
+
         cat_hiddens = self._cat_features(**kwargs)
         cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
         # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
@@ -644,6 +738,6 @@ class TriggerFreeEventExtractor(IEModel):
         pred_out, gold_tag = pred_outputs, gold_tags[0]
         pred_tag = self.pred_output2pred_tag(pred_out)
         return {
-            "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag),
+            "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
             "seq_accuracy": self.metrics_cal.get_tag_seq_accuracy(pred_tag, gold_tag),
         }

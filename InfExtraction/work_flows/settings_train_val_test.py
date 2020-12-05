@@ -15,8 +15,8 @@ task_type = "re"
 match_pattern = "only_head_text"
 
 # model and tagger(decoder)
-model_name = "TPLinkerPlus" # TPLinkerPlus, TriggerFreeEventExtractor
-tagger_name = "HandshakingTaggerRel4TPLPlus" # HandshakingTaggerRel4TPLPlus, HandshakingTaggerEE4TPLPlus, MatrixTaggerEE
+model_name = "TPLinkerPlus" # TPLinkerPlus, TPLinkerPP, TriggerFreeEventExtractor
+tagger_name = "HandshakingTaggerEE4TPLPlus" # HandshakingTaggerRel4TPLPlus, HandshakingTaggerRel4TPLPP, HandshakingTaggerEE4TPLPlus, MatrixTaggerEE
 
 # data
 data_in_dir = "../../data/normal_data"
