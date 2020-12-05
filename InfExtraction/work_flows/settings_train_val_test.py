@@ -5,14 +5,14 @@ import json
 import copy
 import re
 
-exp_name = "ace2005_lu"
-task_type = "ee"
+exp_name = "nyt"
+task_type = "re"
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-match_pattern = None
+match_pattern = "only_head_text"
 
 # model and tagger(decoder)
 model_name = "TPLinkerPlus" # TPLinkerPlus, TPLinkerPP, TriggerFreeEventExtractor
@@ -43,21 +43,21 @@ key2dict = {
 
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-device_num = 1
+device_num = 0
 seed = 2333
 epochs = 200
 lr = 5e-5 # 5e-5, 1e-4
-batch_size_train = 8
+batch_size_train = 24
 batch_size_valid = 32
 batch_size_test = 32
 
-max_seq_len_train = 64
-max_seq_len_valid = 64
-max_seq_len_test = 64
+max_seq_len_train = 100
+max_seq_len_valid = 100
+max_seq_len_test = 100
 
-sliding_len_train = 64
-sliding_len_valid = 64
-sliding_len_test = 64
+sliding_len_train = 100
+sliding_len_valid = 100
+sliding_len_test = 100
 
 combine = True
 
@@ -81,7 +81,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = False
+use_wandb = True
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -97,7 +97,7 @@ trainer_config = {
 }
 
 # for eval
-final_score_key = "trigger_class_f1"
+final_score_key = "rel_f1" # trigger_class_f1
 score_threshold = score_threshold
 model_bag_size = 15
 
@@ -139,8 +139,8 @@ char_encoder_config = {
 word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
-    # PubMed-shuffle-win-30.bin
-    "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
+    # 
+    "word_emb_file_path": "../../data/pretrained_emb/glove.6B.100d.txt",
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
@@ -149,7 +149,7 @@ word_encoder_config = {
 }
 
 subwd_encoder_config = {
-    "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",
+    "pretrained_model_path": "../../data/pretrained_models/bert-base-cased",
     "finetune": True,
     "use_last_k_layers": 1,
     "wordpieces_prefix": "##",
