@@ -4,6 +4,7 @@ import os
 import json
 import copy
 import re
+from glob import glob
 
 exp_name = "nyt"
 task_type = "re"
@@ -21,9 +22,9 @@ tagger_name = "HandshakingTaggerRel4TPLPP" # HandshakingTaggerRel4TPLPlus, Hands
 # data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
-train_data = "train_data.json"
-valid_data = "valid_data.json"
-test_data_list = ["test.json", ] # ["test_triples.json", ], ["test_data.json", ]
+train_data = os.path.join(data_in_dir, exp_name, "train_data.json")
+valid_data = os.path.join(data_in_dir, exp_name, "valid_data.json")
+test_data_list = glob("{}/*test*".format(os.path.join(data_in_dir, exp_name))) # ["test_triples.json", ], ["test_data.json", ]
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)

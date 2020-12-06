@@ -93,8 +93,8 @@ if __name__ == "__main__":
 
     # data
     data_in_dir = settings.data_in_dir
-    train_data_path = os.path.join(data_in_dir, exp_name, settings.train_data)
-    valid_data_path = os.path.join(data_in_dir, exp_name, settings.valid_data)
+    train_data_path = settings.train_data
+    valid_data_path = settings.valid_data
     dicts = settings.dicts
     statistics = settings.statistics
     key2dict = settings.key2dict # map from feature key to indexing dict
@@ -164,8 +164,8 @@ if __name__ == "__main__":
     train_data = json.load(open(train_data_path, "r", encoding="utf-8"))
     valid_data = json.load(open(valid_data_path, "r", encoding="utf-8"))
     filename2test_data = {}
-    for filename in settings.test_data_list:
-        test_data_path = os.path.join(data_in_dir, exp_name, filename)
+    for test_data_path in settings.test_data_list:
+        filename = test_data_path.split("/")[-1]
         test_data = json.load(open(test_data_path, "r", encoding="utf-8"))
         filename2test_data[filename] = test_data
     print("done!")
