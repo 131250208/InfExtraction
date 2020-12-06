@@ -186,8 +186,8 @@ model_settings = {
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
 #     "fin_hidden_size": 1024,
-    "ent_fc_in_dim": 512,
-    "rel_fc_in_dim": 768,
+    "ent_dim": 512,
+    "rel_dim": 768,
 }
 
 # this dict would be logged

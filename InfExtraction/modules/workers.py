@@ -62,9 +62,11 @@ class Trainer:
         loss = metrics_dict["loss"]
 
         # bp
+        t1 = time.time()
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        print("bp: {}".format(time.time() - t1))
 
         return metrics_dict
 
