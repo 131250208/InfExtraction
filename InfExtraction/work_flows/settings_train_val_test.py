@@ -47,8 +47,8 @@ run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub
 device_num = 0
 seed = 2333
 epochs = 200
-lr = 5e-5 # 5e-5, 1e-4
-batch_size_train = 24
+lr = 1e-4 # 5e-5, 1e-4
+batch_size_train = 16
 batch_size_valid = 32
 batch_size_test = 32
 
@@ -167,12 +167,12 @@ dep_config = {
 
 handshaking_kernel_config = {
 #     "shaking_type": "cln",
-    "ent_shaking_type": "cln_lstm",
-    "rel_shaking_type": "cln",
+    "ent_shaking_type": "cat_lstm",
+    "rel_shaking_type": "cat",
 }
 
 # model settings
-token_level = "subword" # token is word or subword
+token_level = "word" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 # to do an ablation study, you can remove components by commenting the configurations below
@@ -181,8 +181,8 @@ model_settings = {
 #     "pos_tag_emb_config": pos_tag_emb_config,
 #     "ner_tag_emb_config": ner_tag_emb_config,
 #     "char_encoder_config": char_encoder_config,
-    "subwd_encoder_config": subwd_encoder_config,
-#     "word_encoder_config": word_encoder_config,
+#     "subwd_encoder_config": subwd_encoder_config,
+    "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
 #     "fin_hidden_size": 1024,
