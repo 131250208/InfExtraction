@@ -108,6 +108,7 @@ if __name__ == "__main__":
     log_interval = settings.log_interval
 
     # training settings
+    test_tagging_n_decoding = settings.test_tagging_n_decoding
     device_num = settings.device_num
     token_level = settings.token_level
     seed = settings.seed
@@ -279,8 +280,9 @@ if __name__ == "__main__":
     trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
     evaluator = Evaluator(model, device)
 
-    # debug: checking data and decoding
-    pprint(evaluator.check_tagging_n_decoding(valid_dataloader, valid_data))
+    # debug: checking tagging and decoding
+    if test_tagging_n_decoding:
+        pprint(evaluator.check_tagging_n_decoding(valid_dataloader, valid_data))
 
     # train and eval
     best_val_score = 0.

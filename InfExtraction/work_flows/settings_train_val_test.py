@@ -44,6 +44,7 @@ key2dict = {
 
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
+test_tagging_n_decoding = False
 device_num = 0
 seed = 2333
 epochs = 200
