@@ -56,20 +56,16 @@ class Trainer:
         for k, v in batch_train_data.items():
             batch_train_data[k] = v.to(self.device)
 
-        t1 = time.time()
         pred_outputs = self.model(**batch_train_data)
-        t2 = time.time()
 
         metrics_dict = self.model.get_metrics(pred_outputs, golden_tags)
         loss = metrics_dict["loss"]
 
-        t3 = time.time()
         # bp
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        t4 = time.time()
-        print("{}, {}, {}".format(t2 - t1, t3 - t2, t4 - t3))
+
         return metrics_dict
 
     def train(self, ep, num_epoch):

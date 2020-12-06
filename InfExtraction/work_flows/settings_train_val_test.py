@@ -10,9 +10,9 @@ torch.cuda.manual_seed(seed)  # gpu
 torch.cuda.manual_seed_all(seed)
 np.random.seed(seed)  # numpy
 random.seed(seed)  # random and transforms
-torch.backends.cudnn.enabled = False
+torch.backends.cudnn.enabled = True
 torch.backends.cudnn.deterministic = True  # cudnn
-torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.benchmark = True
 
 
 import string
