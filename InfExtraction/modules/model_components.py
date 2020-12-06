@@ -202,6 +202,9 @@ class InteractionKernel(nn.Module):
         lower_gather_ids = [j * matrix_size + i for i in range(matrix_size) for j in range(matrix_size) if i <= j]
         self.upper_gather_tensor = Parameter(torch.tensor(upper_gather_ids), requires_grad=False)
         self.lower_gather_tensor = Parameter(torch.tensor(lower_gather_ids), requires_grad=False)
+        self.cached_mirror_gather_tensor = None
+        self.cached_upper_gather_tensor = None
+        self.cached_lower_gather_tensor = None
 
         self.ent_guide_rel_cln = LayerNorm(rel_dim, ent_dim, conditional=True)
         self.rel_guide_ent_cln = LayerNorm(ent_dim, rel_dim, conditional=True)
@@ -209,19 +212,28 @@ class InteractionKernel(nn.Module):
     def _mirror(self, shaking_seq):
         batch_size, _, hidden_size = shaking_seq.size()
 
-        gather_tensor = self.mirror_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
-        shaking_hiddens = torch.gather(shaking_seq, 1, gather_tensor)
+        if self.cached_mirror_gather_tensor is None or \
+                self.cached_mirror_gather_tensor.size()[0] != batch_size:
+            self.cached_mirror_gather_tensor = self.mirror_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
+
+        shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_mirror_gather_tensor)
         matrix = shaking_hiddens.view(batch_size, self.matrix_size, self.matrix_size, hidden_size)
         return matrix
 
     def _drop_lower_triangle(self, matrix_seq):
         batch_size, matrix_size, _, hidden_size = matrix_seq.size()
-
         shaking_seq = matrix_seq.view(batch_size, -1, hidden_size)
-        upper_gather_tensor = self.upper_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
-        lower_gather_tensor = self.lower_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
-        upper_shaking_hiddens = torch.gather(shaking_seq, 1, upper_gather_tensor)
-        lower_shaking_hiddens = torch.gather(shaking_seq, 1, lower_gather_tensor)
+
+        if self.cached_upper_gather_tensor is None or \
+                self.cached_upper_gather_tensor.size()[0] != batch_size:
+            self.cached_upper_gather_tensor = self.upper_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
+
+        if self.cached_lower_gather_tensor is None or \
+                self.cached_lower_gather_tensor.size()[0] != batch_size:
+            self.cached_lower_gather_tensor = self.lower_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
+
+        upper_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_upper_gather_tensor)
+        lower_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_lower_gather_tensor)
 
         return self.drop_lamtha * upper_shaking_hiddens + (1 - self.drop_lamtha) * lower_shaking_hiddens
 
