@@ -186,12 +186,14 @@ class HandshakingKernel(nn.Module):
 
 
 class InteractionKernel(nn.Module):
-    def __init__(self, ent_dim, rel_dim, ent_att_heads=16, rel_att_heads=16):
+    def __init__(self, ent_dim, rel_dim, matrix_size):
         super(InteractionKernel, self).__init__()
-        # self.fc_rel2ent = nn.Linear(rel_dim, ent_dim)
-        # self.fc_ent2rel = nn.Linear(ent_dim, rel_dim)
-        # self.ent_multihead_attn = nn.MultiheadAttention(ent_dim, ent_att_heads)
-        # self.rel_multihead_attn = nn.MultiheadAttention(rel_dim, rel_att_heads)
+        self.ent_alpha = Parameter(torch.randn([ent_dim, matrix_size, 1]))
+        self.ent_beta = Parameter(torch.randn([ent_dim, 1, matrix_size]))
+        self.rel_alpha = Parameter(torch.randn([rel_dim, matrix_size, 1]))
+        self.rel_beta = Parameter(torch.randn([rel_dim, 1, matrix_size]))
+        self.drop_lamtha = Parameter(torch.rand(rel_dim)) # [0, 1)
+
         self.ent_guide_rel_cln = LayerNorm(rel_dim, ent_dim, conditional=True)
         self.rel_guide_ent_cln = LayerNorm(ent_dim, rel_dim, conditional=True)
 
@@ -210,58 +212,40 @@ class InteractionKernel(nn.Module):
         matrix = torch.cat(matrix_hidden_list, dim=1).view(batch_size, matrix_size, matrix_size, dim_size)
         return matrix
 
+    def _drop_lower_triangle(self, matrix_seq):
+        matrix_size = matrix_seq.size()[1]
+        shaking_hidden_list = []
+        for i in range(matrix_size):
+            for j in range(matrix_size):
+                if i <= j:
+                    shaking_hidden = self.drop_lamtha * matrix_seq[:, i, j, :] + \
+                                     (1 - self.drop_lamtha) * matrix_seq[:, j, i, :]
+                    shaking_hidden_list.append(shaking_hidden)
+        return torch.cat(shaking_hidden_list, dim=1)
+
     def forward(self, ent_hs_hiddens, rel_hs_hiddens):
         batch_size, matrix_size, _, _ = rel_hs_hiddens.size()
 
+        # ent_hs_hiddens_mirror: (batch_size, matrix_size, matrix_size, ent_dim)
         ent_hs_hiddens_mirror = self._mirror(ent_hs_hiddens)
-        ent_context_list = []
-        for i in range(matrix_size):
-            for j in range(matrix_size):
-                # ent_keys = torch.cat([ent_hs_hiddens_mirror[:, i, :, :],
-                #                       ent_hs_hiddens_mirror[:, j, :, :]],
-                #                      dim=1,
-                #                      )
-                # ent_vals = ent_keys
-                # rel_query = rel_hs_hiddens[:, i, j, :].repeat(1, matrix_size * 2, 1)
-                # rel_query = self.fc_rel2ent(rel_query)
-                # ent_con = self.ent_multihead_attn(rel_query, ent_keys, ent_vals)[0]
-
-                ent_con = (torch.mean(ent_hs_hiddens_mirror[:, i, :, :], dim=1) +
-                           torch.mean(ent_hs_hiddens_mirror[:, j, :, :], dim=1)) / 2
-
-                ent_context_list.append(ent_con)
-        ent_context = torch.cat(ent_context_list, dim=1).view(batch_size, matrix_size, matrix_size, -1)
-        assert ent_context.size()[-1] == ent_hs_hiddens.size()[-1]
-
+        
+        # ent_row_cont: (batch_size, ent_dim, matrix_size, 1)
+        ent_row_cont = torch.matmul(ent_hs_hiddens_mirror.permute(0, 3, 1, 2), self.ent_alpha)
+        # ent_col_cont: (batch_size, ent_dim, 1, matrix_size)
+        ent_col_cont = torch.matmul(self.ent_beta, ent_hs_hiddens_mirror.permute(0, 3, 1, 2))
+        # ent_context: (batch_size, matrix_size, matrix_size, ent_dim)
+        ent_context = torch.matmul(ent_row_cont, ent_col_cont).permute(0, 2, 3, 1)
         rel_hs_hiddens_guided = self.ent_guide_rel_cln(rel_hs_hiddens, ent_context)
 
-        rel_context_list = []
-        map_ = Indexer.get_shaking_idx2matrix_idx(matrix_size)
-        for i in range(ent_hs_hiddens.size()[1]):
-            mat_i, mat_j = map_[i]
-            # rel_keys = torch.cat([rel_hs_hiddens_guided[:, mat_i, :, :],
-            #                       rel_hs_hiddens_guided[:, mat_j, :, :],
-            #                       rel_hs_hiddens_guided[:, :, mat_i, :],
-            #                       rel_hs_hiddens_guided[:, :, mat_j, :],
-            #                       ],
-            #                      dim=1,
-            #                      )
-            # rel_vals = rel_keys
-            # ent_query = ent_hs_hiddens[:, i, :].repeat(1, matrix_size * 4, 1)
-            # ent_query = self.fc_ent2rel(ent_query)
-            # rel_con = self.rel_multihead_attn(ent_query, rel_keys, rel_vals)[0]
-
-            rel_con = (torch.mean(rel_hs_hiddens_guided[:, mat_i, :, :], dim=1) +
-                       torch.mean(rel_hs_hiddens_guided[:, mat_j, :, :], dim=1) +
-                       torch.mean(rel_hs_hiddens_guided[:, :, mat_i, :], dim=1) +
-                       torch.mean(rel_hs_hiddens_guided[:, :, mat_j, :], dim=1)) / 4
-            rel_context_list.append(rel_con)
-        rel_context = torch.cat(rel_context_list, dim=1).view(batch_size, ent_hs_hiddens.size()[1], -1)
-        assert rel_context.size()[-1] == rel_hs_hiddens.size()[-1] == rel_hs_hiddens_guided.size()[-1]
-
+        # rel_row_cont: (batch_size, rel_dim, matrix_size, 1)
+        rel_row_cont = torch.matmul(rel_hs_hiddens_guided.permute(0, 3, 1, 2), self.rel_alpha)
+        # rel_col_cont: (batch_size, rel_dim, 1, matrix_size)
+        rel_col_cont = torch.matmul(self.rel_beta, rel_hs_hiddens_guided.permute(0, 3, 1, 2))
+        # rel_context: (batch_size, matrix_size, matrix_size, rel_dim)
+        rel_context = torch.matmul(rel_row_cont, rel_col_cont).permute(0, 2, 3, 1)
+        rel_context = self._drop_lower_triangle(rel_context)
         ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context)
-        assert ent_hs_hiddens_guided.size()[-1] == ent_hs_hiddens.size()[-1]
-
+        
         return ent_hs_hiddens_guided, rel_hs_hiddens_guided
 
 

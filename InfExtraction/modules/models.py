@@ -608,6 +608,7 @@ class TPLinkerPP(IEModel):
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  rel_dim=None,
+                 matrix_size=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -640,7 +641,7 @@ class TPLinkerPP(IEModel):
             self.ent_convs.append(nn.Conv1d(ent_dim, ent_dim, 3, padding=1))
             self.rel_convs.append(nn.Conv2d(rel_dim, rel_dim, 3, padding=1))
 
-        self.inter_kernel = InteractionKernel(ent_dim, rel_dim)
+        self.inter_kernel = InteractionKernel(ent_dim, rel_dim, matrix_size)
 
         # decoding fc
         self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)

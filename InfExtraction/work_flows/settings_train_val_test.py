@@ -189,6 +189,9 @@ model_settings = {
     "ent_dim": 512,
     "rel_dim": 768,
 }
+if model_name == "TPLinkerPP":
+    assert max_seq_len_train == max_seq_len_valid == max_seq_len_test
+    model_settings["matrix_size"] = max_seq_len_train
 
 # this dict would be logged
 model_settings_log = copy.deepcopy(model_settings)
