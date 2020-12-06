@@ -240,8 +240,10 @@ class InteractionKernel(nn.Module):
     def forward(self, ent_hs_hiddens, rel_hs_hiddens):
         batch_size, matrix_size, _, _ = rel_hs_hiddens.size()
 
+        t1 = time.time()
         # ent_hs_hiddens_mirror: (batch_size, matrix_size, matrix_size, ent_dim)
         ent_hs_hiddens_mirror = self._mirror(ent_hs_hiddens)
+        t2 = time.time()
 
         # ent_row_cont: (batch_size, ent_dim, matrix_size, 1)
         ent_row_cont = torch.matmul(ent_hs_hiddens_mirror.permute(0, 3, 1, 2), self.ent_alpha)
@@ -258,7 +260,10 @@ class InteractionKernel(nn.Module):
         # rel_context: (batch_size, matrix_size, matrix_size, rel_dim)
         rel_context = torch.matmul(rel_row_cont, rel_col_cont).permute(0, 2, 3, 1)
 
+        t3 = time.time()
         rel_context = self._drop_lower_triangle(rel_context)
+        t4 = time.time()
+        print("mirror: {}, drop: {}".format(t2 - t1, t4 - t3))
 
         ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context)
         
