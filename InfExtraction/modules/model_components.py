@@ -194,33 +194,32 @@ class InteractionKernel(nn.Module):
         self.rel_beta = Parameter(torch.randn([rel_dim, 1, matrix_size]))
         self.drop_lamtha = Parameter(torch.rand(rel_dim)) # [0, 1)
 
+        self.matrix_size = matrix_size
+        map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        mirror_gather_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
+        self.mirror_gather_tensor = torch.tensor(mirror_gather_ids)
+        upper_gather_ids = [i * matrix_size + j for i in range(matrix_size) for j in range(matrix_size) if i <= j]
+        lower_gather_ids = [j * matrix_size + i for i in range(matrix_size) for j in range(matrix_size) if i <= j]
+        self.upper_gather_tensor = torch.tensor(upper_gather_ids)
+        self.lower_gather_tensor = torch.tensor(lower_gather_ids)
+
         self.ent_guide_rel_cln = LayerNorm(rel_dim, ent_dim, conditional=True)
         self.rel_guide_ent_cln = LayerNorm(ent_dim, rel_dim, conditional=True)
 
     def _mirror(self, shaking_seq):
-        batch_size, shaking_seq_len, hidden_size = shaking_seq.size()
-        matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
-        map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
-        t1 = time.time()
-        gather_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
-        t2 = time.time()
-        gather_tensor = torch.tensor(gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(shaking_seq.device)
-        t3 = time.time()
+        batch_size, _, hidden_size = shaking_seq.size()
+
+        gather_tensor = self.mirror_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
         shaking_hiddens = torch.gather(shaking_seq, 1, gather_tensor)
-        t4 = time.time()
-        matrix = shaking_hiddens.view(batch_size, matrix_size, matrix_size, hidden_size)
-        t5 = time.time()
-        print("{}, {}, {}, {}".format(t2 - t1, t3 - t2, t4 - t3, t5 - t4))
+        matrix = shaking_hiddens.view(batch_size, self.matrix_size, self.matrix_size, hidden_size)
         return matrix
 
     def _drop_lower_triangle(self, matrix_seq):
         batch_size, matrix_size, _, hidden_size = matrix_seq.size()
-        upper_gather_ids = [i * matrix_size + j for i in range(matrix_size) for j in range(matrix_size) if i <= j]
-        lower_gather_ids = [j * matrix_size + i for i in range(matrix_size) for j in range(matrix_size) if i <= j]
-        shaking_seq = matrix_seq.view(batch_size, -1, hidden_size)
 
-        upper_gather_tensor = torch.tensor(upper_gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(matrix_seq.device)
-        lower_gather_tensor = torch.tensor(lower_gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(matrix_seq.device)
+        shaking_seq = matrix_seq.view(batch_size, -1, hidden_size)
+        upper_gather_tensor = self.upper_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
+        lower_gather_tensor = self.lower_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
         upper_shaking_hiddens = torch.gather(shaking_seq, 1, upper_gather_tensor)
         lower_shaking_hiddens = torch.gather(shaking_seq, 1, lower_gather_tensor)
 
