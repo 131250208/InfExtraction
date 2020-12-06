@@ -211,7 +211,7 @@ class InteractionKernel(nn.Module):
         return matrix
 
     def forward(self, ent_hs_hiddens, rel_hs_hiddens):
-        batch_size, matrix_size, _ = rel_hs_hiddens.size()
+        batch_size, matrix_size, _, _ = rel_hs_hiddens.size()
 
         ent_hs_hiddens_mirror = self._mirror(ent_hs_hiddens)
         ent_context_list = []
