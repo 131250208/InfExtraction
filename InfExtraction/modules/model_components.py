@@ -224,8 +224,8 @@ class InteractionKernel(nn.Module):
 
         shaking_seq = matrix_seq.view(batch_size, -1, hidden_size)
 
-        upper_gather_tensor = torch.tensor(upper_gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size)
-        lower_gather_tensor = torch.tensor(lower_gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size)
+        upper_gather_tensor = torch.tensor(upper_gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(matrix_seq.device)
+        lower_gather_tensor = torch.tensor(lower_gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(matrix_seq.device)
         upper_shaking_hiddens = torch.gather(shaking_seq, 1, upper_gather_tensor)
         lower_shaking_hiddens = torch.gather(shaking_seq, 1, lower_gather_tensor)
 
