@@ -5,7 +5,7 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from transformers import BertModel
-from InfExtraction.modules.model_components import HandshakingKernel, GraphConvLayer
+from InfExtraction.modules.model_components import HandshakingKernel, GraphConvLayer, InteractionKernel
 from InfExtraction.modules.preprocess import Indexer
 from gensim.models import KeyedVectors
 import logging
@@ -179,14 +179,14 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                 self.cat_hidden_size += dep_gcn_dim
 
     def _cat_features(self,
-                        char_input_ids=None,
-                        word_input_ids=None,
-                        subword_input_ids=None,
-                        attention_mask=None,
-                        token_type_ids=None,
-                        ner_tag_ids=None,
-                        pos_tag_ids=None,
-                        dep_adj_matrix=None):
+                      char_input_ids=None,
+                      word_input_ids=None,
+                      subword_input_ids=None,
+                      attention_mask=None,
+                      token_type_ids=None,
+                      ner_tag_ids=None,
+                      pos_tag_ids=None,
+                      dep_adj_matrix=None):
 
         # features
         features = []
@@ -500,81 +500,81 @@ class TPLinkerPlus(IEModel):
         return batch_dict
 
     def forward(self, **kwargs):
-#
-#         # features
-#         features = []
-#
-#         # ner tag
-#         if self.ner_tag_emb_config is not None:
-#             ner_tag_embeddings = self.ner_tag_emb(ner_tag_ids)
-#             ner_tag_embeddings = self.ner_tag_emb_dropout(ner_tag_embeddings)
-#             features.append(ner_tag_embeddings)
-#
-#         # pos tag
-#         if self.pos_tag_emb_config is not None:
-#             pos_tag_embeddings = self.pos_tag_emb(pos_tag_ids)
-#             pos_tag_embeddings = self.pos_tag_emb_dropout(pos_tag_embeddings)
-#             features.append(pos_tag_embeddings)
-#
-#         # char
-#         if self.char_encoder_config is not None:
-#             # char_input_ids: (batch_size, seq_len * max_char_num_in_subword)
-#             # char_input_emb/char_hiddens: (batch_size, seq_len * max_char_num_in_subword, char_emb_dim)
-#             # char_conv_oudtut: (batch_size, seq_len, char_emb_dim)
-#             char_input_emb = self.char_emb(char_input_ids)
-#             char_input_emb = self.char_emb_dropout(char_input_emb)
-#             char_hiddens, _ = self.char_lstm_l1(char_input_emb)
-#             char_hiddens, _ = self.char_lstm_l2(self.char_lstm_dropout(char_hiddens))
-#             char_conv_oudtut = self.char_cnn(char_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
-#             features.append(char_conv_oudtut)
-#
-#         # word
-#         if self.word_encoder_config is not None:
-#             # word_input_ids: (batch_size, seq_len)
-#             # word_input_emb/word_hiddens: batch_size_train, seq_len, word_emb_dim)
-#             word_input_emb = self.word_emb(word_input_ids)
-#             word_input_emb = self.word_emb_dropout(word_input_emb)
-#             features.append(word_input_emb)
-#             word_hiddens, _ = self.word_lstm_l1(torch.cat(features, dim=-1))
-#             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
-#             features.append(word_hiddens)
-#
-#             # if self.bert_config4word is not None:
-#             #     # word_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
-#             #     context_oudtuts = self.word_bert(word_input_ids, attention_mask, token_type_ids)
-#             #     hidden_states = context_oudtuts[2]
-#             #     # word_hiddens: (batch_size, seq_len, hidden_size)
-#             #     word_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_word_bert:], dim=0),
-#             #                                  dim=0)
-#             #     features.append(word_hiddens)
-#
-#         # subword
-#         if self.subwd_encoder_config is not None:
-#             # subword_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
-#             context_oudtuts = self.bert(subword_input_ids, attention_mask, token_type_ids)
-#             hidden_states = context_oudtuts[2]
-#             # subword_hiddens: (batch_size, seq_len, hidden_size)
-#             subword_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_bert:], dim=0), dim=0)
-#             features.append(subword_hiddens)
-#
-#         # combine features
-#         # combined_hiddens: (batch_size, seq_len, combined_size)
-#         combined_hiddens = self.aggr_fc_1(torch.cat(features, dim=-1))
-# #         set_trace()
-#         # dependencies
-#         if self.dep_config is not None:
-#             # dep_adj_matrix: (batch_size, seq_len, seq_len)
-#             dep_adj_matrix = torch.transpose(dep_adj_matrix, 1, 2)
-#             dep_type_embeddings = self.dep_type_emb(dep_adj_matrix)
-#             # dep_type_embeddings: (batch_size, seq_len, seq_len, dep_emb_dim)
-#             weight_adj = self.dep_type_emb_dropout(dep_type_embeddings)
-#             gcn_outputs = combined_hiddens
-#             for gcn_l in self.gcn_layers:
-#                 weight_adj, gcn_outputs = gcn_l(weight_adj, gcn_outputs)  # [batch, seq, dim]
-#                 gcn_outputs = self.dep_gcn_dropout(gcn_outputs)
-#                 weight_adj = self.dep_gcn_dropout(weight_adj)
-#                 features.append(gcn_outputs)
-#             combined_hiddens = self.aggr_fc4handshaking_kernal(torch.cat(features, dim=-1))
+        #
+        #         # features
+        #         features = []
+        #
+        #         # ner tag
+        #         if self.ner_tag_emb_config is not None:
+        #             ner_tag_embeddings = self.ner_tag_emb(ner_tag_ids)
+        #             ner_tag_embeddings = self.ner_tag_emb_dropout(ner_tag_embeddings)
+        #             features.append(ner_tag_embeddings)
+        #
+        #         # pos tag
+        #         if self.pos_tag_emb_config is not None:
+        #             pos_tag_embeddings = self.pos_tag_emb(pos_tag_ids)
+        #             pos_tag_embeddings = self.pos_tag_emb_dropout(pos_tag_embeddings)
+        #             features.append(pos_tag_embeddings)
+        #
+        #         # char
+        #         if self.char_encoder_config is not None:
+        #             # char_input_ids: (batch_size, seq_len * max_char_num_in_subword)
+        #             # char_input_emb/char_hiddens: (batch_size, seq_len * max_char_num_in_subword, char_emb_dim)
+        #             # char_conv_oudtut: (batch_size, seq_len, char_emb_dim)
+        #             char_input_emb = self.char_emb(char_input_ids)
+        #             char_input_emb = self.char_emb_dropout(char_input_emb)
+        #             char_hiddens, _ = self.char_lstm_l1(char_input_emb)
+        #             char_hiddens, _ = self.char_lstm_l2(self.char_lstm_dropout(char_hiddens))
+        #             char_conv_oudtut = self.char_cnn(char_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
+        #             features.append(char_conv_oudtut)
+        #
+        #         # word
+        #         if self.word_encoder_config is not None:
+        #             # word_input_ids: (batch_size, seq_len)
+        #             # word_input_emb/word_hiddens: batch_size_train, seq_len, word_emb_dim)
+        #             word_input_emb = self.word_emb(word_input_ids)
+        #             word_input_emb = self.word_emb_dropout(word_input_emb)
+        #             features.append(word_input_emb)
+        #             word_hiddens, _ = self.word_lstm_l1(torch.cat(features, dim=-1))
+        #             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
+        #             features.append(word_hiddens)
+        #
+        #             # if self.bert_config4word is not None:
+        #             #     # word_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
+        #             #     context_oudtuts = self.word_bert(word_input_ids, attention_mask, token_type_ids)
+        #             #     hidden_states = context_oudtuts[2]
+        #             #     # word_hiddens: (batch_size, seq_len, hidden_size)
+        #             #     word_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_word_bert:], dim=0),
+        #             #                                  dim=0)
+        #             #     features.append(word_hiddens)
+        #
+        #         # subword
+        #         if self.subwd_encoder_config is not None:
+        #             # subword_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
+        #             context_oudtuts = self.bert(subword_input_ids, attention_mask, token_type_ids)
+        #             hidden_states = context_oudtuts[2]
+        #             # subword_hiddens: (batch_size, seq_len, hidden_size)
+        #             subword_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_bert:], dim=0), dim=0)
+        #             features.append(subword_hiddens)
+        #
+        #         # combine features
+        #         # combined_hiddens: (batch_size, seq_len, combined_size)
+        #         combined_hiddens = self.aggr_fc_1(torch.cat(features, dim=-1))
+        # #         set_trace()
+        #         # dependencies
+        #         if self.dep_config is not None:
+        #             # dep_adj_matrix: (batch_size, seq_len, seq_len)
+        #             dep_adj_matrix = torch.transpose(dep_adj_matrix, 1, 2)
+        #             dep_type_embeddings = self.dep_type_emb(dep_adj_matrix)
+        #             # dep_type_embeddings: (batch_size, seq_len, seq_len, dep_emb_dim)
+        #             weight_adj = self.dep_type_emb_dropout(dep_type_embeddings)
+        #             gcn_outputs = combined_hiddens
+        #             for gcn_l in self.gcn_layers:
+        #                 weight_adj, gcn_outputs = gcn_l(weight_adj, gcn_outputs)  # [batch, seq, dim]
+        #                 gcn_outputs = self.dep_gcn_dropout(gcn_outputs)
+        #                 weight_adj = self.dep_gcn_dropout(weight_adj)
+        #                 features.append(gcn_outputs)
+        #             combined_hiddens = self.aggr_fc4handshaking_kernal(torch.cat(features, dim=-1))
 
         super(TPLinkerPlus, self).forward()
         cat_hiddens = self._cat_features(**kwargs)
@@ -639,6 +639,8 @@ class TPLinkerPP(IEModel):
             self.ent_convs.append(nn.Conv1d(ent_fc_in_dim, ent_fc_in_dim, 3, padding=1))
             self.rel_convs.append(nn.Conv2d(rel_fc_in_dim, rel_fc_in_dim, 3, padding=1))
 
+        self.inter_kernel = InteractionKernel(ent_fc_in_dim, rel_fc_in_dim)
+
         # decoding fc
         self.ent_fc = nn.Linear(ent_fc_in_dim, self.ent_tag_size)
         self.rel_fc = nn.Linear(rel_fc_in_dim, self.rel_tag_size)
@@ -670,11 +672,13 @@ class TPLinkerPP(IEModel):
 
         ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens, ent_hiddens)
         rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
-        
+
         for conv in self.ent_convs:
             ent_hs_hiddens = conv(ent_hs_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
         for conv in self.rel_convs:
             rel_hs_hiddens = conv(rel_hs_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+
+        self.inter_kernel(ent_hs_hiddens, rel_hs_hiddens)
 
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
         pred_rel_output = self.rel_fc(rel_hs_hiddens)
@@ -685,7 +689,8 @@ class TPLinkerPP(IEModel):
         return (pred_output > 0.).long()
 
     def get_metrics(self, pred_outputs, gold_tags):
-        ent_pred_out, rel_pred_out, ent_gold_tag, rel_gold_tag = pred_outputs[0], pred_outputs[1], gold_tags[0], gold_tags[1]
+        ent_pred_out, rel_pred_out, ent_gold_tag, rel_gold_tag = pred_outputs[0], pred_outputs[1], gold_tags[0], \
+                                                                 gold_tags[1]
         ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
         rel_pred_tag = self.pred_output2pred_tag(rel_pred_out)
         loss = self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
@@ -717,7 +722,7 @@ class TriggerFreeEventExtractor(IEModel):
         self.handshaking_kernel = HandshakingKernel(fin_hidden_size,
                                                     fin_hidden_size,
                                                     shaking_type,
-                                                    only_look_after=False, # full handshaking
+                                                    only_look_after=False,  # full handshaking
                                                     )
 
         # decoding fc
@@ -728,7 +733,8 @@ class TriggerFreeEventExtractor(IEModel):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
         # shaking tag
         tag_points_batch = [sample["tag_points"] for sample in batch_data]
-        batch_dict["golden_tags"] = [Indexer.points2multilabel_matrix_batch(tag_points_batch, seq_length, self.tag_size), ]
+        batch_dict["golden_tags"] = [
+            Indexer.points2multilabel_matrix_batch(tag_points_batch, seq_length, self.tag_size), ]
         return batch_dict
 
     def forward(self, **kwargs):
