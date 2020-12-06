@@ -5,7 +5,7 @@ import json
 import copy
 import re
 
-exp_name = "webnlg"
+exp_name = "nyt"
 task_type = "re"
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
@@ -47,7 +47,7 @@ device_num = 0
 seed = 2333
 epochs = 200
 lr = 5e-5 # 5e-5, 1e-4
-batch_size_train = 6
+batch_size_train = 24
 batch_size_valid = 32
 batch_size_test = 32
 
