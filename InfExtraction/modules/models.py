@@ -672,19 +672,16 @@ class TPLinkerPP(IEModel):
         ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
         rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
 
-        t1 = time.time()
         ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens, ent_hiddens)
         rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
-        t2 = time.time()
 
         for conv in self.ent_convs:
             ent_hs_hiddens = conv(ent_hs_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
         for conv in self.rel_convs:
             rel_hs_hiddens = conv(rel_hs_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-        t3 = time.time()
+
         self.inter_kernel(ent_hs_hiddens, rel_hs_hiddens)
-        t4 = time.time()
-        print("{}, {}, {}".format(t2 - t1, t3 - t2, t4 - t3))
+
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
         pred_rel_output = self.rel_fc(rel_hs_hiddens)
 
