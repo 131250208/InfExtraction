@@ -197,11 +197,11 @@ class InteractionKernel(nn.Module):
         self.matrix_size = matrix_size
         map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
         mirror_gather_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
-        self.mirror_gather_tensor = torch.tensor(mirror_gather_ids)
+        self.mirror_gather_tensor = torch.tensor(mirror_gather_ids).to(self.device)
         upper_gather_ids = [i * matrix_size + j for i in range(matrix_size) for j in range(matrix_size) if i <= j]
         lower_gather_ids = [j * matrix_size + i for i in range(matrix_size) for j in range(matrix_size) if i <= j]
-        self.upper_gather_tensor = torch.tensor(upper_gather_ids)
-        self.lower_gather_tensor = torch.tensor(lower_gather_ids)
+        self.upper_gather_tensor = torch.tensor(upper_gather_ids).to(self.device)
+        self.lower_gather_tensor = torch.tensor(lower_gather_ids).to(self.device)
 
         self.ent_guide_rel_cln = LayerNorm(rel_dim, ent_dim, conditional=True)
         self.rel_guide_ent_cln = LayerNorm(ent_dim, rel_dim, conditional=True)
