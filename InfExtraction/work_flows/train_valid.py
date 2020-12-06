@@ -118,7 +118,6 @@ if __name__ == "__main__":
     device_num = settings.device_num
     token_level = settings.token_level
     epochs = settings.epochs
-    worker_init_fn = settings.worker_init_fn
     batch_size_train = settings.batch_size_train
     max_seq_len_train = settings.max_seq_len_train
     sliding_len_train = settings.sliding_len_train
