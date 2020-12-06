@@ -609,6 +609,8 @@ class TPLinkerPP(IEModel):
                  ent_dim=None,
                  rel_dim=None,
                  matrix_size=None,
+                 conv_config=None,
+                 inter_kernel_config=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -635,13 +637,29 @@ class TPLinkerPP(IEModel):
                                                         )
 
         # learn local info
-        self.ent_convs = nn.ModuleList()
-        self.rel_convs = nn.ModuleList()
-        for _ in range(2):
-            self.ent_convs.append(nn.Conv1d(ent_dim, ent_dim, 3, padding=1))
-            self.rel_convs.append(nn.Conv2d(rel_dim, rel_dim, 3, padding=1))
+        self.conv_config = conv_config
+        if conv_config is not None:
+            self.ent_convs = nn.ModuleList()
+            self.rel_convs = nn.ModuleList()
+            ent_conv_layers = conv_config["ent_conv_layers"]
+            rel_conv_layers = conv_config["rel_conv_layers"]
+            ent_conv_kernel_size = conv_config["ent_conv_kernel_size"]
+            ent_conv_padding = (ent_conv_kernel_size - 1) / 2
+            rel_conv_kernel_size = conv_config["rel_conv_kernel_size"]
+            rel_conv_padding = (rel_conv_kernel_size - 1) / 2
+            for _ in range(ent_conv_layers):
+                self.ent_convs.append(nn.Conv1d(ent_dim,
+                                                ent_dim,
+                                                ent_conv_kernel_size,
+                                                padding=ent_conv_padding))
+            for _ in range(rel_conv_layers):
+                self.rel_convs.append(nn.Conv2d(rel_dim,
+                                                rel_dim,
+                                                rel_conv_kernel_size,
+                                                padding=rel_conv_padding))
 
-        self.inter_kernel = InteractionKernel(ent_dim, rel_dim, matrix_size)
+        if self.inter_kernel_config is not None:
+            self.inter_kernel = InteractionKernel(ent_dim, rel_dim, matrix_size)
 
         # decoding fc
         self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
@@ -675,12 +693,14 @@ class TPLinkerPP(IEModel):
         ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens, ent_hiddens)
         rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
 
-        for conv in self.ent_convs:
-            ent_hs_hiddens = conv(ent_hs_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
-        for conv in self.rel_convs:
-            rel_hs_hiddens = conv(rel_hs_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        if self.conv_config is not None:
+            for conv in self.ent_convs:
+                ent_hs_hiddens = conv(ent_hs_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
+            for conv in self.rel_convs:
+                rel_hs_hiddens = conv(rel_hs_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
 
-        self.inter_kernel(ent_hs_hiddens, rel_hs_hiddens)
+        if self.inter_kernel_config is not None:
+            self.inter_kernel(ent_hs_hiddens, rel_hs_hiddens)
 
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
         pred_rel_output = self.rel_fc(rel_hs_hiddens)

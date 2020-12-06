@@ -11,8 +11,8 @@ torch.cuda.manual_seed_all(seed)
 np.random.seed(seed)  # numpy
 random.seed(seed)  # random and transforms
 torch.backends.cudnn.enabled = True
-torch.backends.cudnn.deterministic = True  # cudnn
 torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.deterministic = True  # cudnn
 
 
 import string
@@ -129,7 +129,7 @@ target_run_ids = ["1zbzg5ml", "11p5ec06"]
 top_k_models = 3
 cal_scores = True # set False if the test sets are not annotated with golden results
 
-# model
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 pos_tag_emb_config = {
     "pos_tag_num": statistics["pos_tag_num"],
     "emb_dim": 64,
@@ -186,6 +186,17 @@ handshaking_kernel_config = {
     "rel_shaking_type": "cat",
 }
 
+conv_config = {
+    "ent_conv_layers": 2,
+    "rel_conv_layers": 2,
+    "ent_conv_kernel_size": 3,  # must be odd
+    "rel_conv_kernel_size": 3,  # must be odd
+}
+
+inter_kernel_config = {
+
+}
+
 # model settings
 token_level = "word" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
@@ -200,6 +211,8 @@ model_settings = {
     "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
+    "conv_config": conv_config,
+    # "inter_kernel_config": inter_kernel_config,
 #     "fin_hidden_size": 1024,
     "ent_dim": 512,
     "rel_dim": 768,
