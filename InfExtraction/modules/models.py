@@ -658,6 +658,7 @@ class TPLinkerPP(IEModel):
                                                 rel_conv_kernel_size,
                                                 padding=rel_conv_padding))
 
+        self.inter_kernel_config = inter_kernel_config
         if self.inter_kernel_config is not None:
             self.inter_kernel = InteractionKernel(ent_dim, rel_dim, matrix_size)
 
