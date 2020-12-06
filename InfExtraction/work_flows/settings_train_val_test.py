@@ -5,7 +5,7 @@ import json
 import copy
 import re
 
-exp_name = "nyt"
+exp_name = "webnlg"
 task_type = "re"
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
@@ -23,7 +23,7 @@ data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
 train_data = "train_data.json"
 valid_data = "valid_data.json"
-test_data_list = ["test_data.json", ]
+test_data_list = ["test.json", ] # ["test_triples.json", ], ["test_data.json", ]
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)
@@ -47,7 +47,7 @@ device_num = 0
 seed = 2333
 epochs = 200
 lr = 5e-5 # 5e-5, 1e-4
-batch_size_train = 16
+batch_size_train = 6
 batch_size_valid = 32
 batch_size_test = 32
 
@@ -55,11 +55,11 @@ max_seq_len_train = 100
 max_seq_len_valid = 100
 max_seq_len_test = 100
 
-sliding_len_train = 100
-sliding_len_valid = 100
-sliding_len_test = 100
+sliding_len_train = 20
+sliding_len_valid = 20
+sliding_len_test = 20
 
-combine = True
+combine = False
 
 scheduler = "CAWR"
 use_ghm = False
@@ -81,7 +81,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -171,7 +171,7 @@ handshaking_kernel_config = {
 }
 
 # model settings
-token_level = "word" # token is word or subword
+token_level = "subword" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 # to do an ablation study, you can remove components by commenting the configurations below
@@ -179,13 +179,13 @@ token_level = "word" # token is word or subword
 model_settings = {
 #     "pos_tag_emb_config": pos_tag_emb_config,
 #     "ner_tag_emb_config": ner_tag_emb_config,
-    "char_encoder_config": char_encoder_config,
+#     "char_encoder_config": char_encoder_config,
     "subwd_encoder_config": subwd_encoder_config,
-    "word_encoder_config": word_encoder_config,
+#     "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
 #     "fin_hidden_size": 1024,
-    "ent_fc_in_dim": 768,
+    "ent_fc_in_dim": 512,
     "rel_fc_in_dim": 768,
 }
 

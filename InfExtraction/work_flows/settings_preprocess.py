@@ -1,9 +1,9 @@
 data_in_dir = "../../data/ori_data"
 data_out_dir = "../../data/normal_data"
-exp_name = "webnlg"
+exp_name = "nyt_star"
 language = "en"
 pretrained_model_tokenizer_path = "../../data/pretrained_models/bert-base-cased"
-ori_data_format = "etl_span" # casrel (webnlg_star, nyt_star), etl_span (webnlg), raw_nyt (nyt), tplinker (see readme)
+ori_data_format = "casrel" # casrel (webnlg_star, nyt_star), etl_span (webnlg), raw_nyt (nyt), tplinker (see readme)
 add_char_span = True # for data without annotated character level spans
 ignore_subword_match = True # whether add whitespaces around the entities
                             # when matching and adding character level spans,
