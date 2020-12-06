@@ -198,18 +198,21 @@ class InteractionKernel(nn.Module):
         self.rel_guide_ent_cln = LayerNorm(ent_dim, rel_dim, conditional=True)
 
     def _mirror(self, shaking_seq):
-        batch_size, shaking_seq_len, dim_size = shaking_seq.size()
+        batch_size, shaking_seq_len, hidden_size = shaking_seq.size()
         matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
         map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
-        matrix_hidden_list = []
+        gather_ids = []
         for i in range(matrix_size):
             for j in range(matrix_size):
                 if i <= j:
-                    shaking_idx = map_[i][j]
+                    gather_ids.append(map_[i][j])
                 else:
-                    shaking_idx = map_[j][i]
-                matrix_hidden_list.append(shaking_seq[:, shaking_idx, :])
-        matrix = torch.cat(matrix_hidden_list, dim=1).view(batch_size, matrix_size, matrix_size, dim_size)
+                    gather_ids.append(map_[j][i])
+
+        gather_tensor = torch.tensor(gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(
+            shaking_seq.device)
+        shaking_hiddens = torch.gather(shaking_seq, 1, gather_tensor)
+        matrix = shaking_hiddens.view(batch_size, matrix_size, matrix_size, hidden_size)
         return matrix
 
     def _drop_lower_triangle(self, matrix_seq):
