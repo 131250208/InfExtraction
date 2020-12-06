@@ -639,7 +639,7 @@ class TPLinkerPP(IEModel):
             self.ent_convs.append(nn.Conv1d(ent_fc_in_dim, ent_fc_in_dim, 3, padding=1))
             self.rel_convs.append(nn.Conv2d(rel_fc_in_dim, rel_fc_in_dim, 3, padding=1))
 
-        self.inter_kernel = InteractionKernel(ent_fc_in_dim, rel_fc_in_dim, 2, 4)
+        self.inter_kernel = InteractionKernel(ent_fc_in_dim, rel_fc_in_dim)
 
         # decoding fc
         self.ent_fc = nn.Linear(ent_fc_in_dim, self.ent_tag_size)
