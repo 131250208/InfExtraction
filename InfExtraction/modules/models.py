@@ -677,7 +677,7 @@ class TPLinkerPP(IEModel):
         t2 = time.time()
         rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
         t3 = time.time()
-        print("{}, {}".format(t2 - t1, t3 - t2))
+        print("ent_shaking: {:.3}, rel_shaking: {:.3}".format(t2 - t1, t3 - t2))
 
         for conv in self.ent_convs:
             ent_hs_hiddens = conv(ent_hs_hiddens.permute(0, 2, 1)).permute(0, 2, 1)

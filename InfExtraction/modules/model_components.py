@@ -201,30 +201,17 @@ class InteractionKernel(nn.Module):
         batch_size, shaking_seq_len, hidden_size = shaking_seq.size()
         matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
         map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
-        gather_ids = []
-        for i in range(matrix_size):
-            for j in range(matrix_size):
-                if i <= j:
-                    gather_ids.append(map_[i][j])
-                else:
-                    gather_ids.append(map_[j][i])
+        gather_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
 
-        gather_tensor = torch.tensor(gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(
-            shaking_seq.device)
+        gather_tensor = torch.tensor(gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(shaking_seq.device)
         shaking_hiddens = torch.gather(shaking_seq, 1, gather_tensor)
         matrix = shaking_hiddens.view(batch_size, matrix_size, matrix_size, hidden_size)
         return matrix
 
     def _drop_lower_triangle(self, matrix_seq):
         batch_size, matrix_size, _, hidden_size = matrix_seq.size()
-        upper_gather_ids = []
-        lower_gather_ids = []
-        for i in range(matrix_size):
-            for j in range(matrix_size):
-                if i <= j:
-                    upper_gather_ids.append(i * matrix_size + j)
-                    lower_gather_ids.append(j * matrix_size + i)
-
+        upper_gather_ids = [i * matrix_size + j for i in range(matrix_size) for j in range(matrix_size) if i <= j]
+        lower_gather_ids = [j * matrix_size + i for i in range(matrix_size) for j in range(matrix_size) if i <= j]
         shaking_seq = matrix_seq.view(batch_size, -1, hidden_size)
 
         upper_gather_tensor = torch.tensor(upper_gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(matrix_seq.device)
@@ -238,8 +225,10 @@ class InteractionKernel(nn.Module):
         batch_size, matrix_size, _, _ = rel_hs_hiddens.size()
 
         # ent_hs_hiddens_mirror: (batch_size, matrix_size, matrix_size, ent_dim)
+        t1 = time.time()
         ent_hs_hiddens_mirror = self._mirror(ent_hs_hiddens)
-        
+        t2 = time.time()
+
         # ent_row_cont: (batch_size, ent_dim, matrix_size, 1)
         ent_row_cont = torch.matmul(ent_hs_hiddens_mirror.permute(0, 3, 1, 2), self.ent_alpha)
         # ent_col_cont: (batch_size, ent_dim, 1, matrix_size)
@@ -254,8 +243,11 @@ class InteractionKernel(nn.Module):
         rel_col_cont = torch.matmul(self.rel_beta, rel_hs_hiddens_guided.permute(0, 3, 1, 2))
         # rel_context: (batch_size, matrix_size, matrix_size, rel_dim)
         rel_context = torch.matmul(rel_row_cont, rel_col_cont).permute(0, 2, 3, 1)
-        
+
+        t3 = time.time()
         rel_context = self._drop_lower_triangle(rel_context)
+        t4 = time.time()
+        print("mirror: {:.3}, drop: {:.3}".format(t2 - t1, t4 - t3))
 
         ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context)
         
