@@ -213,15 +213,23 @@ class InteractionKernel(nn.Module):
         return matrix
 
     def _drop_lower_triangle(self, matrix_seq):
-        matrix_size = matrix_seq.size()[1]
-        shaking_hidden_list = []
+        batch_size, matrix_size, _, hidden_size = matrix_seq.size()
+        upper_gather_ids = []
+        lower_gather_ids = []
         for i in range(matrix_size):
             for j in range(matrix_size):
                 if i <= j:
-                    shaking_hidden = self.drop_lamtha * matrix_seq[:, i, j, :] + \
-                                     (1 - self.drop_lamtha) * matrix_seq[:, j, i, :]
-                    shaking_hidden_list.append(shaking_hidden)
-        return torch.stack(shaking_hidden_list, dim=1)
+                    upper_gather_ids.append(i * matrix_size + j)
+                    lower_gather_ids.append(j * matrix_size + i)
+
+        shaking_seq = matrix_seq.view(batch_size, -1, hidden_size)
+
+        upper_gather_tensor = torch.tensor(upper_gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size)
+        lower_gather_tensor = torch.tensor(lower_gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size)
+        upper_shaking_hiddens = torch.gather(shaking_seq, 1, upper_gather_tensor)
+        lower_shaking_hiddens = torch.gather(shaking_seq, 1, lower_gather_tensor)
+
+        return self.drop_lamtha * upper_shaking_hiddens + (1 - self.drop_lamtha) * lower_shaking_hiddens
 
     def forward(self, ent_hs_hiddens, rel_hs_hiddens):
         batch_size, matrix_size, _, _ = rel_hs_hiddens.size()
