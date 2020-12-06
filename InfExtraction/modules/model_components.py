@@ -179,7 +179,7 @@ class HandshakingKernel(nn.Module):
                 shaking_hiddens = add_feature(shaking_hiddens, tp_cln_ft)
 
             if "biaffine" in self.shaking_type:
-                biaffine_ft = torch.relu(self.biaffine(guide_hiddens, visible_hiddens))
+                biaffine_ft = torch.relu(self.biaffine(guide_hiddens.contiguous(), visible_hiddens.contiguous()))
                 shaking_hiddens = add_feature(shaking_hiddens, biaffine_ft)
 
             for inner_enc_type in {"lstm", "max_pool", "mean_pool", "mix_pool"}:
