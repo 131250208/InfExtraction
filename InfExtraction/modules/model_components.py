@@ -224,7 +224,7 @@ class InteractionKernel(nn.Module):
                 ent_vals = ent_keys
                 rel_query = rel_hs_hiddens[:, i, j, :].repeat(1, matrix_size * 2, 1)
                 rel_query = self.fc_rel2ent(rel_query)
-                ent_con = torch.mean(self.ent_multihead_attn(rel_query, ent_keys, ent_vals), dim=1)
+                ent_con = torch.mean(self.ent_multihead_attn(rel_query, ent_keys, ent_vals)[0], dim=1)
                 ent_context_list.append(ent_con)
         ent_context = torch.cat(ent_context_list, dim=1).view(batch_size, matrix_size, matrix_size, -1)
         assert ent_context.size()[-1] == ent_hs_hiddens.size()[-1]
@@ -245,7 +245,7 @@ class InteractionKernel(nn.Module):
             rel_vals = rel_keys
             ent_query = ent_hs_hiddens[:, i, :].repeat(1, matrix_size * 4, 1)
             ent_query = self.fc_ent2rel(ent_query)
-            rel_con = torch.mean(self.rel_multihead_attn(ent_query, rel_keys, rel_vals), dim=1)
+            rel_con = torch.mean(self.rel_multihead_attn(ent_query, rel_keys, rel_vals)[0], dim=1)
             rel_context_list.append(rel_con)
         rel_context = torch.cat(rel_context_list, dim=1).view(batch_size, ent_hs_hiddens.size()[1], -1)
         assert rel_context.size()[-1] == rel_hs_hiddens.size()[-1] == rel_hs_hiddens_guided.size()[-1]
