@@ -605,8 +605,8 @@ class TPLinkerPP(IEModel):
                  tagger,
                  metrics_cal,
                  handshaking_kernel_config=None,
-                 ent_fc_in_dim=None,
-                 rel_fc_in_dim=None,
+                 ent_dim=None,
+                 rel_dim=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -616,18 +616,18 @@ class TPLinkerPP(IEModel):
 
         self.metrics_cal = metrics_cal
 
-        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_fc_in_dim)
-        self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_fc_in_dim)
+        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
+        self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
 
         # handshaking kernel
         ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
         rel_shaking_type = handshaking_kernel_config["rel_shaking_type"]
-        self.ent_handshaking_kernel = HandshakingKernel(ent_fc_in_dim,
-                                                        ent_fc_in_dim,
+        self.ent_handshaking_kernel = HandshakingKernel(ent_dim,
+                                                        ent_dim,
                                                         ent_shaking_type,
                                                         )
-        self.rel_handshaking_kernel = HandshakingKernel(rel_fc_in_dim,
-                                                        rel_fc_in_dim,
+        self.rel_handshaking_kernel = HandshakingKernel(rel_dim,
+                                                        rel_dim,
                                                         rel_shaking_type,
                                                         only_look_after=False,
                                                         )
@@ -636,14 +636,14 @@ class TPLinkerPP(IEModel):
         self.ent_convs = nn.ModuleList()
         self.rel_convs = nn.ModuleList()
         for _ in range(2):
-            self.ent_convs.append(nn.Conv1d(ent_fc_in_dim, ent_fc_in_dim, 3, padding=1))
-            self.rel_convs.append(nn.Conv2d(rel_fc_in_dim, rel_fc_in_dim, 3, padding=1))
+            self.ent_convs.append(nn.Conv1d(ent_dim, ent_dim, 3, padding=1))
+            self.rel_convs.append(nn.Conv2d(rel_dim, rel_dim, 3, padding=1))
 
-        self.inter_kernel = InteractionKernel(ent_fc_in_dim, rel_fc_in_dim)
+        self.inter_kernel = InteractionKernel(ent_dim, rel_dim)
 
         # decoding fc
-        self.ent_fc = nn.Linear(ent_fc_in_dim, self.ent_tag_size)
-        self.rel_fc = nn.Linear(rel_fc_in_dim, self.rel_tag_size)
+        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
+        self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
