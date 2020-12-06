@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
 from InfExtraction.modules.preprocess import Indexer
-
+import time
 
 class LayerNorm(nn.Module):
     def __init__(self, input_dim, cond_dim=0, center=True, scale=True, epsilon=None, conditional=False,
@@ -243,7 +243,9 @@ class InteractionKernel(nn.Module):
         rel_col_cont = torch.matmul(self.rel_beta, rel_hs_hiddens_guided.permute(0, 3, 1, 2))
         # rel_context: (batch_size, matrix_size, matrix_size, rel_dim)
         rel_context = torch.matmul(rel_row_cont, rel_col_cont).permute(0, 2, 3, 1)
+        
         rel_context = self._drop_lower_triangle(rel_context)
+
         ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context)
         
         return ent_hs_hiddens_guided, rel_hs_hiddens_guided
