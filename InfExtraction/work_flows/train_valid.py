@@ -9,13 +9,12 @@ Train the model
 # Put the data into a Dataloaders
 # Set optimizer and trainer
 '''
-
+from InfExtraction.work_flows import settings_train_val_test as settings
 from InfExtraction.modules.preprocess import Preprocessor, MyDataset
 from InfExtraction.modules import taggers
 from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.work_flows import settings_train_val_test as settings
 from InfExtraction.work_flows.utils import DefaultLogger
 
 import os
@@ -27,6 +26,11 @@ from torch.utils.data import DataLoader
 import logging
 import re
 from glob import glob
+import numpy as np
+
+
+def worker_init_fn(worker_id):
+    np.random.seed(np.random.get_state()[1][0] + worker_id)
 
 
 def get_dataloader(data,
@@ -68,6 +72,7 @@ def get_dataloader(data,
                                                max_char_num_in_tok)
     # tagging
     indexed_data = tagger.tag(indexed_data)
+    print(np.random.get_state()[1][0])
     # dataloader
     dataloader = DataLoader(MyDataset(indexed_data),
                             batch_size=batch_size,
@@ -75,6 +80,7 @@ def get_dataloader(data,
                             num_workers=0,
                             drop_last=False,
                             collate_fn=collate_fn,
+                            worker_init_fn=worker_init_fn
                             )
     return dataloader
 
@@ -111,8 +117,8 @@ if __name__ == "__main__":
     test_tagging_n_decoding = settings.test_tagging_n_decoding
     device_num = settings.device_num
     token_level = settings.token_level
-    seed = settings.seed
     epochs = settings.epochs
+    worker_init_fn = settings.worker_init_fn
     batch_size_train = settings.batch_size_train
     max_seq_len_train = settings.max_seq_len_train
     sliding_len_train = settings.sliding_len_train
@@ -154,8 +160,6 @@ if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    torch.manual_seed(seed)  # pytorch random seed
-    torch.backends.cudnn.deterministic = True  # for reproductivity
 
     # reset settings from args
     # ...

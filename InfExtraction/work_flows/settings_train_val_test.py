@@ -1,6 +1,21 @@
-import string
+import torch
 import random
+import numpy as np
 import os
+
+seed = 2333
+os.environ['PYTHONHASHSEED'] = str(seed)
+torch.manual_seed(seed)  # cpu
+torch.cuda.manual_seed(seed)  # gpu
+torch.cuda.manual_seed_all(seed)
+np.random.seed(seed)  # numpy
+random.seed(seed)  # random and transforms
+torch.backends.cudnn.enabled = False
+torch.backends.cudnn.deterministic = True  # cudnn
+torch.backends.cudnn.benchmark = False
+
+
+import string
 import json
 import copy
 import re
@@ -46,7 +61,6 @@ key2dict = {
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 test_tagging_n_decoding = False
 device_num = 0
-seed = 2333
 epochs = 200
 lr = 1e-4 # 5e-5, 1e-4
 batch_size_train = 16

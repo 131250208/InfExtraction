@@ -201,11 +201,16 @@ class InteractionKernel(nn.Module):
         batch_size, shaking_seq_len, hidden_size = shaking_seq.size()
         matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
         map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        t1 = time.time()
         gather_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
-
+        t2 = time.time()
         gather_tensor = torch.tensor(gather_ids)[None, :, None].repeat(batch_size, 1, hidden_size).to(shaking_seq.device)
+        t3 = time.time()
         shaking_hiddens = torch.gather(shaking_seq, 1, gather_tensor)
+        t4 = time.time()
         matrix = shaking_hiddens.view(batch_size, matrix_size, matrix_size, hidden_size)
+        t5 = time.time()
+        print("{}, {}, {}, {}".format(t2 - t1, t3 - t2, t4 - t3, t5 - t4))
         return matrix
 
     def _drop_lower_triangle(self, matrix_seq):
