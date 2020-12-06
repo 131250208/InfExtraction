@@ -105,16 +105,11 @@ class HandshakingKernel(nn.Module):
         super().__init__()
         self.shaking_type = shaking_type
         self.only_look_after = only_look_after
-        if shaking_type == "cat":
-            self.combine_fc = nn.Linear(guide_hidden_size + vis_hidden_size, vis_hidden_size)
-        elif shaking_type == "cat_lstm":
-            self.combine_fc = nn.Linear(vis_hidden_size * 2 + guide_hidden_size, vis_hidden_size)
-        elif shaking_type == "cln":
-            self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
-        elif shaking_type == "cln_lstm":
-            self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
-            self.inner_context_cln = LayerNorm(vis_hidden_size, vis_hidden_size, conditional=True)
 
+        if "cat" in shaking_type:
+            self.cat_fc = nn.Linear(guide_hidden_size + vis_hidden_size, vis_hidden_size)
+        if "cln" in shaking_type:
+            self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
         if "mix" in shaking_type:
             self.lamtha = Parameter(torch.rand(vis_hidden_size))
         if "lstm" in shaking_type:
@@ -123,6 +118,8 @@ class HandshakingKernel(nn.Module):
                                               num_layers=1,
                                               bidirectional=False,
                                               batch_first=True)
+        if "biaffine" in shaking_type:
+            self.biaffine = nn.Bilinear(guide_hidden_size, vis_hidden_size, vis_hidden_size)
 
     def enc_inner_hiddens(self, seq_hiddens, inner_enc_type):
         # seq_hiddens: (batch_size_train, seq_len, hidden_size)
@@ -157,25 +154,37 @@ class HandshakingKernel(nn.Module):
         '''
         seq_len = seq_hiddens_x.size()[-2]
         shaking_hiddens_list = []
+
+        def add_feature(all_fts, ft):
+            if all_fts is None:
+                all_fts = ft
+            else:
+                all_fts += ft
+            return all_fts
+
         for ind in range(seq_len):
             vis_start_ind = ind if self.only_look_after else 0
             guide_hiddens = seq_hiddens_x[:, ind:ind+1, :].repeat(1, seq_len - vis_start_ind, 1)
             visible_hiddens = seq_hiddens_y[:, vis_start_ind:, :]
 
             shaking_hiddens = None
-            if self.shaking_type == "cat":
-                shaking_hiddens = torch.cat([guide_hiddens, visible_hiddens], dim=-1)
-                shaking_hiddens = torch.tanh(self.combine_fc(shaking_hiddens))
-            elif self.shaking_type == "cat_lstm":
-                inner_context = self.enc_inner_hiddens(visible_hiddens, "lstm")
-                shaking_hiddens = torch.cat([guide_hiddens, visible_hiddens, inner_context], dim=-1)
-                shaking_hiddens = torch.tanh(self.combine_fc(shaking_hiddens))
-            elif self.shaking_type == "cln":
-                shaking_hiddens = self.tp_cln(visible_hiddens, guide_hiddens)
-            elif self.shaking_type == "cln_lstm":
-                shaking_hiddens = self.tp_cln(visible_hiddens, guide_hiddens)
-                inner_context = self.enc_inner_hiddens(visible_hiddens, "lstm")
-                shaking_hiddens = self.inner_context_cln(shaking_hiddens, inner_context)
+
+            if "cat" in self.shaking_type:
+                tp_cat_ft = torch.cat([guide_hiddens, visible_hiddens], dim=-1)
+                tp_cat_ft = torch.relu(self.cat_fc(tp_cat_ft))
+                shaking_hiddens = add_feature(shaking_hiddens, tp_cat_ft)
+
+            if "cln" in self.shaking_type:
+                tp_cln_ft = self.tp_cln(visible_hiddens, guide_hiddens)
+                shaking_hiddens = add_feature(shaking_hiddens, tp_cln_ft)
+
+            if "lstm" in self.shaking_type:
+                span_ft = self.enc_inner_hiddens(visible_hiddens, "lstm")
+                shaking_hiddens = add_feature(shaking_hiddens, span_ft)
+
+            if "biaffine" in self.shaking_type:
+                biaffine_ft = torch.relu(self.biaffine(guide_hiddens, visible_hiddens))
+                shaking_hiddens = add_feature(shaking_hiddens, biaffine_ft)
 
             shaking_hiddens_list.append(shaking_hiddens)
         if self.only_look_after:

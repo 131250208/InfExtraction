@@ -182,7 +182,7 @@ dep_config = {
 
 handshaking_kernel_config = {
 #     "shaking_type": "cln",
-    "ent_shaking_type": "cat_lstm",
+    "ent_shaking_type": "cat+lstm",
     "rel_shaking_type": "cat",
 }
 
