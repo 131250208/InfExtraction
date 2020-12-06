@@ -110,7 +110,7 @@ class HandshakingKernel(nn.Module):
             self.cat_fc = nn.Linear(guide_hidden_size + vis_hidden_size, vis_hidden_size)
         if "cln" in shaking_type:
             self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
-        if "mix" in shaking_type:
+        if "mix_pool" in shaking_type:
             self.lamtha = Parameter(torch.rand(vis_hidden_size))
         if "lstm" in shaking_type:
             self.inner_context_lstm = nn.LSTM(vis_hidden_size,
@@ -125,16 +125,16 @@ class HandshakingKernel(nn.Module):
         # seq_hiddens: (batch_size_train, seq_len, hidden_size)
         def pool(seqence, pooling_type):
             pooling = None
-            if pooling_type == "mean_pooling":
+            if pooling_type == "mean_pool":
                 pooling = torch.mean(seqence, dim=-2)
-            elif pooling_type == "max_pooling":
+            elif pooling_type == "max_pool":
                 pooling, _ = torch.max(seqence, dim=-2)
-            elif pooling_type == "mix_pooling":
+            elif pooling_type == "mix_pool":
                 pooling = self.lamtha * torch.mean(seqence, dim=-2) + (1 - self.lamtha) * torch.max(seqence, dim=-2)[0]
             return pooling
 
         inner_context = None
-        if "pooling" in inner_enc_type:
+        if "pool" in inner_enc_type:
             inner_context = torch.stack(
                 [pool(seq_hiddens[:, :i + 1, :], inner_enc_type) for i in range(seq_hiddens.size()[1])], dim=1)
         elif inner_enc_type == "lstm":
@@ -178,13 +178,14 @@ class HandshakingKernel(nn.Module):
                 tp_cln_ft = self.tp_cln(visible_hiddens, guide_hiddens)
                 shaking_hiddens = add_feature(shaking_hiddens, tp_cln_ft)
 
-            if "lstm" in self.shaking_type:
-                span_ft = self.enc_inner_hiddens(visible_hiddens, "lstm")
-                shaking_hiddens = add_feature(shaking_hiddens, span_ft)
-
             if "biaffine" in self.shaking_type:
                 biaffine_ft = torch.relu(self.biaffine(guide_hiddens, visible_hiddens))
                 shaking_hiddens = add_feature(shaking_hiddens, biaffine_ft)
+
+            for inner_enc_type in {"lstm", "max_pool", "mean_pool", "mix_pool"}:
+                if inner_enc_type in self.shaking_type:
+                    inner_ft = self.enc_inner_hiddens(visible_hiddens, inner_enc_type)
+                    shaking_hiddens = add_feature(shaking_hiddens, inner_ft)
 
             shaking_hiddens_list.append(shaking_hiddens)
         if self.only_look_after:
