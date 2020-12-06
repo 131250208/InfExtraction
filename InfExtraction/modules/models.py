@@ -644,9 +644,9 @@ class TPLinkerPP(IEModel):
             ent_conv_layers = conv_config["ent_conv_layers"]
             rel_conv_layers = conv_config["rel_conv_layers"]
             ent_conv_kernel_size = conv_config["ent_conv_kernel_size"]
-            ent_conv_padding = (ent_conv_kernel_size - 1) / 2
+            ent_conv_padding = (ent_conv_kernel_size - 1) // 2
             rel_conv_kernel_size = conv_config["rel_conv_kernel_size"]
-            rel_conv_padding = (rel_conv_kernel_size - 1) / 2
+            rel_conv_padding = (rel_conv_kernel_size - 1) // 2
             for _ in range(ent_conv_layers):
                 self.ent_convs.append(nn.Conv1d(ent_dim,
                                                 ent_dim,
