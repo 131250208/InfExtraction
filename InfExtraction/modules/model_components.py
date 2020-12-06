@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
-from torch.autograd import Variable
+from InfExtraction.modules.preprocess import Indexer
 
 
 class LayerNorm(nn.Module):
@@ -183,6 +183,77 @@ class HandshakingKernel(nn.Module):
         else:
             fin_shaking_hiddens = torch.stack(shaking_hiddens_list, dim=1)
         return fin_shaking_hiddens
+
+
+class InteractionKernel(nn.Module):
+    def __init__(self, ent_dim, rel_dim, ent_att_heads=16, rel_att_heads=16):
+        super(InteractionKernel, self).__init__()
+        self.fc_rel2ent = nn.Linear(rel_dim, ent_dim)
+        self.fc_ent2rel = nn.Linear(ent_dim, rel_dim)
+        self.ent_multihead_attn = nn.MultiheadAttention(ent_dim, ent_att_heads)
+        self.rel_multihead_attn = nn.MultiheadAttention(rel_dim, rel_att_heads)
+        self.ent_guide_rel_cln = LayerNorm(rel_dim, ent_dim, conditional=True)
+        self.rel_guide_ent_cln = LayerNorm(ent_dim, rel_dim, conditional=True)
+
+    def _mirror(self, shaking_seq):
+        batch_size, shaking_seq_len, dim_size = shaking_seq.size()
+        matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
+        map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        matrix_hidden_list = []
+        for i in range(matrix_size):
+            for j in range(matrix_size):
+                if i <= j:
+                    shaking_idx = map_[i][j]
+                else:
+                    shaking_idx = map_[j][i]
+                matrix_hidden_list.append(shaking_seq[:, shaking_idx, :])
+        matrix = torch.cat(matrix_hidden_list, dim=1).view(batch_size, matrix_size, matrix_size, dim_size)
+        return matrix
+
+    def forward(self, ent_hs_hiddens, rel_hs_hiddens):
+        batch_size, matrix_size, _ = rel_hs_hiddens.size()
+
+        ent_hs_hiddens_mirror = self._mirror(ent_hs_hiddens)
+        ent_context_list = []
+        for i in range(matrix_size):
+            for j in range(matrix_size):
+                ent_keys = torch.cat([ent_hs_hiddens_mirror[:, i, :, :],
+                                      ent_hs_hiddens_mirror[:, j, :, :]],
+                                     dim=1,
+                                     )
+                ent_vals = ent_keys
+                rel_query = rel_hs_hiddens[:, i, j, :].repeat(1, matrix_size * 2, 1)
+                rel_query = self.fc_rel2ent(rel_query)
+                ent_con = torch.mean(self.ent_multihead_attn(rel_query, ent_keys, ent_vals), dim=1)
+                ent_context_list.append(ent_con)
+        ent_context = torch.cat(ent_context_list, dim=1).view(batch_size, matrix_size, matrix_size, -1)
+        assert ent_context.size()[-1] == ent_hs_hiddens.size()[-1]
+
+        rel_hs_hiddens_guided = self.ent_guide_rel_cln(rel_hs_hiddens, ent_context)
+
+        rel_context_list = []
+        map_ = Indexer.get_shaking_idx2matrix_idx(matrix_size)
+        for i in range(ent_hs_hiddens.size()[1]):
+            mat_i, mat_j = map_[i]
+            rel_keys = torch.cat([rel_hs_hiddens_guided[:, mat_i, :, :],
+                                  rel_hs_hiddens_guided[:, mat_j, :, :],
+                                  rel_hs_hiddens_guided[:, :, mat_i, :],
+                                  rel_hs_hiddens_guided[:, :, mat_j, :],
+                                  ],
+                                 dim=1,
+                                 )
+            rel_vals = rel_keys
+            ent_query = ent_hs_hiddens[:, i, :].repeat(1, matrix_size * 4, 1)
+            ent_query = self.fc_ent2rel(ent_query)
+            rel_con = torch.mean(self.rel_multihead_attn(ent_query, rel_keys, rel_vals), dim=1)
+            rel_context_list.append(rel_con)
+        rel_context = torch.cat(rel_context_list, dim=1).view(batch_size, ent_hs_hiddens.size()[1], -1)
+        assert rel_context.size()[-1] == rel_hs_hiddens.size()[-1] == rel_hs_hiddens_guided.size()[-1]
+
+        ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context)
+        assert ent_hs_hiddens_guided.size()[-1] == ent_hs_hiddens.size()[-1]
+
+        return ent_hs_hiddens_guided, rel_hs_hiddens_guided
 
 
 class GraphConvLayer(nn.Module):

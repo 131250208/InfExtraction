@@ -619,8 +619,6 @@ class TPLinkerPP(IEModel):
         self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_fc_in_dim)
         self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_fc_in_dim)
 
-        self.rel_multihead_attn = nn.MultiheadAttention(rel_fc_in_dim, 16)
-
         # handshaking kernel
         ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
         rel_shaking_type = handshaking_kernel_config["rel_shaking_type"]
@@ -633,6 +631,10 @@ class TPLinkerPP(IEModel):
                                                         rel_shaking_type,
                                                         only_look_after=False,
                                                         )
+
+        # learn local info
+        self.ent_conv = nn.Conv1d(ent_fc_in_dim, ent_fc_in_dim, 8)
+        self.rel_conv = nn.Conv2d(rel_fc_in_dim, rel_fc_in_dim, 8)
 
         # decoding fc
         self.ent_fc = nn.Linear(ent_fc_in_dim, self.ent_tag_size)
@@ -664,9 +666,10 @@ class TPLinkerPP(IEModel):
         rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
 
         ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens, ent_hiddens)
+        rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
 
-        rel_attn_hiddens, _ = self.rel_multihead_attn(rel_hiddens, rel_hiddens, rel_hiddens)
-        rel_hs_hiddens = self.rel_handshaking_kernel(rel_attn_hiddens, rel_attn_hiddens)
+        ent_hs_hiddens = self.ent_conv(ent_hs_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
+        rel_hs_hiddens = self.rel_conv(rel_hs_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
 
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
         pred_rel_output = self.rel_fc(rel_hs_hiddens)
