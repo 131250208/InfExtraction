@@ -221,7 +221,7 @@ class InteractionKernel(nn.Module):
                     shaking_hidden = self.drop_lamtha * matrix_seq[:, i, j, :] + \
                                      (1 - self.drop_lamtha) * matrix_seq[:, j, i, :]
                     shaking_hidden_list.append(shaking_hidden)
-        return torch.cat(shaking_hidden_list, dim=1)
+        return torch.stack(shaking_hidden_list, dim=1)
 
     def forward(self, ent_hs_hiddens, rel_hs_hiddens):
         batch_size, matrix_size, _, _ = rel_hs_hiddens.size()
