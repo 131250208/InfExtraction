@@ -4,15 +4,26 @@ import numpy as np
 import os
 
 seed = 2333
-os.environ['PYTHONHASHSEED'] = str(seed)
-torch.manual_seed(seed)  # cpu
-torch.cuda.manual_seed(seed)  # gpu
-torch.cuda.manual_seed_all(seed)
-np.random.seed(seed)  # numpy
-random.seed(seed)  # random and transforms
-torch.backends.cudnn.enabled = True
-torch.backends.cudnn.benchmark = True
-torch.backends.cudnn.deterministic = True  # cudnn
+enable_bm = True
+
+
+def set_seed():
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    torch.manual_seed(seed)  # cpu
+    torch.cuda.manual_seed(seed)  # gpu
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)  # numpy
+    random.seed(seed)  # random and transforms
+
+
+def enable_benchmark():
+    torch.backends.cudnn.enabled = enable_bm
+    torch.backends.cudnn.benchmark = enable_bm
+    torch.backends.cudnn.deterministic = True
+
+
+set_seed()
+enable_benchmark()
 
 import string
 import json
