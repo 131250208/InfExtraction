@@ -31,14 +31,14 @@ import copy
 import re
 from glob import glob
 
-exp_name = "webnlg"
+exp_name = "webnlg_star"
 task_type = "re"
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-match_pattern = "whole_text"
+match_pattern = "only_head_text"
 
 # model and tagger(decoder)
 model_name = "TPLinkerPP" # TPLinkerPlus, TPLinkerPP, TriggerFreeEventExtractor
@@ -72,8 +72,8 @@ run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub
 test_tagging_n_decoding = False
 device_num = 0
 epochs = 200
-lr = 1e-4 # 5e-5, 1e-4
-batch_size_train = 8
+lr = 5e-5 # 5e-5, 1e-4
+batch_size_train = 6
 batch_size_valid = 32
 batch_size_test = 32
 
@@ -107,7 +107,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = False
+use_wandb = True
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -165,7 +165,6 @@ char_encoder_config = {
 word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
-    # 
     "word_emb_file_path": "../../data/pretrained_emb/glove.6B.100d.txt",
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
@@ -192,8 +191,8 @@ dep_config = {
 
 handshaking_kernel_config = {
 #     "shaking_type": "cln",
-    "ent_shaking_type": "cat+lstm",
-    "rel_shaking_type": "cat",
+    "ent_shaking_type": "cln+lstm",
+    "rel_shaking_type": "cln",
 }
 
 conv_config = {
@@ -208,7 +207,7 @@ inter_kernel_config = {
 }
 
 # model settings
-token_level = "word" # token is word or subword
+token_level = "subword" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 # to do an ablation study, you can remove components by commenting the configurations below
@@ -217,14 +216,14 @@ model_settings = {
 #     "pos_tag_emb_config": pos_tag_emb_config,
 #     "ner_tag_emb_config": ner_tag_emb_config,
 #     "char_encoder_config": char_encoder_config,
-#     "subwd_encoder_config": subwd_encoder_config,
-    "word_encoder_config": word_encoder_config,
+    "subwd_encoder_config": subwd_encoder_config,
+#     "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "conv_config": conv_config,
-    # "inter_kernel_config": inter_kernel_config,
+    "inter_kernel_config": inter_kernel_config,
 #     "fin_hidden_size": 1024,
-    "ent_dim": 512,
+    "ent_dim": 768,
     "rel_dim": 768,
 }
 if model_name == "TPLinkerPP":
