@@ -5,6 +5,8 @@ class MetricsCalculator:
     def __init__(self, task_type, match_pattern=None, use_ghm=False):
         self.task_type = task_type # for scoring
         self.match_pattern = match_pattern # for scoring of relation extraction
+        if task_type == "re":
+            assert self.match_pattern is not None
         # for multilabel_categorical_crossentropy
         self.use_ghm = use_ghm
         self.last_weights = None  # for exponential moving averaging
