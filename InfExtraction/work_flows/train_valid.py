@@ -28,9 +28,6 @@ import re
 from glob import glob
 import numpy as np
 
-# settings.set_seed()
-# settings.enable_benchmark()
-
 
 def worker_init_fn(worker_id):
     np.random.seed(np.random.get_state()[1][0] + worker_id)
@@ -75,7 +72,7 @@ def get_dataloader(data,
                                                max_char_num_in_tok)
     # tagging
     indexed_data = tagger.tag(indexed_data)
-    print(np.random.get_state()[1][0])
+
     # dataloader
     dataloader = DataLoader(MyDataset(indexed_data),
                             batch_size=batch_size,
