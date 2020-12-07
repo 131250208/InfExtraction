@@ -6,8 +6,13 @@ from InfExtraction.modules.preprocess import Indexer, Preprocessor
 
 
 class Tagger(metaclass=ABCMeta):
-    def additional_preprocess(self, data):
+    @classmethod
+    def additional_preprocess(cls, data):
         return data
+
+    @abstractmethod
+    def get_tag_size(self):
+        pass
 
     @abstractmethod
     def get_tag_points(self, sample):
@@ -54,11 +59,11 @@ class Tagger(metaclass=ABCMeta):
         pass
     
 
-class HandshakingTaggerRel4TPLPlus(Tagger):
-    def additional_preprocess(self, data):
+class HandshakingTagger4TPLPlus(Tagger):
+    @classmethod
+    def additional_preprocess(cls, data):
         for sample in data:
             fin_ent_list = []
-
             for rel in sample["relation_list"]:
                 # add relation type to entities
                 fin_ent_list.append({
@@ -96,9 +101,6 @@ class HandshakingTaggerRel4TPLPlus(Tagger):
         :param data: all data, used to generate entity type and relation type dicts
         '''
         super().__init__()
-        # additional preprocessing
-        data = self.additional_preprocess(data)
-
         # generate entity type and relation type dicts
         rel_type_set = set()
         ent_type_set = set()
@@ -275,23 +277,6 @@ class HandshakingTaggerRel4TPLPlus(Tagger):
         # change to predicted relation list and entity list
         pred_sample["relation_list"] = rel_list
         pred_sample["entity_list"] = ent_list
-
-        # res = {
-        #     "id": sample_idx,
-        #     "text": text,
-        #     "tok2char_span": tok2char_span,
-        #     "relation_list": rel_list,
-        #     "entity_list": ent_list,
-        #     # "tok_level_offset": sample["tok_level_offset"],
-        #     # "char_level_offset": sample["char_level_offset"],
-        # }
-        # # these three keys are for span recovering (to original text)
-        # if "tok_level_offset" in sample:
-        #     res["tok_level_offset"] = sample["tok_level_offset"]
-        # if "char_level_offset" in sample:
-        #     res["char_level_offset"] = sample["char_level_offset"]
-        # if "splits" in sample: # it is a combined sample
-        #     res["splits"] = sample["splits"]
         return pred_sample
 
     def decode_batch(self, sample_list, batch_pred_tags):
@@ -304,143 +289,147 @@ class HandshakingTaggerRel4TPLPlus(Tagger):
         return pred_sample_list
 
 
-class HandshakingTaggerEE4TPLPlus(HandshakingTaggerRel4TPLPlus):
-    def additional_preprocess(self, data):
-        separator = "_"
-        for sample in data:
-            # transform event list to relation list and entity list
-            fin_ent_list = []
-            fin_rel_list = []
-            for event in sample["event_list"]:
-                fin_ent_list.append({
-                    "text": event["trigger"],
-                    "type": "EE:{}{}{}".format("Trigger", separator, event["trigger_type"]),
-                    "char_span": event["trigger_char_span"],
-                    "tok_span": event["trigger_tok_span"],
-                })
-                for arg in event["argument_list"]:
+def create_rebased_ee_tagger(base_class):
+    class REBasedEETagger(base_class):
+        @classmethod
+        def additional_preprocess(cls, data):
+            separator = "_"
+            for sample in data:
+                # transform event list to relation list and entity list
+                fin_ent_list = []
+                fin_rel_list = []
+                for event in sample["event_list"]:
                     fin_ent_list.append({
-                        "text": arg["text"],
-                        "type": "EE:{}{}{}".format("Argument", separator, arg["type"]),
-                        "char_span": arg["char_span"],
-                        "tok_span": arg["tok_span"],
+                        "text": event["trigger"],
+                        "type": "EE:{}{}{}".format("Trigger", separator, event["trigger_type"]),
+                        "char_span": event["trigger_char_span"],
+                        "tok_span": event["trigger_tok_span"],
                     })
-                    fin_rel_list.append({
-                        "subject": arg["text"],
-                        "subj_char_span": arg["char_span"],
-                        "subj_tok_span": arg["tok_span"],
-                        "object": event["trigger"],
-                        "obj_char_span": event["trigger_char_span"],
-                        "obj_tok_span": event["trigger_tok_span"],
-                        "predicate": "EE:{}{}{}".format(arg["type"], separator, event["trigger_type"]),
-                    })
-            sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
-            # extend original entity list
-            if "entity_list" in sample:
-                fin_ent_list.extend(sample["entity_list"])
-            sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
-        data = super(HandshakingTaggerEE4TPLPlus, self).additional_preprocess(data)
-        return data
+                    for arg in event["argument_list"]:
+                        fin_ent_list.append({
+                            "text": arg["text"],
+                            "type": "EE:{}{}{}".format("Argument", separator, arg["type"]),
+                            "char_span": arg["char_span"],
+                            "tok_span": arg["tok_span"],
+                        })
+                        fin_rel_list.append({
+                            "subject": arg["text"],
+                            "subj_char_span": arg["char_span"],
+                            "subj_tok_span": arg["tok_span"],
+                            "object": event["trigger"],
+                            "obj_char_span": event["trigger_char_span"],
+                            "obj_tok_span": event["trigger_tok_span"],
+                            "predicate": "EE:{}{}{}".format(arg["type"], separator, event["trigger_type"]),
+                        })
+                sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
+                # extend original entity list
+                if "entity_list" in sample:
+                    fin_ent_list.extend(sample["entity_list"])
+                sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
+            data = super().additional_preprocess(data)
+            return data
 
-    def decode(self, sample, pred_outs):
-        pred_sample = super(HandshakingTaggerEE4TPLPlus, self).decode(sample, pred_outs)
-        return {
-            **pred_sample,
-            "event_list": self._trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
-        }
+        def decode(self, sample, pred_outs):
+            pred_sample = super(REBasedEETagger, self).decode(sample, pred_outs)
+            return {
+                **pred_sample,
+                "event_list": self._trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
+            }
 
-    def _trans2ee(self, rel_list, ent_list):
-        # choose tags with EE:
-        new_rel_list, new_ent_list = [], []
-        for rel in rel_list:
-            if rel["predicate"].split(":")[0] == "EE":
-                new_rel = copy.deepcopy(rel)
-                new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
-                new_rel_list.append(new_rel)
-        for ent in ent_list:
-            if ent["type"].split(":")[0] == "EE":
-                new_ent = copy.deepcopy(ent)
-                new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
-                new_ent_list.append(new_ent)
-        rel_list, ent_list = new_rel_list, new_ent_list
+        def _trans2ee(self, rel_list, ent_list):
+            # choose tags with EE:
+            new_rel_list, new_ent_list = [], []
+            for rel in rel_list:
+                if rel["predicate"].split(":")[0] == "EE":
+                    new_rel = copy.deepcopy(rel)
+                    new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
+                    new_rel_list.append(new_rel)
+            for ent in ent_list:
+                if ent["type"].split(":")[0] == "EE":
+                    new_ent = copy.deepcopy(ent)
+                    new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
+                    new_ent_list.append(new_ent)
+            rel_list, ent_list = new_rel_list, new_ent_list
 
-        sepatator = "_"
-        trigger_offset2vote = {}
-        trigger_offset2trigger_text = {}
-        trigger_offset2trigger_char_span = {}
-        # get candidate trigger types from relation
-        for rel in rel_list:
-            trigger_offset = rel["obj_tok_span"]
-            trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
-            trigger_offset2trigger_text[trigger_offset_str] = rel["object"]
-            trigger_offset2trigger_char_span[trigger_offset_str] = rel["obj_char_span"]
-            _, event_types = rel["predicate"].split(sepatator)
+            sepatator = "_"
+            trigger_offset2vote = {}
+            trigger_offset2trigger_text = {}
+            trigger_offset2trigger_char_span = {}
+            # get candidate trigger types from relation
+            for rel in rel_list:
+                trigger_offset = rel["obj_tok_span"]
+                trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
+                trigger_offset2trigger_text[trigger_offset_str] = rel["object"]
+                trigger_offset2trigger_char_span[trigger_offset_str] = rel["obj_char_span"]
+                _, event_types = rel["predicate"].split(sepatator)
 
-            if trigger_offset_str not in trigger_offset2vote:
-                trigger_offset2vote[trigger_offset_str] = {}
-            trigger_offset2vote[trigger_offset_str][event_types] = trigger_offset2vote[trigger_offset_str].get(
-                event_types, 0) + 1
-
-        # get candidate trigger types from entity tags
-        for ent in ent_list:
-            t1, t2 = ent["type"].split(sepatator)
-            # assert t1 == "Trigger" or t1 == "Argument"
-            if t1 == "Trigger":  # trigger
-                event_types = t2
-                trigger_span = ent["tok_span"]
-                trigger_offset_str = "{},{}".format(trigger_span[0], trigger_span[1])
-                trigger_offset2trigger_text[trigger_offset_str] = ent["text"]
-                trigger_offset2trigger_char_span[trigger_offset_str] = ent["char_span"]
                 if trigger_offset_str not in trigger_offset2vote:
                     trigger_offset2vote[trigger_offset_str] = {}
                 trigger_offset2vote[trigger_offset_str][event_types] = trigger_offset2vote[trigger_offset_str].get(
-                    event_types, 0) + 1  # if even, entity type makes the call
+                    event_types, 0) + 1
 
-        # choose the final trigger type by votes
-        tirigger_offset2event_types = {}
-        for trigger_offet_str, event_type2score in trigger_offset2vote.items():
-            top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
-            winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
-            # winer_event_types = {sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0],} # ignore draw
-            tirigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
+            # get candidate trigger types from entity tags
+            for ent in ent_list:
+                t1, t2 = ent["type"].split(sepatator)
+                # assert t1 == "Trigger" or t1 == "Argument"
+                if t1 == "Trigger":  # trigger
+                    event_types = t2
+                    trigger_span = ent["tok_span"]
+                    trigger_offset_str = "{},{}".format(trigger_span[0], trigger_span[1])
+                    trigger_offset2trigger_text[trigger_offset_str] = ent["text"]
+                    trigger_offset2trigger_char_span[trigger_offset_str] = ent["char_span"]
+                    if trigger_offset_str not in trigger_offset2vote:
+                        trigger_offset2vote[trigger_offset_str] = {}
+                    trigger_offset2vote[trigger_offset_str][event_types] = trigger_offset2vote[trigger_offset_str].get(
+                        event_types, 0) + 1  # if even, entity type makes the call
 
-        # generate event list
-        trigger_offset2event2arguments = {}
-        for rel in rel_list:
-            trigger_offset = rel["obj_tok_span"]
-            argument_role, et = rel["predicate"].split(sepatator)
-            trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
-            if et not in tirigger_offset2event_types[trigger_offset_str]:  # filter false relations
-                continue
-            # append arguments
-            if trigger_offset_str not in trigger_offset2event2arguments:
-                trigger_offset2event2arguments[trigger_offset_str] = {}
-            if et not in trigger_offset2event2arguments[trigger_offset_str]:
-                trigger_offset2event2arguments[trigger_offset_str][et] = []
-            trigger_offset2event2arguments[trigger_offset_str][et].append({
-                "text": rel["subject"],
-                "type": argument_role,
-                "char_span": rel["subj_char_span"],
-                "tok_span": rel["subj_tok_span"],
-            })
-        event_list = []
-        for trigger_offset_str, event_types in tirigger_offset2event_types.items():
-            for et in event_types:
-                arguments = []
-                if trigger_offset_str in trigger_offset2event2arguments and \
-                        et in trigger_offset2event2arguments[trigger_offset_str]:
-                    arguments = trigger_offset2event2arguments[trigger_offset_str][et]
+            # choose the final trigger type by votes
+            tirigger_offset2event_types = {}
+            for trigger_offet_str, event_type2score in trigger_offset2vote.items():
+                top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
+                winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
+                # winer_event_types = {sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0],} # ignore draw
+                tirigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
 
-                trigger_offset = trigger_offset_str.split(",")
-                event = {
-                    "trigger": trigger_offset2trigger_text[trigger_offset_str],
-                    "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
-                    "trigger_tok_span": [int(trigger_offset[0]), int(trigger_offset[1])],
-                    "trigger_type": et,
-                    "argument_list": arguments,
-                }
-                event_list.append(event)
-        return event_list
+            # generate event list
+            trigger_offset2event2arguments = {}
+            for rel in rel_list:
+                trigger_offset = rel["obj_tok_span"]
+                argument_role, et = rel["predicate"].split(sepatator)
+                trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
+                if et not in tirigger_offset2event_types[trigger_offset_str]:  # filter false relations
+                    continue
+                # append arguments
+                if trigger_offset_str not in trigger_offset2event2arguments:
+                    trigger_offset2event2arguments[trigger_offset_str] = {}
+                if et not in trigger_offset2event2arguments[trigger_offset_str]:
+                    trigger_offset2event2arguments[trigger_offset_str][et] = []
+                trigger_offset2event2arguments[trigger_offset_str][et].append({
+                    "text": rel["subject"],
+                    "type": argument_role,
+                    "char_span": rel["subj_char_span"],
+                    "tok_span": rel["subj_tok_span"],
+                })
+            event_list = []
+            for trigger_offset_str, event_types in tirigger_offset2event_types.items():
+                for et in event_types:
+                    arguments = []
+                    if trigger_offset_str in trigger_offset2event2arguments and \
+                            et in trigger_offset2event2arguments[trigger_offset_str]:
+                        arguments = trigger_offset2event2arguments[trigger_offset_str][et]
+
+                    trigger_offset = trigger_offset_str.split(",")
+                    event = {
+                        "trigger": trigger_offset2trigger_text[trigger_offset_str],
+                        "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
+                        "trigger_tok_span": [int(trigger_offset[0]), int(trigger_offset[1])],
+                        "trigger_type": et,
+                        "argument_list": arguments,
+                    }
+                    event_list.append(event)
+            return event_list
+    return REBasedEETagger
+
 
 class MatrixTaggerEE(Tagger):
     def __init__(self, data):
@@ -463,7 +452,9 @@ class MatrixTaggerEE(Tagger):
 
     def _get_tags(self, sample):
         tag_list = []
-        for event in sample["event_list"]:
+        event_list = sample["event_list"]
+
+        for event in event_list:
             event_type = event["trigger_type"]
             pseudo_argument = {
                 "type": "Trigger",
@@ -766,8 +757,9 @@ class MatrixTaggerEE(Tagger):
         return pred_sample_list
 
 
-class HandshakingTaggerRel4TPLPP(Tagger):
-    def additional_preprocess(self, data):
+class HandshakingTagger4TPLPP(Tagger):
+    @classmethod
+    def additional_preprocess(cls, data):
         for sample in data:
             fin_ent_list = []
 
@@ -810,8 +802,6 @@ class HandshakingTaggerRel4TPLPP(Tagger):
         :param data: all data, used to generate entity type and relation type dicts
         '''
         super().__init__()
-        # additional preprocessing
-        data = self.additional_preprocess(data)
 
         # generate entity type and relation type dicts
         rel_type_set = set()
@@ -843,11 +833,8 @@ class HandshakingTaggerRel4TPLPP(Tagger):
         self.ent_tag2id = {t: idx for idx, t in enumerate(sorted(self.ent_tags))}
         self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
 
-    def get_rel_tag_size(self):
-        return len(self.rel_tag2id)
-
-    def get_ent_tag_size(self):
-        return len(self.ent_tag2id)
+    def get_tag_size(self):
+        return len(self.ent_tag2id), len(self.rel_tag2id)
 
     def tag(self, data):
         for sample in tqdm(data, desc="tagging"):

@@ -1,5 +1,5 @@
 *data*
-*settings*.py
+#*settings*.py
 wandb/
 *log*
 

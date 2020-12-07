@@ -1187,6 +1187,9 @@ class Preprocessor:
                     "features": split_features,
                     "tok_level_offset": tok_level_offset,
                     "char_level_offset": char_level_offset,
+                    "entity_list": [],
+                    "relation_list": [],
+                    "event_list": [],
                 }
                 if data_type == "test":
                     if len(sub_text) > 0:
@@ -1304,7 +1307,9 @@ class Preprocessor:
                 combined_sample["relation_list"].extend(sample_cp["relation_list"])
             if "event_list" in sample_cp:
                 combined_sample["event_list"].extend(sample_cp["event_list"])
-        if combined_sample["text"] != "": # do not forget the last one
+
+        # do not forget the last one
+        if combined_sample["text"] != "":
             new_data.append(combined_sample)
         return new_data
 
