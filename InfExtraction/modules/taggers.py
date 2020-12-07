@@ -735,7 +735,7 @@ class MatrixTaggerEE(Tagger):
                                                        'char_span': [tok2char_span[event_piece[0]][0], tok2char_span[end_piece[0]][1]],
                                                        'type': tag_type.split(self.separator)[1]})
             # try:
-            assert 'trigger' in event
+            # assert 'trigger' in event
             # except:
             #     pdb.set_trace()
             #     pass
