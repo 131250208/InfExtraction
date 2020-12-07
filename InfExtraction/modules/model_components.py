@@ -151,10 +151,9 @@ class HandshakingKernel(nn.Module):
             if "lstm" in self.shaking_type:
                 batch_size, _, matrix_size, vis_hidden_size = visible.size()
                 # mask lower triangle
-                upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1)
+                upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
 
                 # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
-                upper_visible = upper_visible.contiguous()
                 visible4lstm = upper_visible.view(-1, matrix_size, vis_hidden_size)
                 span_pre, _ = self.lstm4span(visible4lstm)
                 span_pre = span_pre.view(batch_size, matrix_size, matrix_size, vis_hidden_size)

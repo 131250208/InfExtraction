@@ -334,7 +334,7 @@ class Preprocessor:
         :param ori_tensor: (batch_size, matrix_size, matrix_size, hidden_size)
         :return:
         '''
-        tensor = ori_tensor.permute(0, 3, 1, 2)
+        tensor = ori_tensor.permute(0, 3, 1, 2).contiguous()
         uppder_ones = torch.ones([tensor.size()[-1], tensor.size()[-1]]).long().triu().to(ori_tensor.device)
         upper_diag_ids = torch.nonzero(uppder_ones.view(-1), as_tuple=False).view(-1)
         # flat_tensor: (batch_size, matrix_size * matrix_size, hidden_size)
