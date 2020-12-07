@@ -181,8 +181,8 @@ dep_config = {
 
 handshaking_kernel_config = {
 #     "shaking_type": "cln",
-    "ent_shaking_type": "biaffine+lstm",
-    "rel_shaking_type": "biaffine",
+    "ent_shaking_type": "cat+lstm",
+    "rel_shaking_type": "cat",
 }
 
 conv_config = {
