@@ -12,7 +12,7 @@ from InfExtraction.modules.preprocess import Preprocessor, MyDataset
 from InfExtraction.modules.taggers import HandshakingTaggerEE4TPLPlus
 from InfExtraction.modules.workers import Evaluator
 from InfExtraction.modules.models import TPLinkerPlus
-from InfExtraction.work_flows import settings_train_val_test as settings
+from InfExtraction.work_flows import settings_default as settings
 
 import os
 import torch

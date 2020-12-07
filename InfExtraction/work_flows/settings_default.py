@@ -31,18 +31,19 @@ import copy
 import re
 from glob import glob
 
-exp_name = "webnlg"
-task_type = "re"
+exp_name = "ace2005_lu"
+task_type = "ee"
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
+
 match_pattern = "whole_text"
 
 # model and tagger(decoder)
-model_name = "TPLinkerPP" # TPLinkerPlus, TPLinkerPP, TriggerFreeEventExtractor
-tagger_name = "HandshakingTaggerRel4TPLPP" # HandshakingTaggerRel4TPLPlus, HandshakingTaggerRel4TPLPP, HandshakingTaggerEE4TPLPlus, MatrixTaggerEE
+model_name = "TriggerFreeEventExtractor" # TPLinkerPlus, TPLinkerPP, TriggerFreeEventExtractor
+tagger_name = "MatrixTaggerEE" # HandshakingTagger4TPLPlus, HandshakingTagger4TPLPP, MatrixTaggerEE
 
 # data
 data_in_dir = "../../data/normal_data"
@@ -69,7 +70,7 @@ key2dict = {
 
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-test_tagging_n_decoding = False
+check_tagging_n_decoding = True
 device_num = 0
 epochs = 200
 lr = 1e-4 # 5e-5, 1e-4
@@ -123,8 +124,11 @@ trainer_config = {
 }
 
 # for eval
-final_score_key = "rel_f1" # trigger_class_f1
-score_threshold = score_threshold
+if task_type == "re":
+    final_score_key = "rel_f1"
+elif task_type == "ee" or "re_based_ee":
+    final_score_key = "trigger_class_f1"
+
 model_bag_size = 15
 
 # pretrianed model state
@@ -134,7 +138,7 @@ model_state_dict_path = None
 
 
 # for test
-model_dir_for_test = "./wandb" # "./default_log_dir"
+model_dir_for_test = "wandb"  # "./default_log_dir"
 target_run_ids = ["1zbzg5ml", "11p5ec06"]
 top_k_models = 3
 cal_scores = True # set False if the test sets are not annotated with golden results
@@ -191,9 +195,9 @@ dep_config = {
 }
 
 handshaking_kernel_config = {
-#     "shaking_type": "cln",
-    "ent_shaking_type": "biaffine+lstm",
-    "rel_shaking_type": "biaffine",
+    "shaking_type": "cat",
+#     "ent_shaking_type": "cat+lstm",
+#     "rel_shaking_type": "cat",
 }
 
 conv_config = {
@@ -221,11 +225,11 @@ model_settings = {
     "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "conv_config": conv_config,
+    # "conv_config": conv_config,
     # "inter_kernel_config": inter_kernel_config,
-#     "fin_hidden_size": 1024,
-    "ent_dim": 512,
-    "rel_dim": 768,
+    "fin_hidden_size": 512,
+    # "ent_dim": 512,
+    # "rel_dim": 768,
 }
 if model_name == "TPLinkerPP":
     assert max_seq_len_train == max_seq_len_valid == max_seq_len_test

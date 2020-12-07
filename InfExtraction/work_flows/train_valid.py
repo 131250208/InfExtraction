@@ -9,7 +9,6 @@ Train the model
 # Put the data into a Dataloaders
 # Set optimizer and trainer
 '''
-from InfExtraction.work_flows import settings_train_val_test as settings
 from InfExtraction.modules.preprocess import Preprocessor, MyDataset
 from InfExtraction.modules import taggers
 from InfExtraction.modules import models
@@ -18,6 +17,7 @@ from InfExtraction.modules.metrics import MetricsCalculator
 from InfExtraction.work_flows.utils import DefaultLogger
 
 import os
+import sys, getopt
 import torch
 import wandb
 import json
@@ -27,6 +27,7 @@ import logging
 import re
 from glob import glob
 import numpy as np
+import importlib
 
 
 def worker_init_fn(worker_id):
@@ -90,6 +91,20 @@ def get_score_fr_path(model_path):
 
 
 if __name__ == "__main__":
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "s:", ["settings="])
+    except getopt.GetoptError:
+        print('test.py -s <settings_file> --settings <settings_file>')
+        sys.exit(2)
+
+    settings_name = "settings_default"
+    for opt, arg in opts:
+        if opt in ("-s", "--settings"):
+            settings_name = arg
+
+    module_name = "InfExtraction.work_flows.{}".format(settings_name)
+    settings = importlib.import_module(module_name)
+
     # task
     exp_name = settings.exp_name
     task_type = settings.task_type
@@ -114,7 +129,7 @@ if __name__ == "__main__":
     log_interval = settings.log_interval
 
     # training settings
-    test_tagging_n_decoding = settings.test_tagging_n_decoding
+    check_tagging_n_decoding = settings.check_tagging_n_decoding
     device_num = settings.device_num
     token_level = settings.token_level
     epochs = settings.epochs
@@ -138,7 +153,7 @@ if __name__ == "__main__":
     model_state_dict_path = settings.model_state_dict_path # pretrained model state
 
     # match_pattern, only for relation extraction
-    match_pattern = settings.match_pattern
+    match_pattern = settings.match_pattern if task_type == "re" else None
 
     # save model
     score_threshold = settings.score_threshold
@@ -184,27 +199,36 @@ if __name__ == "__main__":
         filename2test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    # tagger
+    tagger_class_name = getattr(taggers, tagger_name)
+    if task_type == "re_based_ee":
+        task_type = "ee"
+        tagger_class_name = taggers.create_rebased_ee_tagger(tagger_class_name)
+
+    # additional preprocessing
+    train_data = tagger_class_name.additional_preprocess(train_data)
+    valid_data = tagger_class_name.additional_preprocess(valid_data)
+    for filename, test_data in filename2test_data.items():
+        filename2test_data[filename] = tagger_class_name.additional_preprocess(test_data)
+
+    # instance
     all_data = train_data + valid_data
     for filename, test_data in filename2test_data.items():
         all_data.extend(test_data)
-    # tagger
-    tagger_class_name = getattr(taggers, tagger_name)
     tagger = tagger_class_name(all_data)
+
     # metrics_calculator
     metrics_cal = MetricsCalculator(task_type, match_pattern, use_ghm)
+
     # model
     print("init model...")
     model_class_name = getattr(models, model_name)
     model = model_class_name(tagger, metrics_cal, **model_settings)
     model = model.to(device)
     print("done!")
+
     # function for generating data batch
     collate_fn = model.generate_batch
-    # optional: additional preprocessing on relation/entity/events
-    train_data = tagger.additional_preprocess(train_data)
-    valid_data = tagger.additional_preprocess(valid_data)
-    for filename, test_data in filename2test_data.items():
-        filename2test_data[filename] = tagger.additional_preprocess(test_data)
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     # logger
@@ -284,7 +308,7 @@ if __name__ == "__main__":
     evaluator = Evaluator(model, device)
 
     # debug: checking tagging and decoding
-    if test_tagging_n_decoding:
+    if check_tagging_n_decoding:
         pprint(evaluator.check_tagging_n_decoding(valid_dataloader, valid_data))
 
     # train and eval
