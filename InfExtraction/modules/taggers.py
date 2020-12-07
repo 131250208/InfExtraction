@@ -442,7 +442,6 @@ class HandshakingTaggerEE4TPLPlus(HandshakingTaggerRel4TPLPlus):
                 event_list.append(event)
         return event_list
 
-
 class MatrixTaggerEE(Tagger):
     def __init__(self, data):
         '''
@@ -497,33 +496,264 @@ class MatrixTaggerEE(Tagger):
 
     def decode(self, sample, pred_tags):
         predicted_matrix_tag = pred_tags[0]
-
         matrix_points = Indexer.matrix2points(predicted_matrix_tag)
-        tags = [[p[0], p[1], self.id2tag[p[2]]] for p in matrix_points]
+
+
+        # matrix_points = [(58, 58, 87), (58, 59, 88), (58, 60, 88), (58, 65, 89), (58, 68, 91), (58, 75, 82), (58, 82, 84),
+        #                  (59, 58, 87), (59, 59, 88), (59, 60, 88), (59, 65, 89), (59, 68, 91), (59, 75, 82), (59, 82, 84),
+        #                  (60, 58, 87), (60, 59, 88), (60, 60, 88), (60, 65, 89), (60, 68, 91), (60, 75, 82), (60, 82, 84),
+        #                  (65, 58, 87), (65, 59, 88), (65, 60, 88), (65, 65, 89), (65, 68, 91), (65, 75, 82), (65, 82, 84),
+        #                  (68, 58, 87), (68, 59, 88), (68, 60, 88), (68, 65, 89), (68, 68, 91), (68, 75, 82), (68, 82, 84),
+        #                  (74, 74, 89), (74, 75, 91),
+        #                  (75, 74, 89), (75, 75, 91),
+        #                  (75, 58, 87), (75, 59, 88), (75, 60, 88), (75, 65, 89), (75, 68, 91), (75, 75, 82), (75, 82, 84),
+        #                  (82, 58, 87), (82, 59, 88), (82, 60, 88), (82, 65, 89), (82, 68, 91), (82, 75, 82), (82, 82, 84)]
+        # matrix_points = set([(7, 7, 26), (7, 9, 36), (7, 24, 30),
+        #                  (9, 7, 26), (9, 9, 36), (9, 24, 30),
+        #                  (24, 7, 26), (24, 9, 36), (24, 24, 30),
+        #
+        #                  (7, 7, 32), (7, 19, 36), (7, 24, 30),
+        #                  (19, 7, 32), (19, 19, 36), (19, 24, 30),
+        #                  (24, 7, 32), (24, 19, 36), (24, 24, 30),
+        #
+        #                  (7, 7, 82), (7, 11, 89), (7, 24, 85),
+        #                  (11, 7, 82), (11, 11, 89), (11, 24, 85),
+        #                  (24, 7, 82), (24, 11, 89), (24, 24, 85),
+        #
+        #                  (70, 70, 89), (70, 81, 84), (70, 84, 91),
+        #                  (81, 70, 89), (81, 81, 84), (81, 84, 91),
+        #                  (84, 70, 89), (84, 81, 84), (84, 84, 91),
+        #
+        #                  (74, 74, 157), (74, 81, 152), (74, 84, 159),
+        #                  (81, 74, 157), (81, 81, 152), (81, 84, 159),
+        #                  (84, 74, 157), (84, 81, 152), (84, 84, 159),
+        #
+        #                  (79, 79, 36), (79, 81, 28), (79, 84, 32), (79, 87, 32),
+        #                  (81, 79, 36), (81, 81, 28), (81, 84, 32), (81, 87, 32),
+        #                  (84, 79, 36), (84, 81, 28), (84, 84, 32), (84, 87, 32),
+        #                  (87, 79, 36), (87, 81, 28), (87, 84, 32), (87, 87, 32)])
+
+
+
+        # tags = [[p[0], p[1], self.id2tag[p[2]]] for p in matrix_points]
+        tags = matrix_points
         sample_idx, text = sample["id"], sample["text"]
         tok2char_span = sample["features"]["tok2char_span"]
 
         # decoding
-        # ...
 
-        # event = {
-        #     "trigger": None, # "trigger_text
-        #     "trigger_char_span": None,
-        #     "trigger_tok_span": None,
-        #     "trigger_type": None,
-        #     "argument_list": [
-        #         {
-        #             "text": None, # argument text,
-        #             "tok_span": None,
-        #             "char_span": None,
-        #         }
-        #     ],
-        # }
-        event_list = [] # predicted event list
+        center_tags = []
+        for tag in tags:
+            if tag[0] == tag[1]:
+                center_tags.append(tag)
+
+        event_pieces = []
+        num_centers = len(center_tags)
+        index = 0
+
+        def center_match(ct_1, ct_2):
+            # return predicted_matrix_tag[ct_1[0],ct_2[0],ct_2[2]].item() == 1
+            if ct_1 == ct_2:
+                return True
+            if abs(ct_1[2] - ct_2[2]) > 20:
+                return False
+            left_match, right_match = False, False
+            for tag in tags:
+                if tag[0] == ct_1[0] and tag[1] == ct_2[0] and tag[2] == ct_2[2] and tag[0] != tag[1]:
+                    # print(tag)
+                    left_match = True
+                if tag[0] == ct_2[0] and tag[1] == ct_1[0] and tag[2] == ct_1[2] and tag[0] != tag[1]:
+                    # print(tag)
+                    right_match = True
+            return right_match and left_match
+
+        while True:
+            if num_centers == 0 or index >= len(center_tags):
+                break
+            if index == 0:
+                event_pieces.append([center_tags[index]])
+                index += 1
+            else:
+                # pdb.set_trace()
+                temp_event_pieces = []
+                single_node = True
+                for event_piece in event_pieces:
+                    connected_centers = []
+                    match_all = True
+                    for center_tag_ in event_piece:
+                        if center_match(center_tag_, center_tags[index]):
+                            connected_centers.append(center_tag_)
+                            single_node = False
+                        else:
+                            match_all = False
+                    if match_all:
+                        # pdb.set_trace()
+                        event_piece.append(center_tags[index])
+                    else:
+                        if len(connected_centers) > 0:
+                            temp_event_pieces.append(connected_centers + [center_tags[index]])
+                event_pieces += temp_event_pieces
+                if single_node:
+                    event_pieces.append([center_tags[index]])
+                index += 1
+
+        deleted_events = []
+        for i in range(len(event_pieces)):
+            for j in range(i + 1, len(event_pieces)):
+                if len(set(event_pieces[i]) - set(event_pieces[j])) == 0:
+                    deleted_events.append(i)
+                elif len(set(event_pieces[j]) - set(event_pieces[i])) == 0:
+                    deleted_events.append(j)
+
+        event_pieces_ = []
+        for i in range(len(event_pieces)):
+            if i in deleted_events:
+                continue
+            else:
+                event_piece_list_ = []
+                for event_piece in event_pieces[i]:
+                    event_piece_list_.append((event_piece[0], self.id2tag[event_piece[2]]))
+                event_pieces_.append(event_piece_list_)
+        event_pieces = event_pieces_
+        # pdb.set_trace()
+        #event_piece = [offset, tag]
+        # event_type_set = set([tag.split(self.separator)[0] for tag in self.tag2id])
+        # tags_ = [[] for _ in range(predicted_matrix_tag.shape[0])]
+        # for tag in tags:
+        #     tags_[tag[0]].append([tag[1],tag[2]])
+        # event_pieces = []
+        event_list = []
+        # for i in range(len(tags_)):
+        #     tags_considered = [False] * len(tags_[i])
+        #     if len(tags_considered) == 0:
+        #         continue
+        #     temp_event_pieces = []
+        #     for event_piece_list in event_pieces:
+        #         all_connect = True
+        #         event_type = event_piece_list[0][1].split(self.separator)[0]
+        #         connected_pieces = []
+        #         for event_piece in event_piece_list:
+        #             connect = False
+        #             # pdb.set_trace()
+        #             for j in range(len(tags_[i])):
+        #                 tag = tags_[i][j]
+        #                 if tag[0] > i:
+        #                     continue
+        #                 if tag[1] == event_piece[1] and tag[0] == event_piece[0]:
+        #                     connect = True
+        #                     connected_pieces.append(event_piece)
+        #                     tags_considered[j] = True
+        #                     break
+        #             # pdb.set_trace()
+        #             if not connect:
+        #                 all_connect = False
+        #         if all_connect:
+        #             # event_piece_list = []
+        #             for j in range(len(tags_[i])):
+        #                 piece = tags_[i][j]
+        #                 if piece[0] != i:
+        #                     continue
+        #                 match_all = True
+        #                 for event_piece in event_piece_list:
+        #                     offset = event_piece[0]
+        #                     match = False
+        #                     for piece_ in tags_[offset]:
+        #                         if piece[0] == piece_[0] and piece[1] == piece_[1]:
+        #                             match = True
+        #                     if not match:
+        #                         match_all = False
+        #                 # pdb.set_trace()
+        #                 if match_all:
+        #                     event_piece_list.append([i, piece[1]])
+        #                     tags_considered[j] = True
+        #
+        #         else:
+        #             if len(connected_pieces) > 0:
+        #                 has_B = False
+        #                 for j in range(len(tags_[i])):
+        #                     piece = tags_[i][j]
+        #                     if piece[0] != i:
+        #                         continue
+        #                     if piece[1].split(self.separator)[0] == event_type and piece[0] <= i:
+        #                         if 'B' == piece[1][-1]:
+        #                             has_B = True
+        #
+        #                         match_all = True
+        #                         for event_piece in connected_pieces:
+        #                             offset = event_piece[0]
+        #                             match = False
+        #                             for piece_ in tags_[offset]:
+        #                                 if piece[0] == piece_[0] and piece[1] == piece_[1]:
+        #                                     match = True
+        #                             if not match:
+        #                                 match_all = False
+        #                         # pdb.set_trace()
+        #                         if match_all:
+        #                             connected_pieces.append([i, piece[1]])
+        #                             tags_considered[j] = True
+        #
+        #
+        #
+        #                 if has_B:
+        #                     # pdb.set_trace()
+        #                     temp_event_pieces.append(connected_pieces)
+        #
+        #     event_pieces += temp_event_pieces
+        #
+        #     for event_type in event_type_set:
+        #         connected_pieces = []
+        #         for j in range(len(tags_considered)):
+        #             if tags_considered[j]:
+        #                 continue
+        #             tag = tags_[i][j]
+        #             if tag[0] == i and tag[1].split(self.separator)[0] == event_type:
+        #                 connected_pieces.append([i, tag[1]])
+        #         if len(connected_pieces) > 0:
+        #             event_pieces.append(connected_pieces)
+
+        for event_piece_list in event_pieces:
+            event = {
+            }
+            event['argument_list'] = []
+            for i in range(len(event_piece_list)):
+                event_piece = event_piece_list[i]
+                tag = event_piece[1]
+                if tag[-1] == 'B':
+                    tag_type = tag[:-2]
+                    end_piece = event_piece
+                    if 'Trigger' in tag:
+                        for j in range(i + 1, len(event_piece_list)):
+                            if 'Trigger' in event_piece_list[j][1]:
+                                if event_piece_list[j][1][-1] == 'I' and tag_type in event_piece_list[j][1]:
+                                    end_piece = event_piece_list[j]
+                                else:
+                                    break
+                        event['trigger'] = ' '.join(text.split()[event_piece[0]: end_piece[0] + 1])
+                        event['trigger_tok_span'] = [event_piece[0], end_piece[0] + 1]
+                        event['trigger_char_span'] = [tok2char_span[event_piece[0]][0], tok2char_span[end_piece[0]][1]]
+                        event['trigger_type'] = tag_type.split(self.separator)[0]
+                    else:
+                        for j in range(i + 1, len(event_piece_list)):
+                            if event_piece_list[j][1][-1] == 'I' and tag_type in event_piece_list[j][1]:
+                                end_piece = event_piece_list[j]
+                            elif (end_piece[0] + 1) < event_piece_list[j][0]:
+                                break
+
+                        event['argument_list'].append({'text': ' '.join(text.split()[event_piece[0]:end_piece[0] + 1]),
+                                                       'tok_span': [event_piece[0], end_piece[0] + 1],
+                                                       'char_span': [tok2char_span[event_piece[0]][0], tok2char_span[end_piece[0]][1]],
+                                                       'type': tag_type.split(self.separator)[1]})
+            # try:
+            assert 'trigger' in event
+            # except:
+            #     pdb.set_trace()
+            #     pass
+            event_list.append(event)# predicted event list
 
         pred_sample = copy.deepcopy(sample)
         # change to the predicted one, if not, will use ground truth to score
         pred_sample["event_list"] = event_list
+        # pdb.set_trace()
         return pred_sample
 
     def decode_batch(self, sample_list, batch_pred_tags):
