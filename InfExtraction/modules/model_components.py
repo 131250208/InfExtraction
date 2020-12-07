@@ -3,8 +3,9 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
-from InfExtraction.modules.preprocess import Indexer
+from InfExtraction.modules.preprocess import Indexer, Preprocessor
 import time
+import re
 
 
 class LayerNorm(nn.Module):
@@ -106,95 +107,69 @@ class HandshakingKernel(nn.Module):
         super().__init__()
         self.shaking_type = shaking_type
         self.only_look_after = only_look_after
-
+            
         if "cat" in shaking_type:
             self.cat_fc = nn.Linear(guide_hidden_size + vis_hidden_size, vis_hidden_size)
         if "cln" in shaking_type:
             self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
-        if "mix_pool" in shaking_type:
-            self.lamtha = Parameter(torch.rand(vis_hidden_size))
         if "lstm" in shaking_type:
-            self.inner_context_lstm = nn.LSTM(vis_hidden_size,
-                                              vis_hidden_size,
-                                              num_layers=1,
-                                              bidirectional=False,
-                                              batch_first=True)
+            assert only_look_after is True
+            self.lstm4span = nn.LSTM(vis_hidden_size,
+                                          vis_hidden_size,
+                                          num_layers=1,
+                                          bidirectional=False,
+                                          batch_first=True)
         if "biaffine" in shaking_type:
             self.biaffine = nn.Bilinear(guide_hidden_size, vis_hidden_size, vis_hidden_size)
 
-    def enc_inner_hiddens(self, seq_hiddens, inner_enc_type):
-        # seq_hiddens: (batch_size_train, seq_len, hidden_size)
-        def pool(seqence, pooling_type):
-            pooling = None
-            if pooling_type == "mean_pool":
-                pooling = torch.mean(seqence, dim=-2)
-            elif pooling_type == "max_pool":
-                pooling, _ = torch.max(seqence, dim=-2)
-            elif pooling_type == "mix_pool":
-                pooling = self.lamtha * torch.mean(seqence, dim=-2) + (1 - self.lamtha) * torch.max(seqence, dim=-2)[0]
-            return pooling
-
-        inner_context = None
-        if "pool" in inner_enc_type:
-            inner_context = torch.stack(
-                [pool(seq_hiddens[:, :i + 1, :], inner_enc_type) for i in range(seq_hiddens.size()[1])], dim=1)
-        elif inner_enc_type == "lstm":
-            inner_context, _ = self.inner_context_lstm(seq_hiddens)
-
-        return inner_context
-
     def forward(self, seq_hiddens_x, seq_hiddens_y):
         '''
-        seq_hiddens_x: (batch_size, seq_len, hidden_size)
-        seq_hiddens_y: (batch_size, seq_len, hidden_size)
+        seq_hiddens_x: (batch_size, seq_len, hidden_size_x)
+        seq_hiddens_y: (batch_size, seq_len, hidden_size_y)
         return:
             if only look after:
                 shaking_hiddenss: (batch_size, (1 + seq_len) * seq_len / 2, hidden_size); e.g. (32, 5+4+3+2+1, 5)
             else:
                 shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
         '''
-        seq_len = seq_hiddens_x.size()[-2]
-        shaking_hiddens_list = []
+        seq_len = seq_hiddens_y.size()[1]
+        assert seq_hiddens_y.size()[1] == seq_hiddens_x.size()[1]
 
-        def add_feature(all_fts, ft):
-            if all_fts is None:
-                all_fts = ft
+        guide = seq_hiddens_x[:, :, None, :].repeat(1, 1, seq_len, 1)
+        visible = seq_hiddens_y[:, None, :, :].repeat(1, seq_len, 1, 1)
+
+        shaking_pre = None
+        
+        def add_presentation(all_prst, prst):
+            if all_prst is None:
+                all_prst = prst
             else:
-                all_fts += ft
-            return all_fts
-
-        for ind in range(seq_len):
-            vis_start_ind = ind if self.only_look_after else 0
-            guide_hiddens = seq_hiddens_x[:, ind:ind+1, :].repeat(1, seq_len - vis_start_ind, 1)
-            visible_hiddens = seq_hiddens_y[:, vis_start_ind:, :]
-
-            shaking_hiddens = None
-
-            if "cat" in self.shaking_type:
-                tp_cat_ft = torch.cat([guide_hiddens, visible_hiddens], dim=-1)
-                tp_cat_ft = torch.relu(self.cat_fc(tp_cat_ft))
-                shaking_hiddens = add_feature(shaking_hiddens, tp_cat_ft)
-
-            if "cln" in self.shaking_type:
-                tp_cln_ft = self.tp_cln(visible_hiddens, guide_hiddens)
-                shaking_hiddens = add_feature(shaking_hiddens, tp_cln_ft)
-
-            if "biaffine" in self.shaking_type:
-                biaffine_ft = self.biaffine(guide_hiddens, visible_hiddens)
-                biaffine_ft = torch.relu(biaffine_ft.reshape(*biaffine_ft.size()))
-                shaking_hiddens = add_feature(shaking_hiddens, biaffine_ft)
-
-            for inner_enc_type in {"lstm", "max_pool", "mean_pool", "mix_pool"}:
-                if inner_enc_type in self.shaking_type:
-                    inner_ft = self.enc_inner_hiddens(visible_hiddens, inner_enc_type)
-                    shaking_hiddens = add_feature(shaking_hiddens, inner_ft)
-
-            shaking_hiddens_list.append(shaking_hiddens)
+                all_prst += prst
+            return all_prst
+        
         if self.only_look_after:
-            fin_shaking_hiddens = torch.cat(shaking_hiddens_list, dim=1)
-        else:
-            fin_shaking_hiddens = torch.stack(shaking_hiddens_list, dim=1)
-        return fin_shaking_hiddens
+            if "lstm" in self.shaking_type:
+                span_pre, _ = self.lstm4span(visible.triu())
+                span_pre = Preprocessor.drop_lower_diag(span_pre)
+                shaking_pre = add_presentation(shaking_pre, span_pre)
+            guide = Preprocessor.drop_lower_diag(guide)
+            visible = Preprocessor.drop_lower_diag(visible)
+        
+        if "cat" in self.shaking_type:
+            tp_cat_pre = torch.cat([guide, visible], dim=-1)
+            tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
+            shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+
+        if "cln" in self.shaking_type:
+            tp_cln_pre = self.tp_cln(visible, guide)
+            shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
+
+        if "biaffine" in self.shaking_type:
+            biaffine_pre = self.biaffine(guide, visible)
+            biaffine_pre = torch.relu(biaffine_pre)
+            shaking_pre = add_presentation(shaking_pre, biaffine_pre)
+
+        return shaking_pre
 
 
 class InteractionKernel(nn.Module):

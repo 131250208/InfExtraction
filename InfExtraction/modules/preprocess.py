@@ -329,6 +329,20 @@ class Preprocessor:
         self.pretrained_model_path = pretrained_model_path
 
     @staticmethod
+    def drop_lower_diag(ori_tensor):
+        '''
+        :param ori_tensor: (batch_size, matrix_size, matrix_size, hidden_size)
+        :return:
+        '''
+        tensor = ori_tensor.permute(0, 3, 1, 2)
+        uppder_ones = torch.ones([tensor.size()[-1], tensor.size()[-1]]).long().triu().to(ori_tensor.device)
+        upper_diag_ids = torch.nonzero(uppder_ones.view(-1), as_tuple=False).view(-1)
+        # flat_tensor: (batch_size, matrix_size * matrix_size, hidden_size)
+        flat_tensor = tensor.view(tensor.size()[0], tensor.size()[1], -1).permute(0, 2, 1)
+        tensor_upper = torch.index_select(flat_tensor, dim=1, index=upper_diag_ids)
+        return tensor_upper
+
+    @staticmethod
     def unique_list(inp_list):
         out_list = []
         memory = set()
