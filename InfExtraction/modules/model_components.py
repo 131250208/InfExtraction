@@ -3,7 +3,9 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
-from torch.autograd import Variable
+from InfExtraction.modules.preprocess import Indexer, Preprocessor
+import time
+import re
 
 
 class LayerNorm(nn.Module):
@@ -96,139 +98,171 @@ class LayerNorm(nn.Module):
 
 
 class HandshakingKernel(nn.Module):
-    def __init__(self, hidden_size, shaking_type):
+    def __init__(self, guide_hidden_size, vis_hidden_size, shaking_type, only_look_after=True):
+        '''
+            guide_hidden_size = seq_hiddens_x.size()[-1]
+            vis_hidden_size = seq_hiddens_y.size()[-1]
+            output_size = vis_hidden_size, guide_hidden_size is not necessary equal to vis_hidden_size
+        '''
         super().__init__()
         self.shaking_type = shaking_type
-        if shaking_type == "cat":
-            self.combine_fc = nn.Linear(hidden_size * 2, hidden_size)
-        elif shaking_type == "cat_lstm":
-            self.combine_fc = nn.Linear(hidden_size * 3, hidden_size)
-        elif shaking_type == "cln":
-            self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-        elif shaking_type == "cln_lstm":
-            self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-            self.inner_context_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-        elif shaking_type == "cln_att":
-            self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-            self.W_q = nn.Linear(hidden_size, hidden_size)
-            self.W_k = nn.Linear(hidden_size, hidden_size)
-        elif shaking_type == "cat_att":
-            self.combine_fc = nn.Linear(hidden_size * 2, hidden_size)
-            self.W_q = nn.Linear(hidden_size, hidden_size)
-            self.W_k = nn.Linear(hidden_size, hidden_size)
-
-        if "mix" in shaking_type:
-            self.lamtha = Parameter(torch.rand(hidden_size))
+        self.only_look_after = only_look_after
+            
+        if "cat" in shaking_type:
+            self.cat_fc = nn.Linear(guide_hidden_size + vis_hidden_size, vis_hidden_size)
+        if "cln" in shaking_type:
+            self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
         if "lstm" in shaking_type:
-            self.inner_context_lstm = nn.LSTM(hidden_size,
-                                              hidden_size,
-                                              num_layers=1,
-                                              bidirectional=False,
-                                              batch_first=True)
+            assert only_look_after is True
+            self.lstm4span = nn.LSTM(vis_hidden_size,
+                                          vis_hidden_size,
+                                          num_layers=1,
+                                          bidirectional=False,
+                                          batch_first=True)
+        if "biaffine" in shaking_type:
+            self.biaffine = nn.Bilinear(guide_hidden_size, vis_hidden_size, vis_hidden_size)
 
-    def enc_inner_hiddens(self, seq_hiddens, inner_enc_type):
-        # seq_hiddens: (batch_size_train, seq_len, hidden_size)
-        def pool(seqence, pooling_type):
-            pooling = None
-            if pooling_type == "mean_pooling":
-                pooling = torch.mean(seqence, dim=-2)
-            elif pooling_type == "max_pooling":
-                pooling, _ = torch.max(seqence, dim=-2)
-            elif pooling_type == "mix_pooling":
-                pooling = self.lamtha * torch.mean(seqence, dim=-2) + (1 - self.lamtha) * torch.max(seqence, dim=-2)[0]
-            return pooling
-
-        inner_context = None
-        if "pooling" in inner_enc_type:
-            inner_context = torch.stack(
-                [pool(seq_hiddens[:, :i + 1, :], inner_enc_type) for i in range(seq_hiddens.size()[1])], dim=1)
-        elif inner_enc_type == "lstm":
-            inner_context, _ = self.inner_context_lstm(seq_hiddens)
-
-        return inner_context
-
-    def forward(self, seq_hiddens):
+    def forward(self, seq_hiddens_x, seq_hiddens_y):
         '''
-        seq_hiddens: (batch_size_train, seq_len, hidden_size)
+        seq_hiddens_x: (batch_size, seq_len, hidden_size_x)
+        seq_hiddens_y: (batch_size, seq_len, hidden_size_y)
         return:
-            shaking_hiddenss: (batch_size_train, (1 + seq_len) * seq_len / 2, hidden_size) (32, 5+4+3+2+1, 5)
+            if only look after:
+                shaking_hiddenss: (batch_size, (1 + seq_len) * seq_len / 2, hidden_size); e.g. (32, 5+4+3+2+1, 5)
+            else:
+                shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
         '''
-        seq_len = seq_hiddens.size()[-2]
-        shaking_hiddens_list = []
-        for ind in range(seq_len):
-            hidden_each_step = seq_hiddens[:, ind, :]
-            visible_hiddens = seq_hiddens[:, ind:, :]  # ind: only look back
-            repeat_hiddens = hidden_each_step[:, None, :].repeat(1, seq_len - ind, 1)
+        seq_len = seq_hiddens_y.size()[1]
+        assert seq_hiddens_y.size()[1] == seq_hiddens_x.size()[1]
 
-            shaking_hiddens = None
-            if self.shaking_type == "cat":
-                shaking_hiddens = torch.cat([repeat_hiddens, visible_hiddens], dim=-1)
-                shaking_hiddens = torch.tanh(self.combine_fc(shaking_hiddens))
-            elif self.shaking_type == "cat_lstm":
-                inner_context = self.enc_inner_hiddens(visible_hiddens, "lstm")
-                shaking_hiddens = torch.cat([repeat_hiddens, visible_hiddens, inner_context], dim=-1)
-                shaking_hiddens = torch.tanh(self.combine_fc(shaking_hiddens))
-            elif self.shaking_type == "cln":
-                shaking_hiddens = self.tp_cln(visible_hiddens, repeat_hiddens)
-            elif self.shaking_type == "cln_lstm":
-                inner_context = self.enc_inner_hiddens(visible_hiddens, "lstm")
-                shaking_hiddens = self.tp_cln(visible_hiddens, repeat_hiddens)
-                shaking_hiddens = self.inner_context_cln(shaking_hiddens, inner_context)
-            elif self.shaking_type == "cln_att":
-                shaking_hiddens = self.tp_cln(visible_hiddens, repeat_hiddens)
-                query = self.W_q(shaking_hiddens)
-                key = torch.transpose(self.W_k(seq_hiddens), 1, 2)
-                att = F.softmax(torch.matmul(query, key) / (query.size()[-1] ** 0.5), dim=-1)
-                shaking_hiddens = torch.matmul(att, seq_hiddens)
-            elif self.shaking_type == "cat_att":
-                shaking_hiddens = torch.cat([repeat_hiddens, visible_hiddens], dim=-1)
-                shaking_hiddens = torch.tanh(self.combine_fc(shaking_hiddens))
-                query = self.W_q(shaking_hiddens)
-                key = torch.transpose(self.W_k(seq_hiddens), 1, 2)
-                att = F.softmax(torch.matmul(query, key) / (query.size()[-1] ** 0.5), dim=-1)
-                shaking_hiddens = torch.matmul(att, seq_hiddens)
-            #                 weighted_shaking_hiddens = []
-            #                 for tp_ind in range(shaking_hiddens.size()[-2]):
-            #                     query = shaking_hiddens[:, tp_ind: (tp_ind + 1), :].repeat(1, seq_len, 1)
-            #                     keys = seq_hiddens
-            # #                     set_trace()
-            #                     att = self.V(torch.tanh(self.W(torch.cat([query, keys], dim = -1))))
-            #                     weighted_shaking_hiddens.append(torch.sum(att * seq_hiddens, dim = -2)[:, None, :])
-            #                 shaking_hiddens = torch.cat(weighted_shaking_hiddens, dim = -2)
+        guide = seq_hiddens_x[:, :, None, :].repeat(1, 1, seq_len, 1)
+        visible = seq_hiddens_y[:, None, :, :].repeat(1, seq_len, 1, 1)
 
-            shaking_hiddens_list.append(shaking_hiddens)
-        long_shaking_hiddens = torch.cat(shaking_hiddens_list, dim=1)
-        return long_shaking_hiddens
+        shaking_pre = None
+        
+        def add_presentation(all_prst, prst):
+            if all_prst is None:
+                all_prst = prst
+            else:
+                all_prst += prst
+            return all_prst
+        
+        if self.only_look_after:
+            if "lstm" in self.shaking_type:
+                batch_size, _, matrix_size, vis_hidden_size = visible.size()
+                # mask lower triangle
+                upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
+
+                # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
+                visible4lstm = upper_visible.view(-1, matrix_size, vis_hidden_size)
+                span_pre, _ = self.lstm4span(visible4lstm)
+                span_pre = span_pre.view(batch_size, matrix_size, matrix_size, vis_hidden_size)
+
+                # drop lower triangle and convert matrix to sequence
+                # span_pre: (batch_size, shaking_seq_len, hidden_size)
+                span_pre = Preprocessor.drop_lower_diag(span_pre)
+                shaking_pre = add_presentation(shaking_pre, span_pre)
+
+            # guide, visible: (batch_size, shaking_seq_len, hidden_size)
+            guide = Preprocessor.drop_lower_diag(guide)
+            visible = Preprocessor.drop_lower_diag(visible)
+        
+        if "cat" in self.shaking_type:
+            tp_cat_pre = torch.cat([guide, visible], dim=-1)
+            tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
+            shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+
+        if "cln" in self.shaking_type:
+            tp_cln_pre = self.tp_cln(visible, guide)
+            shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
+
+        if "biaffine" in self.shaking_type:
+            set_trace()
+            biaffine_pre = self.biaffine(guide, visible)
+            biaffine_pre = torch.relu(biaffine_pre)
+            shaking_pre = add_presentation(shaking_pre, biaffine_pre)
+
+        return shaking_pre
 
 
-import copy
-import torch
-import torch.nn as nn
-from torch.autograd import Variable
+class InteractionKernel(nn.Module):
+    def __init__(self, ent_dim, rel_dim, matrix_size):
+        super(InteractionKernel, self).__init__()
+        self.ent_alpha = Parameter(torch.randn([ent_dim, matrix_size, 1]))
+        self.ent_beta = Parameter(torch.randn([ent_dim, 1, matrix_size]))
+        self.rel_alpha = Parameter(torch.randn([rel_dim, matrix_size, 1]))
+        self.rel_beta = Parameter(torch.randn([rel_dim, 1, matrix_size]))
+        self.drop_lamtha = Parameter(torch.rand(rel_dim)) # [0, 1)
 
-entity_subtype_dict = {'O': 0, '2_Individual': 1, '2_Time': 2, '2_Group': 3, '2_Nation': 4,
-                       '2_Indeterminate': 5, '2_Population_Center': 6, '2_Government': 7,
-                       '2_Commercial': 8, '2_Non_Governmental': 9, '2_Media': 10, '2_Building_Grounds': 11,
-                       '2_Numeric': 12, '2_State_or_Province': 13, '2_Region_General': 14, '2_Sports': 15,
-                       '2_Crime': 16, '2_Land': 17, '2_Air': 18, '2_Water': 19, '2_Airport': 20,
-                       '2_Sentence': 21, '2_Educational': 22, '2_Celestial': 23, '2_Underspecified': 24,
-                       '2_Shooting': 25, '2_Special': 26, '2_Subarea_Facility': 27, '2_Path': 28,
-                       '2_GPE_Cluster': 29, '2_Exploding': 30, '2_Water_Body': 31, '2_Land_Region_Natural': 32,
-                       '2_Nuclear': 33, '2_Projectile': 34, '2_Region_International': 35, '2_Medical_Science': 36,
-                       '2_Continent': 37, '2_Job_Title': 38, '2_County_or_District': 39, '2_Religious': 40,
-                       '2_Contact_Info': 41, '2_Chemical': 42, '2_Subarea_Vehicle': 43, '2_Entertainment': 44,
-                       '2_Biological': 45, '2_Boundary': 46, '2_Plant': 47, '2_Address': 48, '2_Sharp': 49,
-                       '2_Blunt': 50
-                       }
+        self.matrix_size = matrix_size
+        map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        mirror_gather_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
+        upper_gather_ids = [i * matrix_size + j for i in range(matrix_size) for j in range(matrix_size) if i <= j]
+        lower_gather_ids = [j * matrix_size + i for i in range(matrix_size) for j in range(matrix_size) if i <= j]
+        self.mirror_gather_tensor = Parameter(torch.tensor(mirror_gather_ids), requires_grad=False)
+        self.upper_gather_tensor = Parameter(torch.tensor(upper_gather_ids), requires_grad=False)
+        self.lower_gather_tensor = Parameter(torch.tensor(lower_gather_ids), requires_grad=False)
+        self.cached_mirror_gather_tensor = None
+        self.cached_upper_gather_tensor = None
+        self.cached_lower_gather_tensor = None
 
-dep_dict = {'O': 0, 'punct': 1, 'iobj': 2, 'parataxis': 3, 'auxpass': 4, 'aux': 5,
-            'conj': 6, 'advcl': 7, 'acl:relcl': 8, 'nsubjpass': 9, 'csubj': 10, 'compound': 11,
-            'compound:prt': 12, 'mwe': 13, 'cop': 14, 'neg': 15, 'nmod:poss': 16, 'appos': 17,
-            'cc:preconj': 18, 'nmod': 19, 'nsubj': 20, 'xcomp': 21, 'det:predet': 22,
-            'nmod:npmod': 23, 'acl': 24, 'amod': 25, 'expl': 26, 'csubjpass': 27, 'case': 28,
-            'ccomp': 29, 'dobj': 30, 'ROOT': 31, 'discourse': 32, 'nmod:tmod': 33, 'dep': 34,
-            'nummod': 35, 'mark': 36, 'advmod': 37, 'cc': 38, 'det': 39
-            }
+        self.ent_guide_rel_cln = LayerNorm(rel_dim, ent_dim, conditional=True)
+        self.rel_guide_ent_cln = LayerNorm(ent_dim, rel_dim, conditional=True)
+
+    def _mirror(self, shaking_seq):
+        batch_size, _, hidden_size = shaking_seq.size()
+
+        if self.cached_mirror_gather_tensor is None or \
+                self.cached_mirror_gather_tensor.size()[0] != batch_size:
+            self.cached_mirror_gather_tensor = self.mirror_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
+
+        shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_mirror_gather_tensor)
+        matrix = shaking_hiddens.view(batch_size, self.matrix_size, self.matrix_size, hidden_size)
+        return matrix
+
+    def _drop_lower_triangle(self, matrix_seq):
+        batch_size, matrix_size, _, hidden_size = matrix_seq.size()
+        shaking_seq = matrix_seq.view(batch_size, -1, hidden_size)
+
+        if self.cached_upper_gather_tensor is None or \
+                self.cached_upper_gather_tensor.size()[0] != batch_size:
+            self.cached_upper_gather_tensor = self.upper_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
+
+        if self.cached_lower_gather_tensor is None or \
+                self.cached_lower_gather_tensor.size()[0] != batch_size:
+            self.cached_lower_gather_tensor = self.lower_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
+
+        upper_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_upper_gather_tensor)
+        lower_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_lower_gather_tensor)
+
+        return self.drop_lamtha * upper_shaking_hiddens + (1 - self.drop_lamtha) * lower_shaking_hiddens
+
+    def forward(self, ent_hs_hiddens, rel_hs_hiddens):
+        batch_size, matrix_size, _, _ = rel_hs_hiddens.size()
+
+        # ent_hs_hiddens_mirror: (batch_size, matrix_size, matrix_size, ent_dim)
+        ent_hs_hiddens_mirror = self._mirror(ent_hs_hiddens)
+
+        # ent_row_cont: (batch_size, ent_dim, matrix_size, 1)
+        ent_row_cont = torch.matmul(ent_hs_hiddens_mirror.permute(0, 3, 1, 2), self.ent_alpha)
+        # ent_col_cont: (batch_size, ent_dim, 1, matrix_size)
+        ent_col_cont = torch.matmul(self.ent_beta, ent_hs_hiddens_mirror.permute(0, 3, 1, 2))
+        # ent_context: (batch_size, matrix_size, matrix_size, ent_dim)
+        ent_context = torch.matmul(ent_row_cont, ent_col_cont).permute(0, 2, 3, 1)
+        rel_hs_hiddens_guided = self.ent_guide_rel_cln(rel_hs_hiddens, ent_context)
+
+        # rel_row_cont: (batch_size, rel_dim, matrix_size, 1)
+        rel_row_cont = torch.matmul(rel_hs_hiddens_guided.permute(0, 3, 1, 2), self.rel_alpha)
+        # rel_col_cont: (batch_size, rel_dim, 1, matrix_size)
+        rel_col_cont = torch.matmul(self.rel_beta, rel_hs_hiddens_guided.permute(0, 3, 1, 2))
+        # rel_context: (batch_size, matrix_size, matrix_size, rel_dim)
+        rel_context = torch.matmul(rel_row_cont, rel_col_cont).permute(0, 2, 3, 1)
+        # rel_context: (batch_size, shaking_seq_len, rel_dim)
+        rel_context = self._drop_lower_triangle(rel_context)
+
+        ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context)
+        
+        return ent_hs_hiddens_guided, rel_hs_hiddens_guided
 
 
 class GraphConvLayer(nn.Module):
@@ -295,116 +329,3 @@ class Edgeupdate(nn.Module):
         edge = self.W(torch.cat([edge, node], dim=-1))
         return edge  # [batch, seq, seq, dim_e]
 
-
-class EDModel(nn.Module):
-
-    def __init__(self, args, id_to_tag, device, pre_word_embed):
-        super(EDModel, self).__init__()
-
-        self.device = device
-        self.gcn_model = EEGCN(device, pre_word_embed, args)
-        self.gcn_dim = args.gcn_dim
-        self.classifier = nn.Linear(self.gcn_dim, len(id_to_tag))
-
-    def forward(self, word_sequence, x_len, entity_type_sequence, adj, dep):
-        outputs, weight_adj = self.gcn_model(word_sequence, x_len, entity_type_sequence, adj, dep)
-        logits = self.classifier(outputs)
-        return logits, weight_adj
-
-
-def rnn_zero_state(batch_size, hidden_dim, num_layers, bidirectional=True):
-    total_layers = num_layers * 2 if bidirectional else num_layers
-    state_shape = (total_layers, batch_size, hidden_dim)
-    h0 = c0 = Variable(torch.zeros(*state_shape), requires_grad=False)
-    return h0, c0
-
-
-class EEGCN(nn.Module):
-    def __init__(self, device, pre_word_embeds, args):
-        super().__init__()
-
-        self.device = device
-        self.in_dim = args.word_embed_dim + args.bio_embed_dim
-        self.maxLen = args.num_steps
-
-        self.rnn_hidden = args.rnn_hidden
-        self.rnn_dropout = args.rnn_dropout
-        self.rnn_layers = args.rnn_layers
-
-        self.gcn_dropout = args.gcn_dropout
-        self.num_layers = args.num_layers
-        self.gcn_dim = args.gcn_dim
-
-        # Word Embedding Layer
-        self.word_embed_dim = args.word_embed_dim
-        self.wembeddings = nn.Embedding.from_pretrained(torch.FloatTensor(pre_word_embeds), freeze=False)
-
-        # Entity Label Embedding Layer
-        self.bio_size = len(entity_subtype_dict)
-        self.bio_embed_dim = args.bio_embed_dim
-        if self.bio_embed_dim:
-            self.bio_embeddings = nn.Embedding(num_embeddings=self.bio_size,
-                                               embedding_dim=self.bio_embed_dim)
-
-        self.dep_size = len(dep_dict)
-        self.dep_embed_dim = args.dep_embed_dim
-        self.edge_embeddings = nn.Embedding(num_embeddings=self.dep_size,
-                                            embedding_dim=self.dep_embed_dim,
-                                            padding_idx=0)
-
-        self.rnn = nn.LSTM(self.in_dim, self.rnn_hidden, self.rnn_layers, batch_first=True,
-                           dropout=self.rnn_dropout, bidirectional=True)
-        self.rnn_drop = nn.Dropout(self.rnn_dropout)  # use on last layer output
-
-        self.input_W_G = nn.Linear(self.rnn_hidden * 2, self.gcn_dim)
-        self.pooling = args.pooling
-        self.gcn_layers = nn.ModuleList()
-        self.gcn_drop = nn.Dropout(self.gcn_dropout)
-        for i in range(self.num_layers):
-            self.gcn_layers.append(
-                GraphConvLayer(self.device, self.gcn_dim, self.dep_embed_dim, args.pooling))
-        self.aggregate_W = nn.Linear(self.gcn_dim + self.num_layers * self.gcn_dim, self.gcn_dim)
-
-    def encode_with_rnn(self, rnn_inputs, seq_lens, batch_size):
-        # seq_lens = list(masks.data.eq(constant.PAD_ID).long().sum(1).squeeze())
-        h0, c0 = rnn_zero_state(batch_size, self.rnn_hidden, self.rnn_layers)
-        h0, c0 = h0.to(self.device), c0.to(self.device)
-        rnn_inputs = nn.utils.rnn.pack_padded_sequence(rnn_inputs, seq_lens, batch_first=True)
-        rnn_outputs, (ht, ct) = self.rnn(rnn_inputs, (h0, c0))
-        rnn_outputs, _ = nn.utils.rnn.pad_packed_sequence(rnn_outputs, batch_first=True)
-        return rnn_outputs
-
-    def forward(self, word_sequence, x_len, entity_type_sequence, adj, edge):
-
-        BATCH_SIZE = word_sequence.shape[0]
-        BATCH_MAX_LEN = x_len[0]
-
-        word_sequence = word_sequence[:, :BATCH_MAX_LEN].contiguous()
-        adj = adj[:, :BATCH_MAX_LEN, :BATCH_MAX_LEN].contiguous()
-        edge = edge[:, :BATCH_MAX_LEN, :BATCH_MAX_LEN].contiguous()
-        weight_adj = self.edge_embeddings(edge)  # [batch, seq, seq, dim_e]
-
-        word_emb = self.wembeddings(word_sequence)
-        x_emb = word_emb
-        if self.bio_embed_dim:
-            entity_type_sequence = entity_type_sequence[:, :BATCH_MAX_LEN].contiguous()
-            entity_label_emb = self.bio_embeddings(entity_type_sequence)
-            x_emb = torch.cat([x_emb, entity_label_emb], dim=2)
-
-        rnn_outputs = self.rnn_drop(self.encode_with_rnn(x_emb, x_len, BATCH_SIZE))
-        gcn_inputs = self.input_W_G(rnn_outputs)
-        gcn_outputs = gcn_inputs
-        layer_list = [gcn_inputs]
-
-        src_mask = (word_sequence != 0)
-        src_mask = src_mask[:, :BATCH_MAX_LEN].unsqueeze(-2).contiguous()
-
-        for _layer in range(self.num_layers):
-            gcn_outputs, weight_adj = self.gcn_layers[_layer](weight_adj, gcn_outputs)  # [batch, seq, dim]
-            gcn_outputs = self.gcn_drop(gcn_outputs)
-            weight_adj = self.gcn_drop(weight_adj)
-            layer_list.append(gcn_outputs)
-
-        outputs = torch.cat(layer_list, dim=-1)
-        aggregate_out = self.aggregate_W(outputs)
-        return aggregate_out, weight_adj

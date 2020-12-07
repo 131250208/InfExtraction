@@ -1,18 +1,56 @@
-import string
+import torch
 import random
+import numpy as np
 import os
+
+seed = 2333
+enable_bm = True
+
+
+def set_seed():
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    torch.manual_seed(seed)  # cpu
+    torch.cuda.manual_seed(seed)  # gpu
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)  # numpy
+    random.seed(seed)  # random and transforms
+
+
+def enable_benchmark():
+    torch.backends.cudnn.enabled = enable_bm
+    torch.backends.cudnn.benchmark = enable_bm
+    torch.backends.cudnn.deterministic = True
+
+
+set_seed()
+enable_benchmark()
+
+import string
 import json
 import copy
+import re
+from glob import glob
 
 exp_name = "ace2005_lu"
 task_type = "ee"
+# match_pattern: for joint entity and relation extraction
+# only_head_text (nyt_star, webnlg_star),
+# whole_text (nyt, webnlg),
+# only_head_index,
+# whole_span
+
+match_pattern = "whole_text"
+
+# model and tagger(decoder)
+model_name = "TriggerFreeEventExtractor" # TPLinkerPlus, TPLinkerPP, TriggerFreeEventExtractor
+tagger_name = "MatrixTaggerEE" # HandshakingTagger4TPLPlus, HandshakingTagger4TPLPP, MatrixTaggerEE
 
 # data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
-train_data = "train_data.json"
-valid_data = "valid_data.json"
-test_data_list = ["test_data.json", ]
+train_data = os.path.join(data_in_dir, exp_name, "train_data.json")
+valid_data = os.path.join(data_in_dir, exp_name, "valid_data.json")
+test_data_list = glob("{}/*test*".format(os.path.join(data_in_dir, exp_name))) # ["test_triples.json", ], ["test_data.json", ]
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)
@@ -31,26 +69,27 @@ key2dict = {
 }
 
 # train, valid, test settings
-run_name = "tp2+dep+pos+ner"
-model_name = "tplinker_plus"
-device_num = 1
-seed = 9494
+run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
+check_tagging_n_decoding = True
+device_num = 0
 epochs = 200
-lr = 1e-4 # 5e-5
+lr = 1e-4 # 5e-5, 1e-4
 batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
 
-max_seq_len_train = 64
-max_seq_len_valid = 64
-max_seq_len_test = 64
+max_seq_len_train = 100
+max_seq_len_valid = 100
+max_seq_len_test = 100
 
 sliding_len_train = 20
 sliding_len_valid = 20
 sliding_len_test = 20
 
+combine = False
+
 scheduler = "CAWR"
-use_ghm = True
+use_ghm = False
 score_threshold = 0
 
 # schedulers
@@ -59,7 +98,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_steps": 2000,
+        "rewarm_epochs": 2,
     },
     "StepLR": {
         "name": "StepLR",
@@ -69,7 +108,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -78,16 +117,18 @@ default_dir_to_save_model = "./default_log_dir/{}".format(default_run_id)
 
 # training config
 trainer_config = {
-    "task_type": task_type,
     "run_name": run_name,
     "exp_name": exp_name,
     "scheduler_config": scheduler_dict[scheduler],
-    "use_ghm": use_ghm,
     "log_interval": log_interval,
 }
 
 # for eval
-score_threshold = score_threshold
+if task_type == "re":
+    final_score_key = "rel_f1"
+elif task_type == "ee" or "re_based_ee":
+    final_score_key = "trigger_class_f1"
+
 model_bag_size = 15
 
 # pretrianed model state
@@ -95,13 +136,14 @@ model_bag_size = 15
 # ./wandb/run-20201126_003324-3c6z9kvu/model_state_dict_13_70.886.pt
 model_state_dict_path = None 
 
+
 # for test
-model_dir_for_test = "./wandb" # "./default_log_dir"
+model_dir_for_test = "wandb"  # "./default_log_dir"
 target_run_ids = ["1zbzg5ml", "11p5ec06"]
 top_k_models = 3
 cal_scores = True # set False if the test sets are not annotated with golden results
 
-# model
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 pos_tag_emb_config = {
     "pos_tag_num": statistics["pos_tag_num"],
     "emb_dim": 64,
@@ -127,17 +169,17 @@ char_encoder_config = {
 word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
-    # PubMed-shuffle-win-30.bin
-    "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
+    # 
+    "word_emb_file_path": "../../data/pretrained_emb/glove.6B.100d.txt",
     "emb_dropout": 0.1,
-    "bilstm_layers": [2, 1],
+    "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
-    "bilstm_dropout": [0.1, 0.1, 0.],
+    "bilstm_dropout": [0., 0.1, 0.],
     "freeze_word_emb": False,
 }
 
 subwd_encoder_config = {
-    "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",
+    "pretrained_model_path": "../../data/pretrained_models/bert-base-cased",
     "finetune": True,
     "use_last_k_layers": 1,
     "wordpieces_prefix": "##",
@@ -145,15 +187,28 @@ subwd_encoder_config = {
 
 dep_config = {
     "dep_type_num": statistics["deprel_type_num"],
-    "dep_type_emb_dim": 64,
+    "dep_type_emb_dim": 50,
     "emb_dropout": 0.1,
-    "gcn_dim": 300,
+    "gcn_dim": 128,
     "gcn_dropout": 0.1,
-    "gcn_layer_num": 3,
+    "gcn_layer_num": 1,
 }
 
 handshaking_kernel_config = {
     "shaking_type": "cat",
+#     "ent_shaking_type": "cat+lstm",
+#     "rel_shaking_type": "cat",
+}
+
+conv_config = {
+    "ent_conv_layers": 2,
+    "rel_conv_layers": 2,
+    "ent_conv_kernel_size": 3,  # must be odd
+    "rel_conv_kernel_size": 3,  # must be odd
+}
+
+inter_kernel_config = {
+
 }
 
 # model settings
@@ -163,25 +218,34 @@ token_level = "word" # token is word or subword
 # to do an ablation study, you can remove components by commenting the configurations below
 # except for handshaking_kernel_config, which is a must for the model
 model_settings = {
-    "pos_tag_emb_config": pos_tag_emb_config,
-    "ner_tag_emb_config": ner_tag_emb_config,
-    "char_encoder_config": char_encoder_config,
+#     "pos_tag_emb_config": pos_tag_emb_config,
+#     "ner_tag_emb_config": ner_tag_emb_config,
+#     "char_encoder_config": char_encoder_config,
 #     "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
-    "dep_config": dep_config,
+#     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "fin_hidden_size": 1024,
+    # "conv_config": conv_config,
+    # "inter_kernel_config": inter_kernel_config,
+    "fin_hidden_size": 512,
+    # "ent_dim": 512,
+    # "rel_dim": 768,
 }
+if model_name == "TPLinkerPP":
+    assert max_seq_len_train == max_seq_len_valid == max_seq_len_test
+    model_settings["matrix_size"] = max_seq_len_train
 
 # this dict would be logged
 model_settings_log = copy.deepcopy(model_settings)
 if "word_encoder_config" in model_settings_log and model_settings_log["word_encoder_config"] is not None:
     del model_settings_log["word_encoder_config"]["word2id"]
+
 config_to_log = {
     "model_name": model_name,
     "seed": seed,
     "task_type": task_type,
     "epochs": epochs,
+    "learning_rate": lr,
     "batch_size_train": batch_size_train,
     "batch_size_valid": batch_size_valid,
     "batch_size_test": batch_size_test,
@@ -193,12 +257,8 @@ config_to_log = {
     "sliding_len_test": sliding_len_test,
     "note": "",
     "model_state_dict_path": model_state_dict_path,
+    **trainer_config,
     **model_settings_log,
     "token_level": token_level,
 }
-# match_pattern: for joint entity and relation extraction
-# only_head_text (nyt_star, webnlg_star),
-# whole_text (nyt, webnlg),
-# only_head_index,
-# whole_span
-match_pattern = None
+

@@ -9,10 +9,10 @@ Evaluate the performance on the test set
 # Predict and evaluate
 '''
 from InfExtraction.modules.preprocess import Preprocessor, MyDataset
-from InfExtraction.modules.taggers import HandshakingTagger4EE
+from InfExtraction.modules.taggers import HandshakingTaggerEE4TPLPlus
 from InfExtraction.modules.workers import Evaluator
 from InfExtraction.modules.models import TPLinkerPlus
-from InfExtraction.work_flows import settings_train_val_test as settings
+from InfExtraction.work_flows import settings_default as settings
 
 import os
 import torch
@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # tagger and model
-    tagger = HandshakingTagger4EE(dicts["rel_type2id"], dicts["ent_type2id"])
+    tagger = HandshakingTaggerEE4TPLPlus(dicts["rel_type2id"], dicts["ent_type2id"])
     tag_size = tagger.get_tag_size()
     model = TPLinkerPlus(tag_size, **model_settings)
     model = model.to(device)
