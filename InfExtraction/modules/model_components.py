@@ -149,9 +149,21 @@ class HandshakingKernel(nn.Module):
         
         if self.only_look_after:
             if "lstm" in self.shaking_type:
-                span_pre, _ = self.lstm4span(visible.triu())
+                batch_size, _, matrix_size, vis_hidden_size = visible.size()
+                # mask lower triangle
+                upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1)
+
+                # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
+                visible4lstm = upper_visible.view(-1, matrix_size, vis_hidden_size)
+                span_pre, _ = self.lstm4span(visible4lstm)
+                span_pre = span_pre.view(batch_size, matrix_size, matrix_size, vis_hidden_size)
+
+                # drop lower triangle and convert matrix to sequence
+                # span_pre: (batch_size, shaking_seq_len, hidden_size)
                 span_pre = Preprocessor.drop_lower_diag(span_pre)
                 shaking_pre = add_presentation(shaking_pre, span_pre)
+
+            # guide, visible: (batch_size, shaking_seq_len, hidden_size)
             guide = Preprocessor.drop_lower_diag(guide)
             visible = Preprocessor.drop_lower_diag(visible)
         
