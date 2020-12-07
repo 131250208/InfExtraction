@@ -510,6 +510,7 @@ class TriggerFreeEventExtractor(IEModel):
                  metrics_cal,
                  handshaking_kernel_config=None,
                  fin_hidden_size=None,
+                 conv_config=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -525,6 +526,20 @@ class TriggerFreeEventExtractor(IEModel):
                                                     shaking_type,
                                                     only_look_after=False,  # full handshaking
                                                     )
+
+        # learn local info
+        self.conv_config = conv_config
+        if conv_config is not None:
+            self.convs = nn.ModuleList()
+            conv_layers = conv_config["conv_layers"]
+            conv_kernel_size = conv_config["conv_kernel_size"]
+            conv_padding = (conv_kernel_size - 1) // 2
+
+            for _ in range(conv_layers):
+                self.convs.append(nn.Conv2d(fin_hidden_size,
+                                            fin_hidden_size,
+                                            conv_kernel_size,
+                                            padding=conv_padding))
 
         # decoding fc
         self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
@@ -543,9 +558,12 @@ class TriggerFreeEventExtractor(IEModel):
 
         cat_hiddens = self._cat_features(**kwargs)
         cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
-        # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
-        # shaking_seq_len: max_seq_len * vf - sum(1, vf)
+
         shaking_hiddens = self.handshaking_kernel(cat_hiddens, cat_hiddens)
+
+        if self.conv_config is not None:
+            for conv in self.convs:
+                shaking_hiddens = conv(shaking_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
 
         # predicted_oudtuts: (batch_size, shaking_seq_len, tag_num)
         predicted_oudtuts = self.dec_fc(shaking_hiddens)
