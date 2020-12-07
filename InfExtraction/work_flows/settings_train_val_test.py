@@ -20,7 +20,7 @@ import copy
 import re
 from glob import glob
 
-exp_name = "nyt"
+exp_name = "webnlg"
 task_type = "re"
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
@@ -62,7 +62,7 @@ test_tagging_n_decoding = False
 device_num = 0
 epochs = 200
 lr = 1e-4 # 5e-5, 1e-4
-batch_size_train = 16
+batch_size_train = 8
 batch_size_valid = 32
 batch_size_test = 32
 
