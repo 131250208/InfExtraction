@@ -177,6 +177,7 @@ class HandshakingKernel(nn.Module):
             shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
 
         if "biaffine" in self.shaking_type:
+            set_trace()
             biaffine_pre = self.biaffine(guide, visible)
             biaffine_pre = torch.relu(biaffine_pre)
             shaking_pre = add_presentation(shaking_pre, biaffine_pre)

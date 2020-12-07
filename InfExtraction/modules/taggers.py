@@ -785,6 +785,7 @@ class HandshakingTaggerRel4TPLPP(Tagger):
                     "char_span": rel["obj_char_span"],
                     "tok_span": rel["obj_tok_span"],
                 })
+
                 # add default tag to entities
                 fin_ent_list.append({
                     "text": rel["subject"],
@@ -798,6 +799,7 @@ class HandshakingTaggerRel4TPLPP(Tagger):
                     "char_span": rel["obj_char_span"],
                     "tok_span": rel["obj_tok_span"],
                 })
+
             if "entity_list" in sample:
                 fin_ent_list.extend(sample["entity_list"])
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
