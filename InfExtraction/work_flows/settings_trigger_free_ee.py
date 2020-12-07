@@ -82,7 +82,7 @@ combine = False
 
 scheduler = "CAWR"
 use_ghm = False
-final_score_key = "trigger_class_f1"
+final_score_key = "trigger_class_f1" # arg_class_f1
 model_bag_size = 15
 score_threshold = 0
 
@@ -184,6 +184,11 @@ handshaking_kernel_config = {
     "shaking_type": "cat",
 }
 
+conv_config = {
+    "conv_layers": 2,
+    "conv_kernel_size": 3,  # must be odd
+}
+
 token_level = "word" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
@@ -198,6 +203,7 @@ model_settings = {
     "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
+    "conv_config": conv_config,
     "fin_hidden_size": 512,
 }
 if model_name == "TPLinkerPP":
