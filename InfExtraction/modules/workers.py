@@ -165,8 +165,8 @@ class Evaluator:
         return pred_sample_list
 
     def _alignment(self, pred_sample_list, golden_data):
-        # decompose splits
-        pred_sample_list = Preprocessor.decompose2splits(pred_sample_list)  # debug
+        # decompose to splits
+        pred_sample_list = Preprocessor.decompose2splits(pred_sample_list)
 
         # merge and alignment
         id2text = {sample["id"]: sample["text"] for sample in golden_data}
@@ -191,7 +191,7 @@ class Evaluator:
             if "event_list" in sample:
                 merged_pred_samples[id_]["event_list"].extend(sample["event_list"])
 
-        # alignment (order)
+        # alignment by id (in order)
         pred_data = []
         for sample in golden_data:
             id_ = sample["id"]

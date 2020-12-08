@@ -1117,9 +1117,10 @@ class Preprocessor:
         if "event_list" in sample:
             sub_event_list = []
             for event in sample["event_list"]:
-                trigger_tok_span = event["trigger_tok_span"]
-                if trigger_tok_span[1] > end_ind or trigger_tok_span[0] < start_ind:
-                    continue
+                if "trigger" in event:
+                    trigger_tok_span = event["trigger_tok_span"]
+                    if trigger_tok_span[1] > end_ind or trigger_tok_span[0] < start_ind:
+                        continue
                 event_cp = copy.deepcopy(event)
                 new_arg_list = []
                 for arg in event_cp["argument_list"]:
@@ -1346,7 +1347,7 @@ class Preprocessor:
                     if "event_list" in filtered_sample:
                         split_sample["event_list"] = filtered_sample["event_list"]
                     # recover spans
-                    split_sample = Preprocessor.span_offset(split_sample, -text_tok_span[0], -text_char_span[0]) # debug
+                    split_sample = Preprocessor.span_offset(split_sample, -text_tok_span[0], -text_char_span[0])
                     new_data.append(split_sample)
             else:
                 new_data.append(sample)
@@ -1372,10 +1373,11 @@ class Preprocessor:
                 ent["char_span"][1] += char_level_offset
         if "event_list" in sample:
             for event in sample["event_list"]:
-                event["trigger_tok_span"][0] += tok_level_offset
-                event["trigger_tok_span"][1] += tok_level_offset
-                event["trigger_char_span"][0] += char_level_offset
-                event["trigger_char_span"][1] += char_level_offset
+                if "trigger" in event:
+                    event["trigger_tok_span"][0] += tok_level_offset
+                    event["trigger_tok_span"][1] += tok_level_offset
+                    event["trigger_char_span"][0] += char_level_offset
+                    event["trigger_char_span"][1] += char_level_offset
                 for arg in event["argument_list"]:
                     arg["tok_span"][0] += tok_level_offset
                     arg["tok_span"][1] += tok_level_offset
