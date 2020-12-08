@@ -32,12 +32,12 @@ import re
 from glob import glob
 
 exp_name = "ace2005_lu"
-task_type = "re_based_ee" # re, re_based_ee
+task_type = "re+ee" # re, re_based_ee
 
-if task_type == "re":
+if "re" in task_type:
     final_score_key = "rel_f1"
-elif task_type in {"ee", "re_based_ee"}:
-    final_score_key = "trigger_class_f1" # arg_class_f1
+if "ee" in task_type:
+    final_score_key = "trigger_class_f1"  # arg_class_f1
 
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
@@ -75,7 +75,7 @@ key2dict = {
 
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-check_tagging_n_decoding = False
+check_tagging_n_decoding = True
 device_num = 0
 epochs = 200
 lr = 1e-4 # 5e-5, 1e-4

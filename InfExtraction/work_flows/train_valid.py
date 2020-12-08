@@ -153,7 +153,7 @@ if __name__ == "__main__":
     model_state_dict_path = settings.model_state_dict_path # pretrained model state
 
     # match_pattern, only for relation extraction
-    match_pattern = settings.match_pattern if task_type == "re" else None
+    match_pattern = settings.match_pattern if "re" in task_type else None
 
     # save model
     score_threshold = settings.score_threshold
@@ -201,8 +201,7 @@ if __name__ == "__main__":
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # tagger
     tagger_class_name = getattr(taggers, tagger_name)
-    if task_type == "re_based_ee":
-        task_type = "ee"
+    if task_type == "re+ee":
         tagger_class_name = taggers.create_rebased_ee_tagger(tagger_class_name)
 
     # additional preprocessing

@@ -324,19 +324,22 @@ class MetricsCalculator:
         return precision, recall, f1
 
     def score(self, pred_data, golden_data, data_type):
-        total_cpg_dict = None
-        if self.task_type == "re":
+        total_cpg_dict = {}
+        if "re" in self.task_type:
             assert self.match_pattern is not None
-            total_cpg_dict = self.get_rel_cpg_dict(pred_data,
-                                                   golden_data,
-                                                   self.match_pattern)
-        elif self.task_type == "ee":
-            total_cpg_dict = self.get_ee_cpg_dict(pred_data, golden_data)
+            cpg_dict = self.get_rel_cpg_dict(pred_data,
+                                             golden_data,
+                                             self.match_pattern)
+            total_cpg_dict = {**cpg_dict, **total_cpg_dict}
+
+        if "ee" in self.task_type:
+            cpg_dict = self.get_ee_cpg_dict(pred_data, golden_data)
+            total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
         score_dict = {}
-        for key, cpg in total_cpg_dict:
+        for key, cpg in total_cpg_dict.items():
             prf = self.get_prf_scores(*cpg)
-            for idx, sct in enumerate({"prec", "recall", "f1"}):
+            for idx, sct in enumerate(["prec", "recall", "f1"]):
                 score_dict["{}_{}_{}".format(data_type, key, sct)] = prf[idx]
 
         return score_dict
