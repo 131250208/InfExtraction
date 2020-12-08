@@ -291,9 +291,19 @@ class HandshakingTagger4TPLPlus(Tagger):
 
 def create_rebased_ee_tagger(base_class):
     class REBasedEETagger(base_class):
+        def __init__(self, data):
+            super(REBasedEETagger, self).__init__(data)
+            self.event_type2arg_rols = {}
+            for event in data["event_list"]:
+                event_type = event["trigger_type"]
+                for arg in event["argument_list"]:
+                    if event_type not in self.event_type2arg_rols:
+                        self.event_type2arg_rols[event_type] = set()
+                    self.event_type2arg_rols[event_type].add(arg["type"])
+
         @classmethod
         def additional_preprocess(cls, data):
-            separator = "_"
+            separator = "\u2E82"
             for sample in data:
                 # transform event list to relation list and entity list
                 fin_ent_list = []
@@ -351,67 +361,98 @@ def create_rebased_ee_tagger(base_class):
                     new_ent_list.append(new_ent)
             rel_list, ent_list = new_rel_list, new_ent_list
 
-            sepatator = "_"
+            # decoding
+            sepatator = "\u2E82"
             trigger_offset2vote = {}
             trigger_offset2trigger_text = {}
             trigger_offset2trigger_char_span = {}
-            # get candidate trigger types from relation
+
+            # get candidate trigger types from relations
             for rel in rel_list:
                 trigger_offset = rel["obj_tok_span"]
                 trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
                 trigger_offset2trigger_text[trigger_offset_str] = rel["object"]
                 trigger_offset2trigger_char_span[trigger_offset_str] = rel["obj_char_span"]
-                _, event_types = rel["predicate"].split(sepatator)
+                _, event_type = rel["predicate"].split(sepatator)
 
                 if trigger_offset_str not in trigger_offset2vote:
                     trigger_offset2vote[trigger_offset_str] = {}
-                trigger_offset2vote[trigger_offset_str][event_types] = trigger_offset2vote[trigger_offset_str].get(
-                    event_types, 0) + 1
+                trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
+                    event_type, 0) + 1
 
             # get candidate trigger types from entity tags
             for ent in ent_list:
                 t1, t2 = ent["type"].split(sepatator)
-                # assert t1 == "Trigger" or t1 == "Argument"
-                if t1 == "Trigger":  # trigger
-                    event_types = t2
+                if t1 == "Trigger":
+                    event_type = t2
                     trigger_span = ent["tok_span"]
                     trigger_offset_str = "{},{}".format(trigger_span[0], trigger_span[1])
                     trigger_offset2trigger_text[trigger_offset_str] = ent["text"]
                     trigger_offset2trigger_char_span[trigger_offset_str] = ent["char_span"]
                     if trigger_offset_str not in trigger_offset2vote:
                         trigger_offset2vote[trigger_offset_str] = {}
-                    trigger_offset2vote[trigger_offset_str][event_types] = trigger_offset2vote[trigger_offset_str].get(
-                        event_types, 0) + 1  # if even, entity type makes the call
+                    trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
+                        event_type, 0) + 1
 
             # choose the final trigger type by votes
-            tirigger_offset2event_types = {}
+            trigger_offset2event_types = {}
             for trigger_offet_str, event_type2score in trigger_offset2vote.items():
-                top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
-                winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
-                # winer_event_types = {sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0],} # ignore draw
-                tirigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
 
-            # generate event list
+                # # choose types with the top score
+                # top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
+                # winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
+
+                # ignore draw, choose only the first type
+                # winer_event_types = {sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0],}
+
+                # save all event types
+                winer_event_types = set(event_type2score.keys())
+
+                trigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
+
+            # aggregate arguments by event type and trigger_offset
             trigger_offset2event2arguments = {}
             for rel in rel_list:
                 trigger_offset = rel["obj_tok_span"]
                 argument_role, et = rel["predicate"].split(sepatator)
-                trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
-                if et not in tirigger_offset2event_types[trigger_offset_str]:  # filter false relations
+                trigger_offset_str = "{},{}".format(*trigger_offset)
+                if et not in trigger_offset2event_types[trigger_offset_str]:  # filter false relations
                     continue
                 # append arguments
                 if trigger_offset_str not in trigger_offset2event2arguments:
                     trigger_offset2event2arguments[trigger_offset_str] = {}
                 if et not in trigger_offset2event2arguments[trigger_offset_str]:
                     trigger_offset2event2arguments[trigger_offset_str][et] = []
+
                 trigger_offset2event2arguments[trigger_offset_str][et].append({
                     "text": rel["subject"],
                     "type": argument_role,
+                    "event_type": et,
                     "char_span": rel["subj_char_span"],
                     "tok_span": rel["subj_tok_span"],
                 })
+
+            if len(trigger_offset2event_types) == 1:
+                for trig_offset_str, event_types in trigger_offset2event_types.items():
+                    if len(event_types) == 1:
+                        et = event_types.pop()
+                        for ent in ent_list:
+                            t1, t2 = ent["type"].split(sepatator)
+                            if t1 == "Argument":
+                                arg_role = t2
+                                if arg_role not in self.event_type2arg_rols[et]:
+                                    continue
+                                trigger_offset2event2arguments[trig_offset_str][et].append({
+                                    "text": ent["text"],
+                                    "type": arg_role,
+                                    "event_type": et,
+                                    "char_span": ent["char_span"],
+                                    "tok_span": ent["tok_span"],
+                                })
+
+            # generate event list
             event_list = []
-            for trigger_offset_str, event_types in tirigger_offset2event_types.items():
+            for trigger_offset_str, event_types in trigger_offset2event_types.items():
                 for et in event_types:
                     arguments = []
                     if trigger_offset_str in trigger_offset2event2arguments and \
@@ -424,7 +465,7 @@ def create_rebased_ee_tagger(base_class):
                         "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
                         "trigger_tok_span": [int(trigger_offset[0]), int(trigger_offset[1])],
                         "trigger_type": et,
-                        "argument_list": arguments,
+                        "argument_list": Preprocessor.unique_list(arguments),
                     }
                     event_list.append(event)
             return event_list

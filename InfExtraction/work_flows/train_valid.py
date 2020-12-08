@@ -202,7 +202,7 @@ if __name__ == "__main__":
     # tagger
     tagger_class_name = getattr(taggers, tagger_name)
     if task_type == "re_based_ee":
-        task_type = "tbee"
+        task_type = "ee"
         tagger_class_name = taggers.create_rebased_ee_tagger(tagger_class_name)
 
     # additional preprocessing

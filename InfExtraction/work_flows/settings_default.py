@@ -41,8 +41,8 @@ task_type = "ee"
 
 if task_type == "re":
     final_score_key = "rel_f1"
-elif task_type in {"tbee", "tfee", "re_based_ee"}:
-    final_score_key = "trigger_class_f1"
+elif task_type in {"ee", "re_based_ee"}:
+    final_score_key = "trigger_class_f1" # arg_class_f1
 
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
