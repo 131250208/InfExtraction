@@ -31,13 +31,8 @@ import copy
 import re
 from glob import glob
 
-<<<<<<< HEAD:InfExtraction/work_flows/settings_train_val_test.py
 exp_name = "webnlg_star"
 task_type = "re"
-=======
-exp_name = "ace2005_lu"
-task_type = "re_based_ee"
->>>>>>> 04140f3b7ada589b1cfef71ceac2decbf54e0515:InfExtraction/work_flows/settings_tplinker_pp.py
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
 # whole_text (nyt, webnlg),
@@ -76,12 +71,12 @@ key2dict = {
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 check_tagging_n_decoding = False
-device_num = 0
+device_num = 3
 epochs = 200
 lr = 5e-5 # 5e-5, 1e-4
 batch_size_train = 6
-batch_size_valid = 32
-batch_size_test = 32
+batch_size_valid = 6
+batch_size_test = 6
 
 max_seq_len_train = 100
 max_seq_len_valid = 100
@@ -121,7 +116,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -200,13 +195,13 @@ dep_config = {
 
 handshaking_kernel_config = {
 #     "shaking_type": "cln",
-    "ent_shaking_type": "cln+lstm",
-    "rel_shaking_type": "cln",
+    "ent_shaking_type": "cat+cln+lstm",
+    "rel_shaking_type": "cat+cln",
 }
 
 conv_config = {
     "ent_conv_layers": 2,
-    "rel_conv_layers": 2,
+    "rel_conv_layers": 3,
     "ent_conv_kernel_size": 3,  # must be odd
     "rel_conv_kernel_size": 3,  # must be odd
 }
@@ -216,7 +211,7 @@ inter_kernel_config = {
 }
 
 # model settings
-token_level = "subword" # token is word or subword
+token_level = "word" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 

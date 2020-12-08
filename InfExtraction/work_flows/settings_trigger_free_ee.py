@@ -63,22 +63,22 @@ key2dict = {
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 check_tagging_n_decoding = True
-device_num = 0
+device_num = 1
 epochs = 200
 lr = 1e-4 # 5e-5, 1e-4
 batch_size_train = 8
-batch_size_valid = 32
-batch_size_test = 32
+batch_size_valid = 8
+batch_size_test = 8
 
-max_seq_len_train = 100
-max_seq_len_valid = 100
-max_seq_len_test = 100
+max_seq_len_train = 64
+max_seq_len_valid = 64
+max_seq_len_test = 64
 
-sliding_len_train = 20
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_train = 64
+sliding_len_valid = 64
+sliding_len_test = 64
 
-combine = False
+combine = True
 
 scheduler = "CAWR"
 use_ghm = False
@@ -102,7 +102,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = False
+use_wandb = True
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -181,11 +181,11 @@ dep_config = {
 }
 
 handshaking_kernel_config = {
-    "shaking_type": "cat",
+    "shaking_type": "cat+cln",
 }
 
 conv_config = {
-    "conv_layers": 2,
+    "conv_layers": 3,
     "conv_kernel_size": 3,  # must be odd
 }
 
