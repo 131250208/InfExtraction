@@ -143,7 +143,7 @@ class MetricsCalculator:
 
             for arg_i in arg_list:
                 for arg_j in arg_list:
-                    if "event_type" not in arg_i or arg_j:  # golden test set, does not have this key
+                    if "event_type" not in arg_i or "event_type" not in arg_j:  # golden test set, does not have this key
                         # this is golden test set, all arguments have the same event_type (trigger_type)
                         assert event_type is not None
                         arg_i_event_type, arg_j_event_type = event_type, event_type
