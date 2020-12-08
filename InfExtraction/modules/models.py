@@ -418,7 +418,7 @@ class TPLinkerPP(IEModel):
 
         self.use_attns4rel = use_attns4rel
         if use_attns4rel is not None:
-            self.attns_fc = nn.Linear(self.bert.num_hidden_layers * self.bert.num_attention_heads, rel_dim)
+            self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads, rel_dim)
 
         # learn local info
         self.conv_config = conv_config
