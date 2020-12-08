@@ -135,7 +135,6 @@ model_bag_size = 15
 # ./wandb/run-20201126_003324-3c6z9kvu/model_state_dict_13_70.886.pt
 model_state_dict_path = None 
 
-
 # for test
 model_dir_for_test = "wandb"  # "./default_log_dir"
 target_run_ids = ["1zbzg5ml", "11p5ec06"]
