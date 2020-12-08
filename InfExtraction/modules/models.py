@@ -481,7 +481,7 @@ class TPLinkerPP(IEModel):
         rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
 
         # attentions: (batch_size, layers * heads, seg_len, seq_len)
-        if self.use_attns:
+        if self.use_attns4rel:
             attns = torch.cat(self.attn_tuple, dim=1).permute(0, 2, 3, 1)
             attns = self.attns_fc(attns)
             rel_hs_hiddens += attns
