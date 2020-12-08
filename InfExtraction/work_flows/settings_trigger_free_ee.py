@@ -83,7 +83,7 @@ combine = True
 
 scheduler = "CAWR"
 use_ghm = False
-final_score_key = "trigger_class_f1" # arg_class_f1
+final_score_key = "arg_link_class_f1" # arg_class_f1
 model_bag_size = 15
 score_threshold = 0
 
