@@ -31,13 +31,14 @@ import copy
 import re
 from glob import glob
 
-<<<<<<< HEAD:InfExtraction/work_flows/settings_train_val_test.py
-exp_name = "webnlg_star"
-task_type = "re"
-=======
 exp_name = "ace2005_lu"
-task_type = "re_based_ee"
->>>>>>> 04140f3b7ada589b1cfef71ceac2decbf54e0515:InfExtraction/work_flows/settings_tplinker_pp.py
+task_type = "re_based_ee" # re, re_based_ee
+
+if task_type == "re":
+    final_score_key = "rel_f1"
+elif task_type in {"tbee", "tfee", "re_based_ee"}:
+    final_score_key = "trigger_class_f1"
+
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
 # whole_text (nyt, webnlg),

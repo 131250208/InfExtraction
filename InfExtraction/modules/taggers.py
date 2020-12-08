@@ -709,8 +709,9 @@ class MatrixTaggerEE(Tagger):
             for i in range(len(event_piece_list)):
                 event_piece = event_piece_list[i]
                 tag = event_piece[1]
+                tag_type = tag[:-2]  # wyc 1208
+                event_type, role = tag_type.split(self.separator)  # wyc 1208
                 if tag[-1] == 'B':
-                    tag_type = tag[:-2]
                     end_piece = event_piece
                     if 'Trigger' in tag:
                         for j in range(i + 1, len(event_piece_list)):
@@ -722,7 +723,7 @@ class MatrixTaggerEE(Tagger):
                         event['trigger'] = ' '.join(text.split()[event_piece[0]: end_piece[0] + 1])
                         event['trigger_tok_span'] = [event_piece[0], end_piece[0] + 1]
                         event['trigger_char_span'] = [tok2char_span[event_piece[0]][0], tok2char_span[end_piece[0]][1]]
-                        event['trigger_type'] = tag_type.split(self.separator)[0]
+                        event['trigger_type'] = event_type  # wyc 1208
                     else:
                         for j in range(i + 1, len(event_piece_list)):
                             if event_piece_list[j][1][-1] == 'I' and tag_type in event_piece_list[j][1]:
@@ -731,9 +732,11 @@ class MatrixTaggerEE(Tagger):
                                 break
 
                         event['argument_list'].append({'text': ' '.join(text.split()[event_piece[0]:end_piece[0] + 1]),
+                                                       "event_type": event_type,  # wyc 1208
                                                        'tok_span': [event_piece[0], end_piece[0] + 1],
                                                        'char_span': [tok2char_span[event_piece[0]][0], tok2char_span[end_piece[0]][1]],
-                                                       'type': tag_type.split(self.separator)[1]})
+                                                       'type': role,  # wyc 1208
+                                                       })
             # try:
             # assert 'trigger' in event
             # except:
