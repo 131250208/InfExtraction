@@ -32,13 +32,23 @@ import re
 from glob import glob
 
 exp_name = "ace2005_lu"
+# task_type:
+# re: relation extraction(joint),
+# re_based_ee: relation extraction based event extraction
+# tbee: trigger-based event extraction
+# tfee: trigger-free event extraction
 task_type = "ee"
+
+if task_type == "re":
+    final_score_key = "rel_f1"
+elif task_type in {"tbee", "tfee", "re_based_ee"}:
+    final_score_key = "trigger_class_f1"
+
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-
 match_pattern = "whole_text"
 
 # model and tagger(decoder)
@@ -122,12 +132,6 @@ trainer_config = {
     "scheduler_config": scheduler_dict[scheduler],
     "log_interval": log_interval,
 }
-
-# for eval
-if task_type == "re":
-    final_score_key = "rel_f1"
-elif task_type == "ee" or "re_based_ee":
-    final_score_key = "trigger_class_f1"
 
 model_bag_size = 15
 

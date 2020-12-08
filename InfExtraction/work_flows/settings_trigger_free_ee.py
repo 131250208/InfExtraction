@@ -32,7 +32,8 @@ import re
 from glob import glob
 
 exp_name = "ace2005_lu"
-task_type = "ee"
+
+task_type = "tfee"
 
 # model and tagger(decoder)
 model_name = "TriggerFreeEventExtractor"

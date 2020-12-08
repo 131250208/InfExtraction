@@ -3,8 +3,8 @@ import torch
 
 class MetricsCalculator:
     def __init__(self, task_type, match_pattern=None, use_ghm=False):
-        self.task_type = task_type # for scoring
-        self.match_pattern = match_pattern # for scoring of relation extraction
+        self.task_type = task_type  # for scoring
+        self.match_pattern = match_pattern  # for scoring of relation extraction
         if task_type == "re":
             assert self.match_pattern is not None
         # for multilabel_categorical_crossentropy
@@ -96,7 +96,7 @@ class MetricsCalculator:
 
         return sample_acc
 
-    def _get_mark_sets_event(self, event_list):
+    def _get_mark_sets_tbee(self, event_list):
         trigger_iden_set, trigger_class_set, arg_iden_set, arg_class_set = set(), set(), set(), set()
         for event in event_list:
             event_type = event["trigger_type"]
@@ -119,6 +119,56 @@ class MetricsCalculator:
                trigger_class_set, \
                arg_iden_set, \
                arg_class_set
+
+    def _get_mark_sets_tfee(self, event_list):
+        '''
+        for trigger-free event extraction
+        :param event_list:
+        :return:
+        '''
+        arg_link_iden_set, arg_link_class_set = set(), set()
+
+        for event in event_list:
+            arg_list = event["argument_list"]
+            event_type = None
+            if "trigger" in event:
+                event_type = event["trigger_type"]
+                arg_list.append({
+                    "text": event["trigger"],
+                    "tok_span": event["trigger_tok_span"],
+                    "char_span": event["trigger_char_span"],
+                    "type": "Trigger",  # argument role
+                    "event_type": event_type,
+                })
+
+            for arg_i in arg_list:
+                for arg_j in arg_list:
+                    if "event_type" not in arg_i or arg_j:  # golden test set, does not have this key
+                        # this is golden test set, all arguments have the same event_type (trigger_type)
+                        assert event_type is not None
+                        arg_i_event_type, arg_j_event_type = event_type, event_type
+                    else:
+                        arg_i_event_type = arg_i["event_type"]
+                        arg_j_event_type = arg_j["event_type"]
+                    arg_i_offset = arg_i["tok_span"]
+                    arg_i_role = arg_i["type"]
+                    arg_j_offset = arg_j["tok_span"]
+                    arg_j_role = arg_j["type"]
+
+                    link_iden_mark = "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(arg_i_event_type,
+                                                                                         arg_j_event_type,
+                                                                                         *arg_i_offset,
+                                                                                         *arg_j_offset)
+                    link_class_mark = "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(
+                        arg_i_event_type,
+                        arg_j_event_type,
+                        *arg_i_offset,
+                        *arg_j_offset,
+                        arg_i_role,
+                        arg_j_role)
+                    arg_link_iden_set.add(link_iden_mark)
+                    arg_link_class_set.add(link_class_mark)
+        return arg_link_iden_set, arg_link_class_set
 
     def _get_mark_sets_rel(self, rel_list, ent_list, match_pattern="only_head_text"):
         rel_set, ent_set = None, None
@@ -177,9 +227,9 @@ class MetricsCalculator:
         self._cal_cpg(pred_rel_set, gold_rel_set, ere_cpg_dict["rel_cpg"])
         self._cal_cpg(pred_ent_set, gold_ent_set, ere_cpg_dict["ent_cpg"])
 
-    def _cal_event_cpg(self, pred_event_list, gold_event_list, ee_cpg_dict):
+    def _cal_tbee_cpg(self, pred_event_list, gold_event_list, tbee_cpg_dict):
         '''
-        ee_cpg_dict = {
+        tbee_cpg_dict = {
             "trigger_iden_cpg": [0, 0, 0],
             "trigger_class_cpg": [0, 0, 0],
             "arg_iden_cpg": [0, 0, 0],
@@ -189,22 +239,35 @@ class MetricsCalculator:
         pred_trigger_iden_set, \
         pred_trigger_class_set, \
         pred_arg_iden_set, \
-        pred_arg_class_set = self._get_mark_sets_event(pred_event_list)
+        pred_arg_class_set = self._get_mark_sets_tbee(pred_event_list)
 
         gold_trigger_iden_set, \
         gold_trigger_class_set, \
         gold_arg_iden_set, \
-        gold_arg_class_set = self._get_mark_sets_event(gold_event_list)
+        gold_arg_class_set = self._get_mark_sets_tbee(gold_event_list)
 
-        self._cal_cpg(pred_trigger_iden_set, gold_trigger_iden_set, ee_cpg_dict["trigger_iden_cpg"])
-        self._cal_cpg(pred_trigger_class_set, gold_trigger_class_set, ee_cpg_dict["trigger_class_cpg"])
+        self._cal_cpg(pred_trigger_iden_set, gold_trigger_iden_set, tbee_cpg_dict["trigger_iden_cpg"])
+        self._cal_cpg(pred_trigger_class_set, gold_trigger_class_set, tbee_cpg_dict["trigger_class_cpg"])
         # if len(pred_arg_iden_set) != len(gold_arg_iden_set): # 解码算法引入的错误，可以作为下一个研究点，即群里讨论过的极端嵌套情况
         #     print("!")
-        self._cal_cpg(pred_arg_iden_set, gold_arg_iden_set, ee_cpg_dict["arg_iden_cpg"])
-        self._cal_cpg(pred_arg_class_set, gold_arg_class_set, ee_cpg_dict["arg_class_cpg"])
+        self._cal_cpg(pred_arg_iden_set, gold_arg_iden_set, tbee_cpg_dict["arg_iden_cpg"])
+        self._cal_cpg(pred_arg_class_set, gold_arg_class_set, tbee_cpg_dict["arg_class_cpg"])
 
-    def get_event_cpg_dict(self, pred_sample_list, golden_sample_list):
-        ee_cpg_dict = {
+    def _cal_tfee_cpg(self, pred_event_list, gold_event_list, tfee_cpg_dict):
+        '''
+        tfee_cpg_dict = {
+            "arg_link_iden_cpg": [0, 0, 0],
+            "arg_link_class_cpg": [0, 0, 0],
+        }
+        '''
+        pred_arg_link_iden_set, pred_arg_link_class_set = self._get_mark_sets_tfee(pred_event_list)
+        gold_arg_link_iden_set, gold_arg_link_class_set = self._get_mark_sets_tfee(gold_event_list)
+
+        self._cal_cpg(pred_arg_link_iden_set, gold_arg_link_iden_set, tfee_cpg_dict["arg_link_iden_cpg"])
+        self._cal_cpg(pred_arg_link_class_set, gold_arg_link_class_set, tfee_cpg_dict["arg_link_class_cpg"])
+
+    def get_tbee_cpg_dict(self, pred_sample_list, golden_sample_list):
+        tbee_cpg_dict = {
             "trigger_iden_cpg": [0, 0, 0],
             "trigger_class_cpg": [0, 0, 0],
             "arg_iden_cpg": [0, 0, 0],
@@ -214,8 +277,20 @@ class MetricsCalculator:
             gold_sample = golden_sample_list[idx]
             pred_event_list = pred_sample["event_list"]
             gold_event_list = gold_sample["event_list"]
-            self._cal_event_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
-        return ee_cpg_dict
+            self._cal_tbee_cpg(pred_event_list, gold_event_list, tbee_cpg_dict)
+        return tbee_cpg_dict
+
+    def get_tfee_cpg_dict(self, pred_sample_list, golden_sample_list):
+        tfee_cpg_dict = {
+            "arg_link_iden_cpg": [0, 0, 0],
+            "arg_link_class_cpg": [0, 0, 0],
+        }
+        for idx, pred_sample in enumerate(pred_sample_list):
+            gold_sample = golden_sample_list[idx]
+            pred_event_list = pred_sample["event_list"]
+            gold_event_list = gold_sample["event_list"]
+            self._cal_tfee_cpg(pred_event_list, gold_event_list, tfee_cpg_dict)
+        return tfee_cpg_dict
 
     def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list, match_pattern):
         ere_cpg_dict = {
@@ -244,14 +319,14 @@ class MetricsCalculator:
         recall = correct_num / (gold_num + minimum)
         f1 = 2 * precision * recall / (precision + recall + minimum)
         return precision, recall, f1
-    
+
     def score(self, pred_data, golden_data, data_type):
         score_dict = None
         if self.task_type == "re":
             assert self.match_pattern is not None
             total_cpg_dict = self.get_rel_cpg_dict(pred_data,
-                                                 golden_data,
-                                                 self.match_pattern)
+                                                   golden_data,
+                                                   self.match_pattern)
             rel_prf = self.get_prf_scores(*total_cpg_dict["rel_cpg"])
             ent_prf = self.get_prf_scores(*total_cpg_dict["ent_cpg"])
             score_dict = {
@@ -263,8 +338,8 @@ class MetricsCalculator:
                 "{}_ent_f1".format(data_type): ent_prf[2]
             }
 
-        elif self.task_type == "ee":
-            total_cpg_dict = self.get_event_cpg_dict(pred_data, golden_data)
+        elif self.task_type == "tbee":
+            total_cpg_dict = self.get_tbee_cpg_dict(pred_data, golden_data)
             trigger_iden_prf = self.get_prf_scores(*total_cpg_dict["trigger_iden_cpg"])
             trigger_class_prf = self.get_prf_scores(*total_cpg_dict["trigger_class_cpg"])
             arg_iden_prf = self.get_prf_scores(*total_cpg_dict["arg_iden_cpg"])
@@ -283,6 +358,20 @@ class MetricsCalculator:
                 "{}_arg_class_prec".format(data_type): arg_class_prf[0],
                 "{}_arg_class_recall".format(data_type): arg_class_prf[1],
                 "{}_arg_class_f1".format(data_type): arg_class_prf[2],
+            }
+
+        elif self.task_type == "tfee":
+            total_cpg_dict = self.get_tfee_cpg_dict(pred_data, golden_data)
+            arg_link_iden_prf = self.get_prf_scores(*total_cpg_dict["arg_link_iden_cpg"])
+            arg_link_class_prf = self.get_prf_scores(*total_cpg_dict["arg_link_class_cpg"])
+
+            score_dict = {
+                "{}_arg_link_iden_prec".format(data_type): arg_link_iden_prf[0],
+                "{}_arg_link_iden_recall".format(data_type): arg_link_iden_prf[1],
+                "{}_arg_link_iden_f1".format(data_type): arg_link_iden_prf[2],
+                "{}_arg_link_class_prec".format(data_type): arg_link_class_prf[0],
+                "{}_arg_link_class_recall".format(data_type): arg_link_class_prf[1],
+                "{}_arg_link_class_f1".format(data_type): arg_link_class_prf[2],
             }
 
         return score_dict
