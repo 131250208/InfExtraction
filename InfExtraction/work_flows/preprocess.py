@@ -35,9 +35,9 @@ for path, folds, files in os.walk(data_in_dir):
 # preprocessor
 preprocessor = Preprocessor(language, pretrained_model_tokenizer_path)
 
-# transform data: only for relation extraction
-if ori_data_format != "tplinker": # if tplinker, skip transforming
-    for file_name, data in file_name2data.items():
+# transform data from CasRel, ETL_span, et.
+for file_name, data in file_name2data.items():
+    if ori_data_format != "tplinker":  # if tplinker, skip transforming
         data_type = None
         if "train" in file_name:
             data_type = "train"
@@ -47,6 +47,15 @@ if ori_data_format != "tplinker": # if tplinker, skip transforming
             data_type = "test"
         data = preprocessor.transform_data(data, ori_format=ori_data_format, dataset_type=data_type, add_id=True)
         file_name2data[file_name] = data
+
+    # temp
+    for sample in data:
+        if "event_list" in sample:
+            for event in sample["event_list"]:
+                for arg in event["argument_list"]:
+                    if "event_type" not in arg:
+                        arg["event_type"] = event["trigger_type"]
+
 
 # process
 for filename, data in file_name2data.items():

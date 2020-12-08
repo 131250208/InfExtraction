@@ -31,25 +31,20 @@ import copy
 import re
 from glob import glob
 
-<<<<<<< HEAD
-exp_name = "webnlg_star"
-task_type = "re"
-=======
 exp_name = "ace2005_lu"
-task_type = "re_based_ee" # re, re_based_ee
+task_type = "re+ee"  # re
 
 if task_type == "re":
     final_score_key = "rel_f1"
-elif task_type in {"tbee", "tfee", "re_based_ee"}:
+if "ee" in task_type:
     final_score_key = "trigger_class_f1"
 
->>>>>>> 75cee64fbc8ca2671be694199dab8dddef1f2567
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-match_pattern = "only_head_text"
+match_pattern = "whole_span"
 
 # model and tagger(decoder)
 model_name = "TPLinkerPP"
@@ -81,7 +76,7 @@ key2dict = {
 
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-check_tagging_n_decoding = False
+check_tagging_n_decoding = True
 device_num = 3
 epochs = 200
 lr = 5e-5 # 5e-5, 1e-4
@@ -103,9 +98,9 @@ scheduler = "CAWR"
 use_ghm = False
 
 # for eval
-if task_type == "re":
+if "re" in task_type:
     final_score_key = "rel_f1"
-elif task_type == "re_based_ee":
+if "ee" in task_type:
     final_score_key = "trigger_class_f1"
 
 model_bag_size = 15
@@ -232,10 +227,11 @@ model_settings = {
 #     "pos_tag_emb_config": pos_tag_emb_config,
 #     "ner_tag_emb_config": ner_tag_emb_config,
 #     "char_encoder_config": char_encoder_config,
-    "subwd_encoder_config": subwd_encoder_config,
-#     "word_encoder_config": word_encoder_config,
+#     "subwd_encoder_config": subwd_encoder_config,
+    "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
+    "use_attns4rel": True,
     "conv_config": conv_config,
     "inter_kernel_config": inter_kernel_config,
 #     "fin_hidden_size": 1024,

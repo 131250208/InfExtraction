@@ -139,7 +139,8 @@ class HandshakingKernel(nn.Module):
         visible = seq_hiddens_y[:, None, :, :].repeat(1, seq_len, 1, 1)
 
         shaking_pre = None
-        
+        pre_num = 0
+
         def add_presentation(all_prst, prst):
             if all_prst is None:
                 all_prst = prst
@@ -162,6 +163,7 @@ class HandshakingKernel(nn.Module):
                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
                 span_pre = Preprocessor.drop_lower_diag(span_pre)
                 shaking_pre = add_presentation(shaking_pre, span_pre)
+                pre_num += 1
 
             # guide, visible: (batch_size, shaking_seq_len, hidden_size)
             guide = Preprocessor.drop_lower_diag(guide)
@@ -171,18 +173,21 @@ class HandshakingKernel(nn.Module):
             tp_cat_pre = torch.cat([guide, visible], dim=-1)
             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
             shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+            pre_num += 1
 
         if "cln" in self.shaking_type:
             tp_cln_pre = self.tp_cln(visible, guide)
             shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
+            pre_num += 1
 
         if "biaffine" in self.shaking_type:
             set_trace()
             biaffine_pre = self.biaffine(guide, visible)
             biaffine_pre = torch.relu(biaffine_pre)
             shaking_pre = add_presentation(shaking_pre, biaffine_pre)
+            pre_num += 1
 
-        return shaking_pre
+        return shaking_pre / pre_num
 
 
 class InteractionKernel(nn.Module):

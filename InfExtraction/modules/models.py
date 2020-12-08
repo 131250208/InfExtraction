@@ -231,6 +231,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         if self.subwd_encoder_config is not None:
             # subword_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
             context_oudtuts = self.bert(subword_input_ids, attention_mask, token_type_ids)
+            self.attn_tuple = context_oudtuts[3]
             hidden_states = context_oudtuts[2]
             # subword_hiddens: (batch_size, seq_len, hidden_size)
             subword_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_bert:], dim=0),
@@ -390,6 +391,7 @@ class TPLinkerPP(IEModel):
                  matrix_size=None,
                  conv_config=None,
                  inter_kernel_config=None,
+                 use_attns4rel=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -413,6 +415,10 @@ class TPLinkerPP(IEModel):
                                                         rel_shaking_type,
                                                         only_look_after=False,
                                                         )
+
+        self.use_attns4rel = use_attns4rel
+        if use_attns4rel is not None:
+            self.attns_fc = nn.Linear(self.bert.num_hidden_layers * self.bert.num_attention_heads, rel_dim)
 
         # learn local info
         self.conv_config = conv_config
@@ -469,8 +475,16 @@ class TPLinkerPP(IEModel):
         ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
         rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
 
+        # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
+        # rel_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
         ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens, ent_hiddens)
         rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
+
+        # attentions: (batch_size, layers * heads, seg_len, seq_len)
+        if self.use_attns:
+            attns = torch.cat(self.attn_tuple, dim=1).permute(0, 2, 3, 1)
+            attns = self.attns_fc(attns)
+            rel_hs_hiddens += attns
 
         if self.conv_config is not None:
             for conv in self.ent_convs:

@@ -33,7 +33,7 @@ from glob import glob
 
 exp_name = "ace2005_lu"
 
-task_type = "tfee"
+task_type = "ee"
 
 # model and tagger(decoder)
 model_name = "TriggerFreeEventExtractor"
@@ -103,7 +103,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = True
+use_wandb = False
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
