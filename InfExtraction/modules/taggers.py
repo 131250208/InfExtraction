@@ -74,22 +74,6 @@ class HandshakingTagger4TPLPlus(Tagger):
             fin_ent_list = sample["entity_list"] if "entity_list" in sample else []
             fin_rel_list = sample["relation_list"]
 
-            # add additional relations btw nested entities
-            for ent_i in sample["entity_list"]:
-                for ent_j in sample["entity_list"]:
-                    if (ent_i["tok_span"][1] - ent_i["tok_span"][0]) < (ent_j["tok_span"][1] - ent_j["tok_span"][0]) \
-                            and ent_i["tok_span"][0] >= ent_j["tok_span"][0] \
-                            and ent_i["tok_span"][1] <= ent_j["tok_span"][1]:
-                        fin_rel_list.append({
-                            "subject": ent_i["text"],
-                            "subj_char_span": ent_i["char_span"],
-                            "subj_tok_span": ent_i["tok_span"],
-                            "object": ent_j["text"],
-                            "obj_char_span": ent_j["char_span"],
-                            "obj_tok_span": ent_j["tok_span"],
-                            "predicate": "EXT:NESTED_IN",
-                        })
-
             for rel in fin_rel_list:
                 # add additional types to entities
                 fin_ent_list.append({
@@ -116,6 +100,30 @@ class HandshakingTagger4TPLPlus(Tagger):
                     "char_span": rel["obj_char_span"],
                     "tok_span": rel["obj_tok_span"],
                 })
+            fin_ent_list = Preprocessor.unique_list(fin_ent_list)
+
+            # add additional relations btw nested entities
+            for ent_i in fin_ent_list:
+                for ent_j in fin_ent_list:
+                    if (ent_i["tok_span"][1] - ent_i["tok_span"][0]) < (ent_j["tok_span"][1] - ent_j["tok_span"][0]) \
+                            and ent_i["tok_span"][0] >= ent_j["tok_span"][0] \
+                            and ent_i["tok_span"][1] <= ent_j["tok_span"][1]:
+                        fin_rel_list.append({
+                            "subject": ent_i["text"],
+                            "subj_char_span": ent_i["char_span"],
+                            "subj_tok_span": ent_i["tok_span"],
+                            "object": ent_j["text"],
+                            "obj_char_span": ent_j["char_span"],
+                            "obj_tok_span": ent_j["tok_span"],
+                            "predicate": "EXT:NESTED_IN",
+                        })
+                        ent_i_cp = copy.deepcopy(ent_i)
+                        ent_i_cp["type"] = "EXT:NESTED_IN"
+                        fin_ent_list.append(ent_i_cp)
+
+                        ent_j_cp = copy.deepcopy(ent_j)
+                        ent_j_cp["type"] = "EXT:NESTED_IN"
+                        fin_ent_list.append(ent_j_cp)
 
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
             sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
