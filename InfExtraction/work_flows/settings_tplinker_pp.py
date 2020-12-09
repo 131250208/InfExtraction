@@ -31,8 +31,8 @@ import copy
 import re
 from glob import glob
 
-exp_name = "nyt_star"
-task_type = "re"  # re
+exp_name = "ace2005_lu"
+task_type = "re+ee"  # re
 
 if "re" in task_type:
     final_score_key = "rel_f1"
@@ -44,7 +44,7 @@ if "ee" in task_type:
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-match_pattern = "only_head_text"
+match_pattern = "whole_span"
 
 # model and tagger(decoder)
 model_name = "TPLinkerPP"
@@ -77,31 +77,25 @@ key2dict = {
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 check_tagging_n_decoding = True
-device_num = 3
+device_num = 11
 epochs = 200
 lr = 5e-5 # 5e-5, 1e-4
-batch_size_train = 6
-batch_size_valid = 6
-batch_size_test = 6
+batch_size_train = 8
+batch_size_valid = 8
+batch_size_test = 8
 
-max_seq_len_train = 100
-max_seq_len_valid = 100
-max_seq_len_test = 100
+max_seq_len_train = 64
+max_seq_len_valid = 64
+max_seq_len_test = 64
 
-sliding_len_train = 20
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_train = 64
+sliding_len_valid = 64
+sliding_len_test = 64
 
 combine = False
 
 scheduler = "CAWR"
 use_ghm = False
-
-# for eval
-if "re" in task_type:
-    final_score_key = "rel_f1"
-if "ee" in task_type:
-    final_score_key = "trigger_class_f1"
 
 model_bag_size = 15
 score_threshold = 0
@@ -175,7 +169,7 @@ char_encoder_config = {
 word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
-    "word_emb_file_path": "../../data/pretrained_emb/glove.6B.100d.txt",
+    "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
@@ -184,7 +178,7 @@ word_encoder_config = {
 }
 
 subwd_encoder_config = {
-    "pretrained_model_path": "../../data/pretrained_models/bert-base-cased",
+    "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",
     "finetune": True,
     "use_last_k_layers": 1,
     "wordpieces_prefix": "##",
@@ -201,8 +195,8 @@ dep_config = {
 
 handshaking_kernel_config = {
 #     "shaking_type": "cln",
-    "ent_shaking_type": "cat+cln+lstm",
-    "rel_shaking_type": "cat+cln",
+    "ent_shaking_type": "cln+lstm",
+    "rel_shaking_type": "cln",
 }
 
 conv_config = {
@@ -217,7 +211,7 @@ inter_kernel_config = {
 }
 
 # model settings
-token_level = "subword" # token is word or subword
+token_level = "word" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 
