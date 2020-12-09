@@ -341,6 +341,6 @@ class MetricsCalculator:
         for key, cpg in total_cpg_dict.items():
             prf = self.get_prf_scores(*cpg)
             for idx, sct in enumerate(["prec", "recall", "f1"]):
-                score_dict["{}_{}_{}".format(data_type, key, sct)] = prf[idx]
+                score_dict["{}_{}_{}".format(data_type, key, sct)] = "{:.5}".format(prf[idx])
 
         return score_dict
