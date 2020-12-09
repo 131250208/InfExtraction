@@ -214,7 +214,7 @@ class CrossLSTM(nn.Module):
             self.lamtha = Parameter(torch.rand(out_feature_dim))  # [0, 1)
 
     def forward(self, matrix):
-        # matrix: (batch_size, matrix_size, matrix_size, hidden_size)
+        # matrix: (batch_size, matrix_ver_len, matrix_hor_len, hidden_size)
         batch_size, matrix_ver_len, matrix_hor_len, hidden_size = matrix.size()
         hor_context, _ = self.horizontal_lstm(matrix.view(-1, matrix_hor_len, hidden_size))
         hor_context = hor_context.view(batch_size, matrix_ver_len, matrix_hor_len, hidden_size)

@@ -229,8 +229,11 @@ class MetricsCalculator:
         '''
         # pred_rel_list = [rel for rel in pred_rel_list if rel["predicate"].split(":")[0] not in {"EE"}]
         # pred_ent_list = [ent for ent in pred_ent_list if ent["type"].split(":")[0] not in {"EXT", "EE"}]
-        # gold_rel_list = [rel for rel in gold_rel_list if rel["predicate"].split(":")[0] not in {"EE"}]
-        # gold_ent_list = [ent for ent in gold_ent_list if ent["type"].split(":")[0] not in {"EXT", "EE"}]
+
+        gold_rel_list = [rel for rel in gold_rel_list
+                         if "EE:" not in rel["predicate"] and "EXT:" not in rel["predicate"]]
+        gold_ent_list = [ent for ent in gold_ent_list
+                         if "EXT:" not in ent["type"] and "EE:" not in ent["type"] and "REL:" not in ent["type"]]
 
         gold_rel_set, gold_ent_set = self._get_mark_sets_rel(gold_rel_list, gold_ent_list, pattern)
         pred_rel_set, pred_ent_set = self._get_mark_sets_rel(pred_rel_list, pred_ent_list, pattern)
