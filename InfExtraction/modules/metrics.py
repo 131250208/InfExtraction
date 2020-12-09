@@ -215,6 +215,7 @@ class MetricsCalculator:
         for mark_str in pred_set:
             if mark_str in gold_set:
                 cpg[0] += 1
+
         cpg[1] += len(pred_set)
         cpg[2] += len(gold_set)
 
