@@ -31,8 +31,8 @@ import copy
 import re
 from glob import glob
 
-exp_name = "ace2005_lu"
-task_type = "re+ee"  # re
+exp_name = "nyt_star"
+task_type = "re"  # re
 
 if "re" in task_type:
     final_score_key = "rel_f1"
@@ -77,16 +77,16 @@ key2dict = {
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 check_tagging_n_decoding = True
-device_num = 3
+device_num = 0
 epochs = 200
 lr = 5e-5 # 5e-5, 1e-4
-batch_size_train = 6
-batch_size_valid = 6
-batch_size_test = 6
+batch_size_train = 24
+batch_size_valid = 24
+batch_size_test = 24
 
-max_seq_len_train = 100
-max_seq_len_valid = 100
-max_seq_len_test = 100
+max_seq_len_train = 64
+max_seq_len_valid = 64
+max_seq_len_test = 64
 
 sliding_len_train = 20
 sliding_len_valid = 20
@@ -96,12 +96,6 @@ combine = False
 
 scheduler = "CAWR"
 use_ghm = False
-
-# for eval
-if "re" in task_type:
-    final_score_key = "rel_f1"
-if "ee" in task_type:
-    final_score_key = "trigger_class_f1"
 
 model_bag_size = 15
 score_threshold = 0
@@ -201,8 +195,8 @@ dep_config = {
 
 handshaking_kernel_config = {
 #     "shaking_type": "cln",
-    "ent_shaking_type": "cat+cln+lstm",
-    "rel_shaking_type": "cat+cln",
+    "ent_shaking_type": "cln+lstm",
+    "rel_shaking_type": "cln",
 }
 
 conv_config = {
@@ -217,7 +211,7 @@ inter_kernel_config = {
 }
 
 # model settings
-token_level = "word" # token is word or subword
+token_level = "subword" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 
@@ -227,12 +221,12 @@ model_settings = {
 #     "pos_tag_emb_config": pos_tag_emb_config,
 #     "ner_tag_emb_config": ner_tag_emb_config,
 #     "char_encoder_config": char_encoder_config,
-#     "subwd_encoder_config": subwd_encoder_config,
-    "word_encoder_config": word_encoder_config,
+    "subwd_encoder_config": subwd_encoder_config,
+#     "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": True,
-    "conv_config": conv_config,
+#     "conv_config": conv_config,
     "inter_kernel_config": inter_kernel_config,
 #     "fin_hidden_size": 1024,
     "ent_dim": 768,
@@ -243,11 +237,12 @@ if model_name == "TPLinkerPP":
     assert max_seq_len_train == max_seq_len_valid == max_seq_len_test
     model_settings["matrix_size"] = max_seq_len_train
 
-# this dict would be logged
+
 model_settings_log = copy.deepcopy(model_settings)
 if "word_encoder_config" in model_settings_log and model_settings_log["word_encoder_config"] is not None:
     del model_settings_log["word_encoder_config"]["word2id"]
 
+# this dict would be logged
 config_to_log = {
     "model_name": model_name,
     "seed": seed,
