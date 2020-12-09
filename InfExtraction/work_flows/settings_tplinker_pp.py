@@ -44,7 +44,7 @@ if "ee" in task_type:
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-match_pattern = "whole_span"
+match_pattern = "only_head_text"
 
 # model and tagger(decoder)
 model_name = "TPLinkerPP"
@@ -77,21 +77,12 @@ key2dict = {
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 check_tagging_n_decoding = True
-<<<<<<< HEAD
 device_num = 0
-epochs = 200
+epochs = 100
 lr = 5e-5 # 5e-5, 1e-4
 batch_size_train = 24
 batch_size_valid = 24
 batch_size_test = 24
-=======
-device_num = 11
-epochs = 200
-lr = 5e-5 # 5e-5, 1e-4
-batch_size_train = 8
-batch_size_valid = 8
-batch_size_test = 8
->>>>>>> 1fc72db2996080bb746bcdbe7b3df7fdf360cc0f
 
 max_seq_len_train = 64
 max_seq_len_valid = 64
@@ -178,7 +169,7 @@ char_encoder_config = {
 word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
-    "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
+    "word_emb_file_path": "../../data/pretrained_emb/glove.6B.100d.txt",
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
@@ -187,7 +178,7 @@ word_encoder_config = {
 }
 
 subwd_encoder_config = {
-    "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",
+    "pretrained_model_path": "../../data/pretrained_models/bert-base-cased",
     "finetune": True,
     "use_last_k_layers": 1,
     "wordpieces_prefix": "##",
@@ -203,7 +194,6 @@ dep_config = {
 }
 
 handshaking_kernel_config = {
-#     "shaking_type": "cln",
     "ent_shaking_type": "cln+lstm",
     "rel_shaking_type": "cln",
 }
@@ -234,10 +224,9 @@ model_settings = {
 #     "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "use_attns4rel": True,
-#     "conv_config": conv_config,
+#    "use_attns4rel": True,
+    "conv_config": conv_config,
     "inter_kernel_config": inter_kernel_config,
-#     "fin_hidden_size": 1024,
     "ent_dim": 768,
     "rel_dim": 768,
 }

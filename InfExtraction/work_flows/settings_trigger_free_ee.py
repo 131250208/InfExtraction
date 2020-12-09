@@ -64,7 +64,7 @@ key2dict = {
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 check_tagging_n_decoding = True
-device_num = 10
+device_num = 0
 epochs = 200
 lr = 5e-5 # 5e-5, 1e-4
 batch_size_train = 8
