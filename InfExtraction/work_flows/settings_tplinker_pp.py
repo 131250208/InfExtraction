@@ -34,7 +34,7 @@ from glob import glob
 exp_name = "ace2005_lu"
 task_type = "re+ee"  # re
 
-if task_type == "re":
+if "re" in task_type:
     final_score_key = "rel_f1"
 if "ee" in task_type:
     final_score_key = "trigger_class_f1"
