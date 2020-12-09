@@ -78,13 +78,13 @@ class HandshakingTagger4TPLPlus(Tagger):
                 # add additional types to entities
                 fin_ent_list.append({
                     "text": rel["subject"],
-                    "type": rel["predicate"],
+                    "type": "REL:{}".format(rel["predicate"]),
                     "char_span": rel["subj_char_span"],
                     "tok_span": rel["subj_tok_span"],
                 })
                 fin_ent_list.append({
                     "text": rel["object"],
-                    "type": rel["predicate"],
+                    "type": "REL:{}".format(rel["predicate"]),
                     "char_span": rel["obj_char_span"],
                     "tok_span": rel["obj_tok_span"],
                 })
@@ -118,11 +118,11 @@ class HandshakingTagger4TPLPlus(Tagger):
                             "predicate": "EXT:NESTED_IN",
                         })
                         ent_i_cp = copy.deepcopy(ent_i)
-                        ent_i_cp["type"] = "EXT:NESTED_IN"
+                        ent_i_cp["type"] = "REL:EXT:NESTED_IN"
                         fin_ent_list.append(ent_i_cp)
 
                         ent_j_cp = copy.deepcopy(ent_j)
-                        ent_j_cp["type"] = "EXT:NESTED_IN"
+                        ent_j_cp["type"] = "REL:EXT:NESTED_IN"
                         fin_ent_list.append(ent_j_cp)
 
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
@@ -276,9 +276,9 @@ class HandshakingTagger4TPLPlus(Tagger):
             rel, link_type = tag.split(self.separator)
 
             if link_type == "SH2OH":
-                subj_head_key, obj_head_key = "{},{}".format(rel, str(sp[0])), "{},{}".format(rel, str(sp[1]))
+                subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(sp[0])), "REL:{},{}".format(rel, str(sp[1]))
             elif link_type == "OH2SH":
-                subj_head_key, obj_head_key = "{},{}".format(rel, str(sp[1])), "{},{}".format(rel, str(sp[0]))
+                subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(sp[1])), "REL:{},{}".format(rel, str(sp[0]))
             else:
                 continue
 
@@ -310,9 +310,9 @@ class HandshakingTagger4TPLPlus(Tagger):
                     })
 
         pred_sample = copy.deepcopy(sample)
-        # change to predicted relation list and entity list
+        # filter
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
-        pred_sample["entity_list"] = [ent for ent in ent_list if "EXT:" not in ent["type"]]
+        pred_sample["entity_list"] = [ent for ent in ent_list if "EXT:" not in ent["type"] and "REL:" not in ent["type"]]
         return pred_sample
 
 
@@ -496,9 +496,9 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
             rel, link_type = tag.split(self.separator)
 
             if link_type == "SH2OH":
-                subj_head_key, obj_head_key = "{},{}".format(rel, str(pt[0])), "{},{}".format(rel, str(pt[1]))
+                subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[0])), "REL:{},{}".format(rel, str(pt[1]))
             elif link_type == "OH2SH":
-                subj_head_key, obj_head_key = "{},{}".format(rel, str(pt[1])), "{},{}".format(rel, str(pt[0]))
+                subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[1])), "REL:{},{}".format(rel, str(pt[0]))
             else:
                 continue
 
@@ -530,9 +530,9 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
                     })
 
         pred_sample = copy.deepcopy(sample)
-        # change to predicted relation list and entity list
+        # filter
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
-        pred_sample["entity_list"] = [ent for ent in ent_list if "EXT:" not in ent["type"]]
+        pred_sample["entity_list"] = [ent for ent in ent_list if "EXT:" not in ent["type"] and "REL:" not in ent["type"]]
 
         return pred_sample
 
