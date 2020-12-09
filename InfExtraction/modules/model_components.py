@@ -192,7 +192,7 @@ class HandshakingKernel(nn.Module):
 
 
 class CrossLSTM(nn.Module):
-    def __init__(self, in_feature_dim, out_feature_dim, num_layers=1):
+    def __init__(self, in_feature_dim, out_feature_dim, num_layers=1, hv_comb_type="cat"):
         super().__init__()
         self.vertical_lstm = nn.LSTM(in_feature_dim,
                                   out_feature_dim // 2,
@@ -205,7 +205,13 @@ class CrossLSTM(nn.Module):
                                   bidirectional=True,
                                   batch_first=True)
 
-        self.combine_fc = nn.Linear(out_feature_dim * 2, out_feature_dim)
+        self.hv_comb_type = hv_comb_type
+        if hv_comb_type == "cat":
+            self.combine_fc = nn.Linear(out_feature_dim * 2, out_feature_dim)
+        elif hv_comb_type == "add":
+            pass
+        elif hv_comb_type == "interpolate":
+            self.lamtha = Parameter(torch.rand(out_feature_dim))  # [0, 1)
 
     def forward(self, matrix):
         # matrix: (batch_size, matrix_size, matrix_size, hidden_size)
@@ -217,19 +223,27 @@ class CrossLSTM(nn.Module):
         ver_context = ver_context.view(batch_size, matrix_hor_len, matrix_ver_len, hidden_size)
         ver_context = ver_context.permute(0, 2, 1, 3)
 
-        return torch.relu(self.combine_fc(torch.cat([hor_context, ver_context], dim=-1)))
+        comb_context = None
+        if self.hv_comb_type == "cat":
+            comb_context = torch.relu(self.combine_fc(torch.cat([hor_context, ver_context], dim=-1)))
+        elif self.hv_comb_type == "interpolate":
+            comb_context = self.lamtha * hor_context + (1 - self.lamtha) * ver_context
+        elif self.hv_comb_type == "add":
+            comb_context = (hor_context + ver_context) / 2
+
+        return comb_context
 
 
 class InteractionKernel(nn.Module):
-    def __init__(self, ent_dim, rel_dim, num_layers_cross_lstm=2):
+    def __init__(self, ent_dim, rel_dim, num_layers_crlstm, hv_comb_type_crlstm):
         super(InteractionKernel, self).__init__()
         # self.ent_alpha = Parameter(torch.randn([ent_dim, matrix_size, 1]))
         # self.ent_beta = Parameter(torch.randn([ent_dim, 1, matrix_size]))
         # self.rel_alpha = Parameter(torch.randn([rel_dim, matrix_size, 1]))
         # self.rel_beta = Parameter(torch.randn([rel_dim, 1, matrix_size]))
 
-        self.cross_lstm4ent = CrossLSTM(ent_dim, ent_dim, num_layers=num_layers_cross_lstm)
-        self.cross_lstm4rel = CrossLSTM(rel_dim, rel_dim, num_layers=num_layers_cross_lstm)
+        self.cross_lstm4ent = CrossLSTM(ent_dim, ent_dim, num_layers_crlstm, hv_comb_type_crlstm)
+        self.cross_lstm4rel = CrossLSTM(rel_dim, rel_dim, num_layers_crlstm, hv_comb_type_crlstm)
 
         self.drop_lamtha = Parameter(torch.rand(rel_dim))  # [0, 1)
 

@@ -443,8 +443,9 @@ class TPLinkerPP(IEModel):
 
         self.inter_kernel_config = inter_kernel_config
         if self.inter_kernel_config is not None:
-            num_layers_cross_lstm = inter_kernel_config["num_layers_cross_lstm"]
-            self.inter_kernel = InteractionKernel(ent_dim, rel_dim, num_layers_cross_lstm)
+            num_layers_cross_lstm = inter_kernel_config["num_layers_crlstm"]
+            hv_comb_type = inter_kernel_config["hv_comb_type_crlstm"]
+            self.inter_kernel = InteractionKernel(ent_dim, rel_dim, num_layers_cross_lstm, hv_comb_type)
 
         # decoding fc
         self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
