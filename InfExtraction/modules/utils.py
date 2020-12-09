@@ -21,7 +21,7 @@ class MyMatrix:
         matrix_size = MyMaths.handshaking_len2matrix_size(handshaking_seq_len)
         map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
         mirror_select_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
-        mirror_select_vec = torch.tensor(mirror_select_ids).to(shaking_seq.device())
+        mirror_select_vec = torch.tensor(mirror_select_ids).to(shaking_seq.device)
 
         # shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_mirror_gather_tensor)
 
