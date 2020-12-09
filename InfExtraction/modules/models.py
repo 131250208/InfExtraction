@@ -388,7 +388,6 @@ class TPLinkerPP(IEModel):
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  rel_dim=None,
-                 matrix_size=None,
                  conv_config=None,
                  inter_kernel_config=None,
                  use_attns4rel=None,
@@ -444,7 +443,7 @@ class TPLinkerPP(IEModel):
 
         self.inter_kernel_config = inter_kernel_config
         if self.inter_kernel_config is not None:
-            self.inter_kernel = InteractionKernel(ent_dim, rel_dim, matrix_size)
+            self.inter_kernel = InteractionKernel(ent_dim, rel_dim)
 
         # decoding fc
         self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
