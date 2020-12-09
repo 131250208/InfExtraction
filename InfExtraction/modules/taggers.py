@@ -690,6 +690,12 @@ def create_rebased_ee_tagger(base_class):
                                 arg_role = t2
                                 if arg_role not in self.event_type2arg_rols[et]:
                                     continue
+
+                                if trig_offset_str not in trigger_offset2event2arguments:
+                                    trigger_offset2event2arguments[trig_offset_str] = {}
+                                if et not in trigger_offset2event2arguments[trig_offset_str]:
+                                    trigger_offset2event2arguments[trig_offset_str][et] = []
+
                                 trigger_offset2event2arguments[trig_offset_str][et].append({
                                     "text": ent["text"],
                                     "type": arg_role,
