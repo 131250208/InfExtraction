@@ -3,7 +3,8 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
-from InfExtraction.modules.preprocess import Indexer, Preprocessor
+from InfExtraction.modules.preprocess import Preprocessor
+from InfExtraction.modules.utils import MyMatrix
 import time
 import re
 
@@ -190,82 +191,109 @@ class HandshakingKernel(nn.Module):
         return shaking_pre / pre_num
 
 
-class InteractionKernel(nn.Module):
-    def __init__(self, ent_dim, rel_dim, matrix_size):
-        super(InteractionKernel, self).__init__()
-        self.ent_alpha = Parameter(torch.randn([ent_dim, matrix_size, 1]))
-        self.ent_beta = Parameter(torch.randn([ent_dim, 1, matrix_size]))
-        self.rel_alpha = Parameter(torch.randn([rel_dim, matrix_size, 1]))
-        self.rel_beta = Parameter(torch.randn([rel_dim, 1, matrix_size]))
-        self.drop_lamtha = Parameter(torch.rand(rel_dim)) # [0, 1)
+class CrossLSTM(nn.Module):
+    def __init__(self, in_feature_dim, out_feature_dim, num_layers=1):
+        super().__init__()
+        self.vertical_lstm = nn.LSTM(in_feature_dim,
+                                  out_feature_dim // 2,
+                                  num_layers=num_layers,
+                                  bidirectional=True,
+                                  batch_first=True)
+        self.horizontal_lstm = nn.LSTM(in_feature_dim,
+                                  out_feature_dim // 2,
+                                  num_layers=num_layers,
+                                  bidirectional=True,
+                                  batch_first=True)
 
-        self.matrix_size = matrix_size
-        map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
-        mirror_gather_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
-        upper_gather_ids = [i * matrix_size + j for i in range(matrix_size) for j in range(matrix_size) if i <= j]
-        lower_gather_ids = [j * matrix_size + i for i in range(matrix_size) for j in range(matrix_size) if i <= j]
-        self.mirror_gather_tensor = Parameter(torch.tensor(mirror_gather_ids), requires_grad=False)
-        self.upper_gather_tensor = Parameter(torch.tensor(upper_gather_ids), requires_grad=False)
-        self.lower_gather_tensor = Parameter(torch.tensor(lower_gather_ids), requires_grad=False)
-        self.cached_mirror_gather_tensor = None
-        self.cached_upper_gather_tensor = None
-        self.cached_lower_gather_tensor = None
+        self.combine_fc = nn.Linear(out_feature_dim * 2, out_feature_dim)
+
+    def forward(self, matrix):
+        # matrix: (batch_size, matrix_size, matrix_size, hidden_size)
+        batch_size, matrix_ver_len, matrix_hor_len, hidden_size = matrix.size()
+        hor_context, _ = self.horizontal_lstm(matrix.view(-1, matrix_hor_len, hidden_size))
+        hor_context = hor_context.view(batch_size, matrix_ver_len, matrix_hor_len, hidden_size)
+
+        ver_context, _ = self.vertical_lstm(matrix.permute(0, 2, 1, 3).contiguous().view(-1, matrix_ver_len, hidden_size))
+        ver_context = ver_context.view(batch_size, matrix_hor_len, matrix_ver_len, hidden_size)
+        ver_context = ver_context.permute(0, 2, 1, 3)
+
+        return torch.relu(self.combine_fc(torch.cat([hor_context, ver_context], dim=-1)))
+
+
+class InteractionKernel(nn.Module):
+    def __init__(self, ent_dim, rel_dim, num_layers_cross_lstm=2):
+        super(InteractionKernel, self).__init__()
+        # self.ent_alpha = Parameter(torch.randn([ent_dim, matrix_size, 1]))
+        # self.ent_beta = Parameter(torch.randn([ent_dim, 1, matrix_size]))
+        # self.rel_alpha = Parameter(torch.randn([rel_dim, matrix_size, 1]))
+        # self.rel_beta = Parameter(torch.randn([rel_dim, 1, matrix_size]))
+
+        self.cross_lstm4ent = CrossLSTM(ent_dim, ent_dim, num_layers=num_layers_cross_lstm)
+        self.cross_lstm4rel = CrossLSTM(rel_dim, rel_dim, num_layers=num_layers_cross_lstm)
+
+        self.drop_lamtha = Parameter(torch.rand(rel_dim))  # [0, 1)
+
+        # self.matrix_size = matrix_size
+        # map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        # mirror_select_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
+        # self.mirror_select_vec = Parameter(torch.tensor(mirror_select_ids), requires_grad=False)
+        # upper_gather_ids = [i * matrix_size + j for i in range(matrix_size) for j in range(matrix_size) if i <= j]
+        # lower_gather_ids = [j * matrix_size + i for i in range(matrix_size) for j in range(matrix_size) if i <= j]
+        # self.upper_gather_tensor = Parameter(torch.tensor(upper_gather_ids), requires_grad=False)
+        # self.lower_gather_tensor = Parameter(torch.tensor(lower_gather_ids), requires_grad=False)
+        # self.cached_mirror_gather_tensor = None
+        # self.cached_upper_gather_tensor = None
+        # self.cached_lower_gather_tensor = None
 
         self.ent_guide_rel_cln = LayerNorm(rel_dim, ent_dim, conditional=True)
         self.rel_guide_ent_cln = LayerNorm(ent_dim, rel_dim, conditional=True)
 
-    def _mirror(self, shaking_seq):
-        batch_size, _, hidden_size = shaking_seq.size()
-
-        if self.cached_mirror_gather_tensor is None or \
-                self.cached_mirror_gather_tensor.size()[0] != batch_size:
-            self.cached_mirror_gather_tensor = self.mirror_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
-
-        shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_mirror_gather_tensor)
-        matrix = shaking_hiddens.view(batch_size, self.matrix_size, self.matrix_size, hidden_size)
-        return matrix
-
-    def _drop_lower_triangle(self, matrix_seq):
-        batch_size, matrix_size, _, hidden_size = matrix_seq.size()
-        shaking_seq = matrix_seq.view(batch_size, -1, hidden_size)
-
-        if self.cached_upper_gather_tensor is None or \
-                self.cached_upper_gather_tensor.size()[0] != batch_size:
-            self.cached_upper_gather_tensor = self.upper_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
-
-        if self.cached_lower_gather_tensor is None or \
-                self.cached_lower_gather_tensor.size()[0] != batch_size:
-            self.cached_lower_gather_tensor = self.lower_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
-
-        upper_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_upper_gather_tensor)
-        lower_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_lower_gather_tensor)
-
-        return self.drop_lamtha * upper_shaking_hiddens + (1 - self.drop_lamtha) * lower_shaking_hiddens
+    # def _drop_lower_triangle(self, matrix_seq):
+    #     batch_size, matrix_size, _, hidden_size = matrix_seq.size()
+    #     shaking_seq = matrix_seq.view(batch_size, -1, hidden_size)
+    #
+    #     if self.cached_upper_gather_tensor is None or \
+    #             self.cached_upper_gather_tensor.size()[0] != batch_size:
+    #         self.cached_upper_gather_tensor = self.upper_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
+    #
+    #     if self.cached_lower_gather_tensor is None or \
+    #             self.cached_lower_gather_tensor.size()[0] != batch_size:
+    #         self.cached_lower_gather_tensor = self.lower_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
+    #
+    #     upper_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_upper_gather_tensor)
+    #     lower_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_lower_gather_tensor)
+    #
+    #     return self.drop_lamtha * upper_shaking_hiddens + (1 - self.drop_lamtha) * lower_shaking_hiddens
 
     def forward(self, ent_hs_hiddens, rel_hs_hiddens):
         batch_size, matrix_size, _, _ = rel_hs_hiddens.size()
 
         # ent_hs_hiddens_mirror: (batch_size, matrix_size, matrix_size, ent_dim)
-        ent_hs_hiddens_mirror = self._mirror(ent_hs_hiddens)
+        ent_hs_hiddens_mirror = MyMatrix.mirror(ent_hs_hiddens)
 
-        # ent_row_cont: (batch_size, ent_dim, matrix_size, 1)
-        ent_row_cont = torch.matmul(ent_hs_hiddens_mirror.permute(0, 3, 1, 2), self.ent_alpha)
-        # ent_col_cont: (batch_size, ent_dim, 1, matrix_size)
-        ent_col_cont = torch.matmul(self.ent_beta, ent_hs_hiddens_mirror.permute(0, 3, 1, 2))
-        # ent_context: (batch_size, matrix_size, matrix_size, ent_dim)
-        ent_context = torch.matmul(ent_row_cont, ent_col_cont).permute(0, 2, 3, 1)
+        # # ent_row_cont: (batch_size, ent_dim, matrix_size, 1)
+        # ent_row_cont = torch.matmul(ent_hs_hiddens_mirror.permute(0, 3, 1, 2), self.ent_alpha)
+        # # ent_col_cont: (batch_size, ent_dim, 1, matrix_size)
+        # ent_col_cont = torch.matmul(self.ent_beta, ent_hs_hiddens_mirror.permute(0, 3, 1, 2))
+        # # ent_context: (batch_size, matrix_size, matrix_size, ent_dim)
+        # ent_context = torch.matmul(ent_row_cont, ent_col_cont).permute(0, 2, 3, 1)
+        ent_context = self.cross_lstm4ent(ent_hs_hiddens_mirror)
         rel_hs_hiddens_guided = self.ent_guide_rel_cln(rel_hs_hiddens, ent_context)
 
-        # rel_row_cont: (batch_size, rel_dim, matrix_size, 1)
-        rel_row_cont = torch.matmul(rel_hs_hiddens_guided.permute(0, 3, 1, 2), self.rel_alpha)
-        # rel_col_cont: (batch_size, rel_dim, 1, matrix_size)
-        rel_col_cont = torch.matmul(self.rel_beta, rel_hs_hiddens_guided.permute(0, 3, 1, 2))
-        # rel_context: (batch_size, matrix_size, matrix_size, rel_dim)
-        rel_context = torch.matmul(rel_row_cont, rel_col_cont).permute(0, 2, 3, 1)
-        # rel_context: (batch_size, shaking_seq_len, rel_dim)
-        rel_context = self._drop_lower_triangle(rel_context)
+        # # rel_row_cont: (batch_size, rel_dim, matrix_size, 1)
+        # rel_row_cont = torch.matmul(rel_hs_hiddens_guided.permute(0, 3, 1, 2), self.rel_alpha)
+        # # rel_col_cont: (batch_size, rel_dim, 1, matrix_size)
+        # rel_col_cont = torch.matmul(self.rel_beta, rel_hs_hiddens_guided.permute(0, 3, 1, 2))
+        # # rel_context: (batch_size, matrix_size, matrix_size, rel_dim)
+        # rel_context = torch.matmul(rel_row_cont, rel_col_cont).permute(0, 2, 3, 1)
+        rel_context = self.cross_lstm4rel(rel_hs_hiddens_guided)
 
-        ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context)
+        rel_upper_context = MyMatrix.drop_lower_diag(rel_context)
+        rel_lower_context = MyMatrix.drop_lower_diag(rel_context.permute(0, 2, 1, 3))
+        # rel_context_flat: (batch_size, shaking_seq_len, rel_dim)
+        rel_context_flat = self.drop_lamtha * rel_upper_context + (1 - self.drop_lamtha) * rel_lower_context
+
+        ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context_flat)
         
         return ent_hs_hiddens_guided, rel_hs_hiddens_guided
 
