@@ -31,8 +31,8 @@ import copy
 import re
 from glob import glob
 
-exp_name = "ace2005_lu"
-task_type = "re+ee"  # re
+exp_name = "nyt_star"
+task_type = "re"  # re
 
 if task_type == "re":
     final_score_key = "rel_f1"
@@ -44,7 +44,7 @@ if "ee" in task_type:
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-match_pattern = "whole_span"
+match_pattern = "only_head_text"
 
 # model and tagger(decoder)
 model_name = "TPLinkerPP"
@@ -217,7 +217,7 @@ inter_kernel_config = {
 }
 
 # model settings
-token_level = "word" # token is word or subword
+token_level = "subword" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 
@@ -227,8 +227,8 @@ model_settings = {
 #     "pos_tag_emb_config": pos_tag_emb_config,
 #     "ner_tag_emb_config": ner_tag_emb_config,
 #     "char_encoder_config": char_encoder_config,
-#     "subwd_encoder_config": subwd_encoder_config,
-    "word_encoder_config": word_encoder_config,
+    "subwd_encoder_config": subwd_encoder_config,
+#    "word_encoder_config": word_encoder_config,
 #     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": True,
