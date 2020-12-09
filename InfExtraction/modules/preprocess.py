@@ -332,7 +332,7 @@ class Preprocessor:
     def drop_lower_diag(ori_tensor):
         '''
         :param ori_tensor: (batch_size, matrix_size, matrix_size, hidden_size)
-        :return:
+        :return: (batch_size, matrix_size + ... + 1, hidden_size)
         '''
         tensor = ori_tensor.permute(0, 3, 1, 2).contiguous()
         uppder_ones = torch.ones([tensor.size()[-1], tensor.size()[-1]]).long().triu().to(ori_tensor.device)
