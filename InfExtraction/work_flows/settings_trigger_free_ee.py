@@ -64,9 +64,9 @@ key2dict = {
 # train, valid, test settings
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 check_tagging_n_decoding = True
-device_num = 1
+device_num = 10
 epochs = 200
-lr = 1e-4 # 5e-5, 1e-4
+lr = 5e-5 # 5e-5, 1e-4
 batch_size_train = 8
 batch_size_valid = 8
 batch_size_test = 8
@@ -157,7 +157,7 @@ word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
     # 
-    "word_emb_file_path": "../../data/pretrained_emb/glove.6B.100d.txt",
+    "word_emb_file_path": "../../data/pretrained_emb/eegcn_word_emb.txt",
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
@@ -166,7 +166,7 @@ word_encoder_config = {
 }
 
 subwd_encoder_config = {
-    "pretrained_model_path": "../../data/pretrained_models/bert-base-cased",
+    "pretrained_model_path": "../../data/pretrained_models/bert-base-uncased",
     "finetune": True,
     "use_last_k_layers": 1,
     "wordpieces_prefix": "##",
@@ -182,7 +182,7 @@ dep_config = {
 }
 
 handshaking_kernel_config = {
-    "shaking_type": "cat+cln",
+    "shaking_type": "cln",
 }
 
 conv_config = {
@@ -197,15 +197,15 @@ token_level = "word" # token is word or subword
 # to do an ablation study, you can remove components by commenting the configurations below
 # except for handshaking_kernel_config, which is a must for the model
 model_settings = {
-#     "pos_tag_emb_config": pos_tag_emb_config,
-#     "ner_tag_emb_config": ner_tag_emb_config,
-#     "char_encoder_config": char_encoder_config,
-#     "subwd_encoder_config": subwd_encoder_config,
+    "pos_tag_emb_config": pos_tag_emb_config,
+    "ner_tag_emb_config": ner_tag_emb_config,
+    "char_encoder_config": char_encoder_config,
+    "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
-#     "dep_config": dep_config,
+    "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "conv_config": conv_config,
-    "fin_hidden_size": 512,
+    "fin_hidden_size": 1024,
 }
 if model_name == "TPLinkerPP":
     assert max_seq_len_train == max_seq_len_valid == max_seq_len_test

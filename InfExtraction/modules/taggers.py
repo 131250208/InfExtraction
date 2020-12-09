@@ -100,11 +100,11 @@ class HandshakingTagger4TPLPlus(Tagger):
                     "char_span": rel["obj_char_span"],
                     "tok_span": rel["obj_tok_span"],
                 })
-            fin_ent_list = Preprocessor.unique_list(fin_ent_list)
+            sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
 
             # add additional relations btw nested entities
-            for ent_i in fin_ent_list:
-                for ent_j in fin_ent_list:
+            for ent_i in sample["entity_list"]:
+                for ent_j in sample["entity_list"]:
                     if (ent_i["tok_span"][1] - ent_i["tok_span"][0]) < (ent_j["tok_span"][1] - ent_j["tok_span"][0]) \
                             and ent_i["tok_span"][0] >= ent_j["tok_span"][0] \
                             and ent_i["tok_span"][1] <= ent_j["tok_span"][1]:
