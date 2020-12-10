@@ -259,13 +259,14 @@ class CrossConv(nn.Module):
         cross_context = torch.matmul(hor_cont, ver_cont).permute(0, 2, 3, 1)
         return cross_context
 
+
 class CrossPool(nn.Module):
     def __init__(self, hidden_size):
         super(CrossPool, self).__init__()
         self.lamtha = Parameter(torch.rand(hidden_size))
 
     def mix_pool(self, tensor, dim):
-        return self.lamtha * torch.mean(tensor, dim=dim) + (1 - self.lamtha) * torch.max(tensor, dim=dim)
+        return self.lamtha * torch.mean(tensor, dim=dim) + (1 - self.lamtha) * torch.max(tensor, dim=dim)[0]
 
     def forward(self, matrix_tensor):
         # matrix_tensor: (batch_size, ver_dim, hor_dim, hidden_size)
