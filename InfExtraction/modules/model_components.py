@@ -271,10 +271,10 @@ class CrossPool(nn.Module):
     def forward(self, matrix_tensor):
         # matrix_tensor: (batch_size, ver_dim, hor_dim, hidden_size)
         # hor_cont: (batch_size, hidden_size, ver_dim, 1)
-        hor_cont = self.mix_pool(matrix_tensor.permute(0, 3, 1, 2), dim=-1)[:, :, :, None]
+        hor_cont = self.mix_pool(matrix_tensor, dim=2)[:, :, None, :].permute(0, 3, 1, 2)
 
         # ver_cont: (batch_size, hidden_size, 1, hor_dim)
-        ver_cont = self.mix_pool(matrix_tensor.permute(0, 3, 1, 2), dim=-2)[:, :, None, :]
+        ver_cont = self.mix_pool(matrix_tensor, dim=1)[:, None, :, :].permute(0, 3, 1, 2)
 
         # cross_context: (batch_size, ver_dim, hor_dim, hidden_size)
         cross_context = torch.matmul(hor_cont, ver_cont).permute(0, 2, 3, 1)
