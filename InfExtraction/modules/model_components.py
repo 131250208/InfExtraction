@@ -192,7 +192,12 @@ class HandshakingKernel(nn.Module):
 
 
 class CrossLSTM(nn.Module):
-    def __init__(self, in_feature_dim, out_feature_dim, num_layers=1, hv_comb_type="cat"):
+    def __init__(self,
+                 in_feature_dim=None,
+                 out_feature_dim=None,
+                 num_layers=1,
+                 hv_comb_type="cat"
+                 ):
         super().__init__()
         self.vertical_lstm = nn.LSTM(in_feature_dim,
                                   out_feature_dim // 2,
@@ -234,18 +239,75 @@ class CrossLSTM(nn.Module):
         return comb_context
 
 
+class CrossConv(nn.Module):
+    def __init__(self,
+                 channel_dim,
+                 hor_dim,
+                 ver_dim
+                 ):
+        super(CrossConv, self).__init__()
+        self.alpha = Parameter(torch.randn([channel_dim, hor_dim, 1]))
+        self.beta = Parameter(torch.randn([channel_dim, 1, ver_dim]))
+
+    def forward(self, matrix_tensor):
+        # matrix_tensor: (batch_size, ver_dim, hor_dim, hidden_size)
+        # hor_cont: (batch_size, hidden_size (channel dim), ver_dim, 1)
+        hor_cont = torch.matmul(matrix_tensor.permute(0, 3, 1, 2), self.alpha)
+        # ver_cont: (batch_size, hidden_size, 1, hor_dim)
+        ver_cont = torch.matmul(self.beta, matrix_tensor.permute(0, 3, 1, 2))
+        # cross_context: (batch_size, ver_dim, hor_dim, hidden_size)
+        cross_context = torch.matmul(hor_cont, ver_cont).permute(0, 2, 3, 1)
+        return cross_context
+
+class CrossPool(nn.Module):
+    def __init__(self, hidden_size):
+        super(CrossPool, self).__init__()
+        self.lamtha = Parameter(torch.rand(hidden_size))
+
+    def mix_pool(self, tensor, dim):
+        return self.lamtha * torch.mean(tensor, dim=dim) + (1 - self.lamtha) * torch.max(tensor, dim=dim)
+
+    def forward(self, matrix_tensor):
+        # matrix_tensor: (batch_size, ver_dim, hor_dim, hidden_size)
+        # hor_cont: (batch_size, hidden_size, ver_dim, 1)
+        hor_cont = self.mix_pool(matrix_tensor.permute(0, 3, 1, 2), dim=-1)[:, :, :, None]
+
+        # ver_cont: (batch_size, hidden_size, 1, hor_dim)
+        ver_cont = self.mix_pool(matrix_tensor.permute(0, 3, 1, 2), dim=-2)[:, :, None, :]
+
+        # cross_context: (batch_size, ver_dim, hor_dim, hidden_size)
+        cross_context = torch.matmul(hor_cont, ver_cont).permute(0, 2, 3, 1)
+        return cross_context
+
+
 class InteractionKernel(nn.Module):
-    def __init__(self, ent_dim, rel_dim, num_layers_crlstm, hv_comb_type_crlstm):
+    def __init__(self,
+                 ent_dim,
+                 rel_dim,
+                 cross_enc_type=None,
+                 cross_enc_config=None,
+                 ):
         super(InteractionKernel, self).__init__()
         # self.ent_alpha = Parameter(torch.randn([ent_dim, matrix_size, 1]))
         # self.ent_beta = Parameter(torch.randn([ent_dim, 1, matrix_size]))
         # self.rel_alpha = Parameter(torch.randn([rel_dim, matrix_size, 1]))
         # self.rel_beta = Parameter(torch.randn([rel_dim, 1, matrix_size]))
 
-        self.cross_lstm4ent = CrossLSTM(ent_dim, ent_dim, num_layers_crlstm, hv_comb_type_crlstm)
-        self.cross_lstm4rel = CrossLSTM(rel_dim, rel_dim, num_layers_crlstm, hv_comb_type_crlstm)
+        self.cross_enc_type = cross_enc_type
+        if cross_enc_type == "bilstm":
+            num_layers_crlstm = cross_enc_config["num_layers_crlstm"]
+            hv_comb_type_crlstm = cross_enc_config["hv_comb_type_crlstm"]
+            self.cross_enc4ent = CrossLSTM(ent_dim, ent_dim, num_layers_crlstm, hv_comb_type_crlstm)
+            self.cross_enc4rel = CrossLSTM(rel_dim, rel_dim, num_layers_crlstm, hv_comb_type_crlstm)
+        elif cross_enc_type == "conv":
+            matrix_size = cross_enc_config["matrix_size"]
+            self.cross_enc4ent = CrossConv(ent_dim, matrix_size, matrix_size)
+            self.cross_enc4rel = CrossConv(rel_dim, matrix_size, matrix_size)
+        elif cross_enc_type == "pool":
+            self.cross_enc4ent = CrossPool(ent_dim)
+            self.cross_enc4rel = CrossPool(rel_dim)
 
-        self.drop_lamtha = Parameter(torch.rand(rel_dim))  # [0, 1)
+        self.lamtha4rel_cont = Parameter(torch.rand(rel_dim))  # [0, 1)
 
         # self.matrix_size = matrix_size
         # map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
@@ -277,7 +339,7 @@ class InteractionKernel(nn.Module):
     #     upper_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_upper_gather_tensor)
     #     lower_shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_lower_gather_tensor)
     #
-    #     return self.drop_lamtha * upper_shaking_hiddens + (1 - self.drop_lamtha) * lower_shaking_hiddens
+    #     return self.lamtha4rel_cont * upper_shaking_hiddens + (1 - self.lamtha4rel_cont) * lower_shaking_hiddens
 
     def forward(self, ent_hs_hiddens, rel_hs_hiddens):
         batch_size, matrix_size, _, _ = rel_hs_hiddens.size()
@@ -291,7 +353,7 @@ class InteractionKernel(nn.Module):
         # ent_col_cont = torch.matmul(self.ent_beta, ent_hs_hiddens_mirror.permute(0, 3, 1, 2))
         # # ent_context: (batch_size, matrix_size, matrix_size, ent_dim)
         # ent_context = torch.matmul(ent_row_cont, ent_col_cont).permute(0, 2, 3, 1)
-        ent_context = self.cross_lstm4ent(ent_hs_hiddens_mirror)
+        ent_context = self.cross_enc4ent(ent_hs_hiddens_mirror)
         rel_hs_hiddens_guided = self.ent_guide_rel_cln(rel_hs_hiddens, ent_context)
 
         # # rel_row_cont: (batch_size, rel_dim, matrix_size, 1)
@@ -300,12 +362,12 @@ class InteractionKernel(nn.Module):
         # rel_col_cont = torch.matmul(self.rel_beta, rel_hs_hiddens_guided.permute(0, 3, 1, 2))
         # # rel_context: (batch_size, matrix_size, matrix_size, rel_dim)
         # rel_context = torch.matmul(rel_row_cont, rel_col_cont).permute(0, 2, 3, 1)
-        rel_context = self.cross_lstm4rel(rel_hs_hiddens_guided)
+        rel_context = self.cross_enc4rel(rel_hs_hiddens_guided)
 
         rel_upper_context = MyMatrix.drop_lower_diag(rel_context)
         rel_lower_context = MyMatrix.drop_lower_diag(rel_context.permute(0, 2, 1, 3))
         # rel_context_flat: (batch_size, shaking_seq_len, rel_dim)
-        rel_context_flat = self.drop_lamtha * rel_upper_context + (1 - self.drop_lamtha) * rel_lower_context
+        rel_context_flat = self.lamtha4rel_cont * rel_upper_context + (1 - self.lamtha4rel_cont) * rel_lower_context
 
         ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context_flat)
         
