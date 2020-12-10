@@ -741,8 +741,8 @@ class Preprocessor:
             ## generate subword level dependency list
             subword_dep_list = []
             for dep in sample["features"]["word_dependency_list"]:
-                for subw_id1 in word2subword_span[dep[0]]:
-                    for subw_id2 in word2subword_span[dep[1]]:
+                for subw_id1 in range(*word2subword_span[dep[0]]): # debug
+                    for subw_id2 in range(*word2subword_span[dep[1]]):
                         subword_dep_list.append([subw_id1, subw_id2, dep[2]])
             subword_features["subword_dependency_list"] = subword_dep_list
 
@@ -1287,6 +1287,11 @@ class Preprocessor:
                 char_offset = combined_sample["features"]["tok2char_span"][-1][1] + 1 # +1: whitespace
             new_tok2char_span = [[char_sp[0] + char_offset, char_sp[1] + char_offset] for char_sp in sample["features"]["tok2char_span"]]
             combined_sample["features"]["tok2char_span"].extend(new_tok2char_span)
+
+            for dep in sample["features"]["dependency_list"]:
+                if dep[0] + token_offset == 64 or dep[1] + token_offset == 64:
+                    print("!")
+
             new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in sample["features"]["dependency_list"]]
             combined_sample["features"]["dependency_list"].extend(new_dependency_list)
             # record split offsets
