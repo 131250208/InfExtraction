@@ -284,8 +284,8 @@ class InteractionKernel(nn.Module):
     def __init__(self,
                  ent_dim,
                  rel_dim,
-                 cross_enc_type=None,
-                 cross_enc_config=None,
+                 cross_enc_type,
+                 cross_enc_config,
                  ):
         super(InteractionKernel, self).__init__()
         # self.ent_alpha = Parameter(torch.randn([ent_dim, matrix_size, 1]))
