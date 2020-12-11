@@ -608,6 +608,7 @@ def create_rebased_ee_tagger(base_class):
         def decode(self, sample, pred_outs):
             pred_sample = super(REBasedEETagger, self).decode(sample, pred_outs)
             pred_sample["event_list"] = self._trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
+            # filter extra entities and relations
             pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
             pred_sample["relation_list"] = [rel for rel in pred_sample["relation_list"] if "EE:" not in rel["predicate"]]
             return pred_sample
