@@ -329,7 +329,7 @@ class MetricsCalculator:
         f1 = 2 * precision * recall / (precision + recall + minimum)
         return precision, recall, f1
 
-    def score(self, pred_data, golden_data, data_type):
+    def score(self, pred_data, golden_data, data_filename=""):
         total_cpg_dict = {}
         if "re" in self.task_type:
             assert self.match_pattern is not None
@@ -346,6 +346,8 @@ class MetricsCalculator:
         for key, cpg in total_cpg_dict.items():
             prf = self.get_prf_scores(*cpg)
             for idx, sct in enumerate(["prec", "recall", "f1"]):
-                score_dict["{}_{}_{}".format(data_type, key, sct)] = round(prf[idx], 5)
+                if data_filename != "":
+                    data_filename += "_"
+                score_dict["{}{}_{}".format(data_filename, key, sct)] = round(prf[idx], 5)
 
         return score_dict

@@ -1,5 +1,37 @@
 import torch
 from InfExtraction.modules.preprocess import Indexer
+import os
+import json
+from torch.utils.data import Dataset
+
+
+class MyDataset(Dataset):
+    def __init__(self, data):
+        self.data = data
+
+    def __getitem__(self, index):
+        return self.data[index]
+
+    def __len__(self):
+        return len(self.data)
+
+
+class DefaultLogger:
+    def __init__(self, log_path, project, run_name, run_id, config2log):
+        self.log_path = log_path
+        log_dir = "/".join(self.log_path.split("/")[:-1])
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        self.run_id = run_id
+        self.log("============================================================================")
+        self.log("project: {}, run_name: {}, run_id: {}\n".format(project, run_name, run_id))
+        hyperparameters_format = "--------------hypter_parameters------------------- \n{}\n-----------------------------------------"
+        self.log(hyperparameters_format.format(json.dumps(config2log, indent = 4)))
+
+    def log(self, text):
+        text = "run_id: {}, {}".format(self.run_id, text)
+        print(text)
+        open(self.log_path, "a", encoding="utf-8").write("{}\n".format(text))
 
 
 class MyMaths:
@@ -44,3 +76,4 @@ class MyMatrix:
         flat_tensor = tensor.view(tensor.size()[0], tensor.size()[1], -1).permute(0, 2, 1)
         tensor_upper = torch.index_select(flat_tensor, dim=1, index=upper_diag_ids)
         return tensor_upper
+

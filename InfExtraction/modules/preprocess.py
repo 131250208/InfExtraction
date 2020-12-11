@@ -6,7 +6,6 @@ import stanza
 import logging
 import time
 from IPython.core.debugger import set_trace
-from torch.utils.data import Dataset
 import torch
 
 
@@ -327,20 +326,6 @@ class Preprocessor:
         self.word_tokenizer = None
         self.language = language
         self.pretrained_model_path = pretrained_model_path
-
-    @staticmethod
-    def drop_lower_diag(ori_tensor):
-        '''
-        :param ori_tensor: (batch_size, matrix_size, matrix_size, hidden_size)
-        :return: (batch_size, matrix_size + ... + 1, hidden_size)
-        '''
-        tensor = ori_tensor.permute(0, 3, 1, 2).contiguous()
-        uppder_ones = torch.ones([tensor.size()[-1], tensor.size()[-1]]).long().triu().to(ori_tensor.device)
-        upper_diag_ids = torch.nonzero(uppder_ones.view(-1), as_tuple=False).view(-1)
-        # flat_tensor: (batch_size, matrix_size * matrix_size, hidden_size)
-        flat_tensor = tensor.view(tensor.size()[0], tensor.size()[1], -1).permute(0, 2, 1)
-        tensor_upper = torch.index_select(flat_tensor, dim=1, index=upper_diag_ids)
-        return tensor_upper
 
     @staticmethod
     def unique_list(inp_list):
@@ -1288,10 +1273,6 @@ class Preprocessor:
             new_tok2char_span = [[char_sp[0] + char_offset, char_sp[1] + char_offset] for char_sp in sample["features"]["tok2char_span"]]
             combined_sample["features"]["tok2char_span"].extend(new_tok2char_span)
 
-            for dep in sample["features"]["dependency_list"]:
-                if dep[0] + token_offset == 64 or dep[1] + token_offset == 64:
-                    print("!")
-
             new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in sample["features"]["dependency_list"]]
             combined_sample["features"]["dependency_list"].extend(new_dependency_list)
             # record split offsets
@@ -1532,17 +1513,6 @@ class Preprocessor:
                     indexed_features[f_key] = Indexer.pad2length(tags, [0, 0], max_seq_len)
             sample["features"] = indexed_features
         return data
-
-
-class MyDataset(Dataset):
-    def __init__(self, data):
-        self.data = data
-
-    def __getitem__(self, index):
-        return self.data[index]
-
-    def __len__(self):
-        return len(self.data)
 
 
 if __name__ == "__main__":

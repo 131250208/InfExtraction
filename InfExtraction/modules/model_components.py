@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
-from InfExtraction.modules.preprocess import Preprocessor
 from InfExtraction.modules.utils import MyMatrix
 import time
 import re
@@ -129,9 +128,9 @@ class HandshakingKernelDora(nn.Module):
 
         # drop lower triangle and convert matrix to sequence
         # span_pre: (batch_size, shaking_seq_len, hidden_size)
-        span_pre = Preprocessor.drop_lower_diag(span_pre)
-        ent_guide_sks = Preprocessor.drop_lower_diag(ent_guide)
-        ent_vis_sks = Preprocessor.drop_lower_diag(ent_vis)
+        span_pre = MyMatrix.drop_lower_diag(span_pre)
+        ent_guide_sks = MyMatrix.drop_lower_diag(ent_guide)
+        ent_vis_sks = MyMatrix.drop_lower_diag(ent_vis)
         ent_pre = self.cln4ent_tp(ent_vis_sks, ent_guide_sks) + span_pre
 
         # rel_guide: (batch_size, hidden_size, seq_len, 1)
@@ -199,13 +198,13 @@ class SingleSourceHandshakingKernel(nn.Module):
 
                 # drop lower triangle and convert matrix to sequence
                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
-                span_pre = Preprocessor.drop_lower_diag(span_pre)
+                span_pre = MyMatrix.drop_lower_diag(span_pre)
                 shaking_pre = add_presentation(shaking_pre, span_pre)
                 # pre_num += 1
 
             # guide, visible: (batch_size, shaking_seq_len, hidden_size)
-            guide = Preprocessor.drop_lower_diag(guide)
-            visible = Preprocessor.drop_lower_diag(visible)
+            guide = MyMatrix.drop_lower_diag(guide)
+            visible = MyMatrix.drop_lower_diag(visible)
 
         if "cat" in self.shaking_type:
             tp_cat_pre = torch.cat([guide, visible], dim=-1)
@@ -292,13 +291,13 @@ class HandshakingKernel(nn.Module):
 
                 # drop lower triangle and convert matrix to sequence
                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
-                span_pre = Preprocessor.drop_lower_diag(span_pre)
+                span_pre = MyMatrix.drop_lower_diag(span_pre)
                 shaking_pre = add_presentation(shaking_pre, span_pre)
                 pre_num += 1
 
             # guide, visible: (batch_size, shaking_seq_len, hidden_size)
-            guide = Preprocessor.drop_lower_diag(guide)
-            visible = Preprocessor.drop_lower_diag(visible)
+            guide = MyMatrix.drop_lower_diag(guide)
+            visible = MyMatrix.drop_lower_diag(visible)
         
         if "cat" in self.shaking_type:
             tp_cat_pre = torch.cat([guide, visible], dim=-1)

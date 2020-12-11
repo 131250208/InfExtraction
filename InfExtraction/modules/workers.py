@@ -1,4 +1,4 @@
-from InfExtraction.work_flows.utils import DefaultLogger
+from InfExtraction.modules.utils import DefaultLogger
 from InfExtraction.modules.preprocess import Preprocessor
 import os
 import torch
@@ -133,7 +133,7 @@ class Evaluator:
     def _predict_debug(self, dataloader, golden_data):
         # predict
         total_pred_sample_list = []
-        for batch_ind, batch_predict_data in enumerate(tqdm(dataloader, desc="predicting")):
+        for batch_ind, batch_predict_data in enumerate(tqdm(dataloader, desc="debug: predicting")):
             pred_sample_list = self._predict_step_debug(batch_predict_data)
             total_pred_sample_list.extend(pred_sample_list)
         pred_data = self._alignment(total_pred_sample_list, golden_data)
@@ -217,11 +217,11 @@ class Evaluator:
         pred_data = self._alignment(total_pred_sample_list, golden_data)
         return pred_data
         
-    def score(self, pred_data, golden_data, data_type):
+    def score(self, pred_data, golden_data, data_filename=""):
         '''
         :param pred_data:
         :param golden_data:
-        :param data_type: test or valid, for logging
+        :param data_filename: just for logging
         :param final_score_key: which score is the final score: trigger_class_f1, rel_f1
         :return:
         '''
@@ -232,4 +232,4 @@ class Evaluator:
         clean_data(pred_data)
         clean_data(golden_data)
 
-        return self.model.metrics_cal.score(pred_data, golden_data, data_type)
+        return self.model.metrics_cal.score(pred_data, golden_data, data_filename)
