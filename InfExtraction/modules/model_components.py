@@ -100,7 +100,7 @@ class LayerNorm(nn.Module):
 class HandshakingKernelDora(nn.Module):
     def __init__(self, hidden_size):
         super().__init__()
-        self.cat4ent_tp = nn.Linear(hidden_size * 2, hidden_size)
+        self.cat_fc4ent_tp = nn.Linear(hidden_size * 2, hidden_size)
         self.cln4rel_tp = LayerNorm(hidden_size, hidden_size, conditional=True)
 
         self.lstm4span = nn.LSTM(hidden_size,
@@ -133,7 +133,8 @@ class HandshakingKernelDora(nn.Module):
         span_pre = MyMatrix.drop_lower_diag(span_pre)
         ent_guide_sks = MyMatrix.drop_lower_diag(ent_guide)
         ent_vis_sks = MyMatrix.drop_lower_diag(ent_vis)
-        ent_pre = self.cat4ent_tp(torch.cat([ent_vis_sks, ent_guide_sks], dim=-1)) + span_pre
+        boundary_pre = torch.relu(self.cat_fc4ent_tp(torch.cat([ent_vis_sks, ent_guide_sks], dim=-1)))
+        ent_pre = boundary_pre + span_pre
 
         # # rel_guide: (batch_size, hidden_size, seq_len, 1)
         # rel_guide = torch.relu(self.W_guide(seq_hiddens)).permute(0, 2, 1)[:, :, :, None]
@@ -144,7 +145,6 @@ class HandshakingKernelDora(nn.Module):
 
         rel_vis = torch.relu(self.W_rel(seq_hiddens_ext))
         rel_guide = rel_vis.permute(0, 2, 1, 3)
-
         rel_pre = self.cln4rel_tp(rel_vis, rel_guide)
 
         return ent_pre, rel_pre
