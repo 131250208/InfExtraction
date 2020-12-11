@@ -14,6 +14,7 @@ from pprint import pprint
 exp_name = settings.exp_name
 data_in_dir = os.path.join(settings.data_in_dir, exp_name)
 data_out_dir = os.path.join(settings.data_out_dir, exp_name)
+generate_features = settings.generate_word_level_features_by_stanza
 language = settings.language
 pretrained_model_tokenizer_path = settings.pretrained_model_tokenizer_path
 ori_data_format = settings.ori_data_format
@@ -37,16 +38,17 @@ preprocessor = Preprocessor(language, pretrained_model_tokenizer_path)
 
 # transform data from CasRel, ETL_span, et.
 for file_name, data in file_name2data.items():
-    if ori_data_format != "tplinker":  # if tplinker, skip transforming
-        data_type = None
-        if "train" in file_name:
-            data_type = "train"
-        if "valid" in file_name:
-            data_type = "valid"
-        if "test" in file_name:
-            data_type = "test"
-        data = preprocessor.transform_data(data, ori_format=ori_data_format, dataset_type=data_type, add_id=True)
-        file_name2data[file_name] = data
+    data_type = None
+    if "train" in file_name:
+        data_type = "train"
+    if "valid" in file_name:
+        data_type = "valid"
+    if "test" in file_name:
+        data_type = "test"
+
+    add_id = True if "id" not in data[0] else False
+    data = preprocessor.transform_data(data, ori_format=ori_data_format, dataset_type=data_type, add_id=add_id)
+    file_name2data[file_name] = data
 
     # temp
     for sample in data:
@@ -63,7 +65,7 @@ for filename, data in file_name2data.items():
     if add_char_span:
         data = preprocessor.add_char_span(data, ignore_subword_match=ignore_subword_match)
     # create features
-    data = preprocessor.create_features(data)
+    data = preprocessor.create_features(data, generate_features)
     # add token level spans
     data = preprocessor.add_tok_span(data)
     file_name2data[filename] = data
