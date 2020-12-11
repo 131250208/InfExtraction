@@ -1,4 +1,5 @@
 import torch
+import re
 
 
 class MetricsCalculator:
@@ -234,8 +235,16 @@ class MetricsCalculator:
 
         gold_rel_list = [rel for rel in gold_rel_list
                          if "EE:" not in rel["predicate"] and "EXT:" not in rel["predicate"]]
-        gold_ent_list = [ent for ent in gold_ent_list
-                         if "EXT:" not in ent["type"] and "EE:" not in ent["type"] and "REL:" not in ent["type"]]
+
+        # filter extra entities
+        ent_type_set = {ent["type"] for ent in gold_ent_list}
+        ent_types2filter = {"REL:", "EE:"}
+        if len(ent_type_set) == 1 and list(ent_type_set)[0] == "EXT:DEFAULT":
+            pass
+        else:
+            ent_types2filter.add("EXT:")
+        filter_pattern = "({})".format("|".join(ent_types2filter))
+        gold_ent_list = [ent for ent in gold_ent_list if re.search(filter_pattern, ent["type"]) is None]
 
         gold_rel_set, gold_ent_set = self._get_mark_sets_rel(gold_rel_list, gold_ent_list, pattern)
         pred_rel_set, pred_ent_set = self._get_mark_sets_rel(pred_rel_list, pred_ent_list, pattern)

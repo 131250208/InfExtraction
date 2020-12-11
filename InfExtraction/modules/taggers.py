@@ -310,9 +310,17 @@ class HandshakingTagger4TPLPlus(Tagger):
                     })
 
         pred_sample = copy.deepcopy(sample)
-        # filter
+        # filter extra relations
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
-        pred_sample["entity_list"] = [ent for ent in ent_list if "EXT:" not in ent["type"] and "REL:" not in ent["type"]]
+        # filter extra entities
+        ent_type_set = {ent["type"] for ent in ent_list}
+        ent_types2filter = {"REL:"}
+        if len(ent_type_set) == 1 and list(ent_type_set)[0] == "EXT:DEFAULT":
+            pass
+        else:
+            ent_types2filter.add("EXT:")
+        filter_pattern = "({})".format("|".join(ent_types2filter))
+        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(filter_pattern, ent["type"]) is None]
         return pred_sample
 
 
@@ -530,9 +538,18 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
                     })
 
         pred_sample = copy.deepcopy(sample)
-        # filter
+
+        # filter extra relations
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
-        pred_sample["entity_list"] = [ent for ent in ent_list if "EXT:" not in ent["type"] and "REL:" not in ent["type"]]
+        # filter extra entities
+        ent_type_set = {ent["type"] for ent in ent_list}
+        ent_types2filter = {"REL:"}
+        if len(ent_type_set) == 1 and list(ent_type_set)[0] == "EXT:DEFAULT":
+            pass
+        else:
+            ent_types2filter.add("EXT:")
+        filter_pattern = "({})".format("|".join(ent_types2filter))
+        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(filter_pattern, ent["type"]) is None]
 
         return pred_sample
 
