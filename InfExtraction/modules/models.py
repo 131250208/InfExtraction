@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from transformers import BertModel
 from InfExtraction.modules.model_components import (HandshakingKernel,
+                                                    HandshakingKernelDora,
                                                     GraphConvLayer,
                                                     InteractionKernel,
                                                     SingleSourceHandshakingKernel)
@@ -390,8 +391,9 @@ class TPLinkerPP(IEModel):
                  tagger,
                  metrics_cal,
                  handshaking_kernel_config=None,
-                 ent_dim=None,
-                 rel_dim=None,
+                 # ent_dim,
+                 # rel_dim,
+                 fin_hidden_size=None,
                  conv_config=None,
                  inter_kernel_config=None,
                  use_attns4rel=None,
@@ -403,12 +405,14 @@ class TPLinkerPP(IEModel):
 
         self.metrics_cal = metrics_cal
 
-        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
-        self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
+        # self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
+        # self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
+        self.aggr_fc = nn.Linear(self.cat_hidden_size, fin_hidden_size)
 
         # handshaking kernel
-        ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
-        rel_shaking_type = handshaking_kernel_config["rel_shaking_type"]
+        # ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
+        # rel_shaking_type = handshaking_kernel_config["rel_shaking_type"]
+
         # self.ent_handshaking_kernel = HandshakingKernel(ent_dim,
         #                                                 ent_dim,
         #                                                 ent_shaking_type,
@@ -418,18 +422,21 @@ class TPLinkerPP(IEModel):
         #                                                 rel_shaking_type,
         #                                                 only_look_after=False,
         #                                                 )
-        self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
-                                                                    ent_shaking_type,
-                                                                    )
-        self.rel_handshaking_kernel = SingleSourceHandshakingKernel(rel_dim,
-                                                                    rel_shaking_type,
-                                                                    only_look_after=False,
-                                                                    )
+        # self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
+        #                                                             ent_shaking_type,
+        #                                                             )
+        # self.rel_handshaking_kernel = SingleSourceHandshakingKernel(rel_dim,
+        #                                                             rel_shaking_type,
+        #                                                             only_look_after=False,
+        #                                                             )
+        self.handshaking_kernel = HandshakingKernelDora(fin_hidden_size)
 
         self.use_attns4rel = use_attns4rel
         if use_attns4rel is not None:
             self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
-                                      rel_dim)
+                                      # rel_dim,
+                                      fin_hidden_size
+                                      )
 
         # learn local info
         self.conv_config = conv_config
@@ -442,14 +449,24 @@ class TPLinkerPP(IEModel):
             ent_conv_padding = (ent_conv_kernel_size - 1) // 2
             rel_conv_kernel_size = conv_config["rel_conv_kernel_size"]
             rel_conv_padding = (rel_conv_kernel_size - 1) // 2
+            # for _ in range(ent_conv_layers):
+            #     self.ent_convs.append(nn.Conv1d(ent_dim,
+            #                                     ent_dim,
+            #                                     ent_conv_kernel_size,
+            #                                     padding=ent_conv_padding))
+            # for _ in range(rel_conv_layers):
+            #     self.rel_convs.append(nn.Conv2d(rel_dim,
+            #                                     rel_dim,
+            #                                     rel_conv_kernel_size,
+            #                                     padding=rel_conv_padding))
             for _ in range(ent_conv_layers):
-                self.ent_convs.append(nn.Conv1d(ent_dim,
-                                                ent_dim,
+                self.ent_convs.append(nn.Conv1d(fin_hidden_size,
+                                                fin_hidden_size,
                                                 ent_conv_kernel_size,
                                                 padding=ent_conv_padding))
             for _ in range(rel_conv_layers):
-                self.rel_convs.append(nn.Conv2d(rel_dim,
-                                                rel_dim,
+                self.rel_convs.append(nn.Conv2d(fin_hidden_size,
+                                                fin_hidden_size,
                                                 rel_conv_kernel_size,
                                                 padding=rel_conv_padding))
 
@@ -458,11 +475,11 @@ class TPLinkerPP(IEModel):
             cross_enc_config = inter_kernel_config[
                 "cross_enc_config"] if "cross_enc_config" in inter_kernel_config else None
             cross_enc_type = inter_kernel_config["cross_enc_type"]
-            self.inter_kernel = InteractionKernel(ent_dim, rel_dim, cross_enc_type, cross_enc_config)
+            self.inter_kernel = InteractionKernel(fin_hidden_size, fin_hidden_size, cross_enc_type, cross_enc_config)
 
         # decoding fc
-        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
-        self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
+        self.ent_fc = nn.Linear(fin_hidden_size, self.ent_tag_size)
+        self.rel_fc = nn.Linear(fin_hidden_size, self.rel_tag_size)
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
@@ -485,14 +502,14 @@ class TPLinkerPP(IEModel):
         super(TPLinkerPP, self).forward()
 
         cat_hiddens = self._cat_features(**kwargs)
+        aggr_hiddens = self.aggr_fc(cat_hiddens)
 
-        ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
-        rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
+        # ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
+        # rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
 
         # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # rel_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
-        ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens)
-        rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens)
+        ent_hs_hiddens, rel_hs_hiddens = self.handshaking_kernel(aggr_hiddens)
 
         # attentions: (batch_size, layers * heads, seg_len, seq_len)
         if self.use_attns4rel:

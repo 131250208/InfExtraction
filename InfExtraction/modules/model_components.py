@@ -98,6 +98,43 @@ class LayerNorm(nn.Module):
         return outputs
 
 
+class HandshakingKernelDora(nn.Module):
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.lstm4span = nn.LSTM(hidden_size,
+                                 hidden_size,
+                                 num_layers=1,
+                                 bidirectional=False,
+                                 batch_first=True)
+        self.W_guide = nn.Linear(hidden_size, hidden_size)
+        self.W_ent_vis = nn.Linear(hidden_size, hidden_size)
+        self.W_rel_vis = nn.Linear(hidden_size, hidden_size)
+
+    def forward(self, seq_hiddens):
+        '''
+        seq_hiddens: (batch_size, seq_len, hidden_size_x)
+        '''
+        batch_size, seq_len, hidden_size = seq_hiddens.size()
+        ent_vis = torch.relu(self.W_ent_vis(seq_hiddens))
+
+        ent_vis = ent_vis[:, None, :, :].repeat(1, seq_len, 1, 1)
+        # mask lower triangle
+        upper_visible = ent_vis.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
+        # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
+        visible4lstm = upper_visible.view(-1, seq_len, hidden_size)
+        span_pre, _ = self.lstm4span(visible4lstm)
+        span_pre = span_pre.view(batch_size, seq_len, seq_len, hidden_size)
+
+        # drop lower triangle and convert matrix to sequence
+        # span_pre: (batch_size, shaking_seq_len, hidden_size)
+        span_pre = Preprocessor.drop_lower_diag(span_pre)
+
+        rel_guide = torch.relu(self.W_guide(seq_hiddens))
+        rel_vis = torch.relu(self.W_rel_vis(seq_hiddens))
+        rel_pre = torch.matmul(rel_guide, rel_vis.permute(0, 2, 1))
+        return span_pre, rel_pre
+
+
 class SingleSourceHandshakingKernel(nn.Module):
     def __init__(self, hidden_size, shaking_type, only_look_after=True):
         super().__init__()
