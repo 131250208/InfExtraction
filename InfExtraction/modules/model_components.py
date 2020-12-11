@@ -129,9 +129,11 @@ class HandshakingKernelDora(nn.Module):
         # span_pre: (batch_size, shaking_seq_len, hidden_size)
         span_pre = Preprocessor.drop_lower_diag(span_pre)
 
-        rel_guide = torch.relu(self.W_guide(seq_hiddens))
-        rel_vis = torch.relu(self.W_rel_vis(seq_hiddens))
-        rel_pre = torch.matmul(rel_guide, rel_vis.permute(0, 2, 1))
+        # rel_guide: (batch_size, hidden_size, seq_len, 1)
+        rel_guide = torch.relu(self.W_guide(seq_hiddens)).permute(0, 2, 1)[:, :, :, None]
+        # rel_vis: (batch_size, hidden_size, 1, seq_len)
+        rel_vis = torch.relu(self.W_rel_vis(seq_hiddens)).permute(0, 2, 1)[:, :, None, :]
+        rel_pre = torch.matmul(rel_guide, rel_vis).permute(0, 2, 3, 1)
         return span_pre, rel_pre
 
 
