@@ -133,7 +133,7 @@ class HandshakingKernelDora(nn.Module):
         span_pre = MyMatrix.drop_lower_diag(span_pre)
         ent_guide_sks = MyMatrix.drop_lower_diag(ent_guide)
         ent_vis_sks = MyMatrix.drop_lower_diag(ent_vis)
-        ent_pre = self.cat4ent_tp(torch.cat([ent_vis_sks, ent_guide_sks]), dim=-1) + span_pre
+        ent_pre = self.cat4ent_tp(torch.cat([ent_vis_sks, ent_guide_sks], dim=-1)) + span_pre
 
         # # rel_guide: (batch_size, hidden_size, seq_len, 1)
         # rel_guide = torch.relu(self.W_guide(seq_hiddens)).permute(0, 2, 1)[:, :, :, None]
