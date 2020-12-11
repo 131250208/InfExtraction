@@ -5,7 +5,11 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from transformers import BertModel
-from InfExtraction.modules.model_components import HandshakingKernel, GraphConvLayer, InteractionKernel
+from InfExtraction.modules.model_components import (HandshakingKernel,
+                                                    GraphConvLayer,
+                                                    InteractionKernel,
+                                                    SingleSourceHandshakingKernel)
+
 from InfExtraction.modules.preprocess import Indexer
 from gensim.models import KeyedVectors
 import logging
@@ -405,19 +409,27 @@ class TPLinkerPP(IEModel):
         # handshaking kernel
         ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
         rel_shaking_type = handshaking_kernel_config["rel_shaking_type"]
-        self.ent_handshaking_kernel = HandshakingKernel(ent_dim,
-                                                        ent_dim,
-                                                        ent_shaking_type,
-                                                        )
-        self.rel_handshaking_kernel = HandshakingKernel(rel_dim,
-                                                        rel_dim,
-                                                        rel_shaking_type,
-                                                        only_look_after=False,
-                                                        )
+        # self.ent_handshaking_kernel = HandshakingKernel(ent_dim,
+        #                                                 ent_dim,
+        #                                                 ent_shaking_type,
+        #                                                 )
+        # self.rel_handshaking_kernel = HandshakingKernel(rel_dim,
+        #                                                 rel_dim,
+        #                                                 rel_shaking_type,
+        #                                                 only_look_after=False,
+        #                                                 )
+        self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
+                                                                    ent_shaking_type,
+                                                                    )
+        self.rel_handshaking_kernel = SingleSourceHandshakingKernel(rel_dim,
+                                                                    rel_shaking_type,
+                                                                    only_look_after=False,
+                                                                    )
 
         self.use_attns4rel = use_attns4rel
         if use_attns4rel is not None:
-            self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads, rel_dim)
+            self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
+                                      rel_dim)
 
         # learn local info
         self.conv_config = conv_config
@@ -443,7 +455,8 @@ class TPLinkerPP(IEModel):
 
         self.inter_kernel_config = inter_kernel_config
         if self.inter_kernel_config is not None:
-            cross_enc_config = inter_kernel_config["cross_enc_config"] if "cross_enc_config" in inter_kernel_config else None
+            cross_enc_config = inter_kernel_config[
+                "cross_enc_config"] if "cross_enc_config" in inter_kernel_config else None
             cross_enc_type = inter_kernel_config["cross_enc_type"]
             self.inter_kernel = InteractionKernel(ent_dim, rel_dim, cross_enc_type, cross_enc_config)
 
@@ -478,8 +491,8 @@ class TPLinkerPP(IEModel):
 
         # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # rel_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
-        ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens, ent_hiddens)
-        rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens, rel_hiddens)
+        ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens)
+        rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens)
 
         # attentions: (batch_size, layers * heads, seg_len, seq_len)
         if self.use_attns4rel:

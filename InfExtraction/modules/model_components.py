@@ -98,6 +98,92 @@ class LayerNorm(nn.Module):
         return outputs
 
 
+class SingleSourceHandshakingKernel(nn.Module):
+    def __init__(self, hidden_size, shaking_type, only_look_after=True):
+        super().__init__()
+        self.shaking_type = shaking_type
+        self.only_look_after = only_look_after
+
+        if "cat" in shaking_type:
+            self.cat_fc = nn.Linear(hidden_size * 2, hidden_size)
+        if "cln" in shaking_type:
+            self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
+        if "lstm" in shaking_type:
+            assert only_look_after is True
+            self.lstm4span = nn.LSTM(hidden_size,
+                                     hidden_size,
+                                     num_layers=1,
+                                     bidirectional=False,
+                                     batch_first=True)
+        if "biaffine" in shaking_type:
+            self.biaffine = nn.Bilinear(hidden_size, hidden_size, hidden_size)
+
+    def forward(self, seq_hiddens):
+        '''
+        seq_hiddens: (batch_size, seq_len, hidden_size_x)
+        return:
+            if only look after:
+                shaking_hiddenss: (batch_size, (1 + seq_len) * seq_len / 2, hidden_size); e.g. (32, 5+4+3+2+1, 5)
+            else:
+                shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
+        '''
+        seq_len = seq_hiddens.size()[1]
+
+        guide = seq_hiddens[:, :, None, :].repeat(1, 1, seq_len, 1)
+        visible = guide.permute(0, 2, 1, 3)
+
+        shaking_pre = None
+        # pre_num = 0
+
+        def add_presentation(all_prst, prst):
+            if all_prst is None:
+                all_prst = prst
+            else:
+                all_prst += prst
+            return all_prst
+
+        if self.only_look_after:
+            if "lstm" in self.shaking_type:
+                batch_size, _, matrix_size, vis_hidden_size = visible.size()
+                # mask lower triangle
+                upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
+
+                # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
+                visible4lstm = upper_visible.view(-1, matrix_size, vis_hidden_size)
+                span_pre, _ = self.lstm4span(visible4lstm)
+                span_pre = span_pre.view(batch_size, matrix_size, matrix_size, vis_hidden_size)
+
+                # drop lower triangle and convert matrix to sequence
+                # span_pre: (batch_size, shaking_seq_len, hidden_size)
+                span_pre = Preprocessor.drop_lower_diag(span_pre)
+                shaking_pre = add_presentation(shaking_pre, span_pre)
+                # pre_num += 1
+
+            # guide, visible: (batch_size, shaking_seq_len, hidden_size)
+            guide = Preprocessor.drop_lower_diag(guide)
+            visible = Preprocessor.drop_lower_diag(visible)
+
+        if "cat" in self.shaking_type:
+            tp_cat_pre = torch.cat([guide, visible], dim=-1)
+            tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
+            shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+            # pre_num += 1
+
+        if "cln" in self.shaking_type:
+            tp_cln_pre = self.tp_cln(visible, guide)
+            shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
+            # pre_num += 1
+
+        if "biaffine" in self.shaking_type:
+            set_trace()
+            biaffine_pre = self.biaffine(guide, visible)
+            biaffine_pre = torch.relu(biaffine_pre)
+            shaking_pre = add_presentation(shaking_pre, biaffine_pre)
+            # pre_num += 1
+
+        return shaking_pre
+
+
 class HandshakingKernel(nn.Module):
     def __init__(self, guide_hidden_size, vis_hidden_size, shaking_type, only_look_after=True):
         '''
@@ -133,11 +219,11 @@ class HandshakingKernel(nn.Module):
             else:
                 shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
         '''
-        seq_len = seq_hiddens_y.size()[1]
-        assert seq_hiddens_y.size()[1] == seq_hiddens_x.size()[1]
+        # seq_len = seq_hiddens_y.size()[1]
+        # assert seq_hiddens_y.size()[1] == seq_hiddens_x.size()[1]
 
-        guide = seq_hiddens_x[:, :, None, :].repeat(1, 1, seq_len, 1)
-        visible = seq_hiddens_y[:, None, :, :].repeat(1, seq_len, 1, 1)
+        guide = seq_hiddens_x[:, :, None, :].repeat(1, 1, seq_hiddens_y.size()[1], 1)
+        visible = seq_hiddens_y[:, None, :, :].repeat(1, seq_hiddens_x.size()[1], 1, 1)
 
         shaking_pre = None
         pre_num = 0
