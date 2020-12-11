@@ -279,10 +279,6 @@ if __name__ == "__main__":
                                          )
         filename2test_data_loader[filename] = test_dataloader
 
-    if stage == "inference":
-
-        pass
-
     if stage == "train":
         train_dataloader = get_dataloader(train_data,
                                           "train",
@@ -383,6 +379,7 @@ if __name__ == "__main__":
         # predicting
         run_id2scores = {}
         for run_id, model_path_list in run_id2model_state_paths.items():
+
             # only top k models
             model_path_list = get_last_k_paths(model_path_list, top_k_models)
             for path in model_path_list:
@@ -412,6 +409,7 @@ if __name__ == "__main__":
                         if model_name not in run_id2scores[run_id]:
                             run_id2scores[run_id][model_name] = {}
                         run_id2scores[run_id][model_name][filename] = score_dict
+
 
         if cal_scores:
             pprint(run_id2scores)
