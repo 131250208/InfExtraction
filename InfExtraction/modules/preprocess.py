@@ -328,6 +328,15 @@ class Preprocessor:
         self.pretrained_model_path = pretrained_model_path
 
     @staticmethod
+    def get_tok2char_span_map(tokens):
+        tok2char_span = []
+        char_num = 0
+        for tok in tokens:
+            tok2char_span.append((char_num, char_num + len(tok)))
+            char_num += len(tok) + 1  # +1: whitespace
+        return tok2char_span
+
+    @staticmethod
     def unique_list(inp_list):
         out_list = []
         memory = set()
@@ -416,11 +425,19 @@ class Preprocessor:
         This function is for transforming data published by previous work on [joint extraction].
         If you want to feed new dataset to the model, just define your own function to transform data.
         data: original data
-        ori_format: "casrel", "etl_span", "raw_nyt"
+        ori_format: "casrel", "etl_span", "raw_nyt", "tplinker"
         dataset_type: "train", "valid", "test"; only for generate id for the data
         '''
         normal_sample_list = []
-        for ind, sample in tqdm(enumerate(data), desc="Transforming data format"):
+        for ind, sample in tqdm(enumerate(data), desc="transforming data format"):
+            normal_sample = {}
+            if add_id:
+                normal_sample["id"] = "{}_{}".format(dataset_type, ind)
+
+            if ori_format == "tplinker":
+                normal_sample_list.append({**normal_sample, **sample})
+                continue
+
             text, rel_list, subj_key, pred_key, obj_key = None, None, None, None, None
             if ori_format == "casrel":
                 text = sample["text"]
@@ -434,12 +451,7 @@ class Preprocessor:
                 text = sample["sentText"]
                 rel_list = sample["relationMentions"]
                 subj_key, pred_key, obj_key = "em1Text", "label", "em2Text"
-
-            normal_sample = {
-                "text": text,
-            }
-            if add_id:
-                normal_sample["id"] = "{}_{}".format(dataset_type, ind)
+            normal_sample["text"] = text
             normal_rel_list = []
             for rel in rel_list:
                 normal_rel = {
@@ -662,38 +674,40 @@ class Preprocessor:
                 del sample_id2mismatched_ents[sample["id"]]
         return sample_id2mismatched_ents
 
-    def create_features(self, data):
+    def create_features(self, data, generate=False):
         # create features
         for sample in tqdm(data, desc="create features"):
             text = sample["text"]
             # word level
             word_level_feature_keys = {"ner_tag_list", "word_list", "pos_tag_list", "dependency_list", "word2char_span"}
-            ## to guarantee the lengths are equal, if one key does not exist, generate features from scratch
-            generate = False
-            for key in word_level_feature_keys:
-                if key not in sample:
-                    generate = True
-            if generate:
+            # ## to guarantee the lengths are equal, if one key does not exist, generate features from scratch
+            # generate = False
+            # for key in word_level_feature_keys:
+            #     if key not in sample:
+            #         generate = True
+
+            word_features = {}
+            if "word_list" not in sample or generate:
                 word_features = self.get_word_tokenizer().tokenize_plus(text)  # generate word level features
             else:
-                word_features = {
-                    "word_list": sample["word_list"],
-                    "word2char_span": sample["word2char_span"],
-                    "pos_tag_list": sample["pos_tag_list"],
-                    "ner_tag_list": sample["ner_tag_list"],
-                    "dependency_list": sample["dependency_list"],
-                }
-                del sample["word_list"]
-                del sample["word2char_span"]
-                del sample["dependency_list"]
-                del sample["pos_tag_list"]
-                del sample["ner_tag_list"]
-
-            ## transform word dependencies to matrix point
-            word_dependency_list = word_features["dependency_list"]
-            new_word_dep_list = [[wid, dep[0] + wid, dep[1]] for wid, dep in enumerate(word_dependency_list)]
-            word_features["word_dependency_list"] = new_word_dep_list
-            del word_features["dependency_list"]
+                for key in word_level_feature_keys:
+                    if key in sample:
+                        word_features[key] = sample[key]
+                        del sample[key]
+                if "word_list" in word_features and "word2char_span" not in word_features:
+                    word_features["word2char_span"] = Preprocessor.get_tok2char_span_map(word_features["word_list"])
+                # word_features = {
+                #     "word_list": sample["word_list"],
+                #     "word2char_span": sample["word2char_span"],
+                #     "pos_tag_list": sample["pos_tag_list"],
+                #     "ner_tag_list": sample["ner_tag_list"],
+                #     "dependency_list": sample["dependency_list"],
+                # }
+                # del sample["word_list"]
+                # del sample["word2char_span"]
+                # del sample["dependency_list"]
+                # del sample["pos_tag_list"]
+                # del sample["ner_tag_list"]
 
             sample["features"] = word_features
 
@@ -723,13 +737,20 @@ class Preprocessor:
                     word2subword_span[wid][0] = subw_id
                 word2subword_span[wid][1] = subw_id + 1
 
-            ## generate subword level dependency list
-            subword_dep_list = []
-            for dep in sample["features"]["word_dependency_list"]:
-                for subw_id1 in range(*word2subword_span[dep[0]]): # debug
-                    for subw_id2 in range(*word2subword_span[dep[1]]):
-                        subword_dep_list.append([subw_id1, subw_id2, dep[2]])
-            subword_features["subword_dependency_list"] = subword_dep_list
+            if "dependency_list" in word_features:
+                ## transform word dependencies to matrix point
+                word_dependency_list = word_features["dependency_list"]
+                new_word_dep_list = [[wid, dep[0] + wid, dep[1]] for wid, dep in enumerate(word_dependency_list)]
+                word_features["word_dependency_list"] = new_word_dep_list
+                del word_features["dependency_list"]
+
+                ## generate subword level dependency list
+                subword_dep_list = []
+                for dep in sample["features"]["word_dependency_list"]:
+                    for subw_id1 in range(*word2subword_span[dep[0]]): # debug
+                        for subw_id2 in range(*word2subword_span[dep[1]]):
+                            subword_dep_list.append([subw_id1, subw_id2, dep[2]])
+                subword_features["subword_dependency_list"] = subword_dep_list
 
             # add subword level features into the feature list
             sample["features"] = {
@@ -741,9 +762,11 @@ class Preprocessor:
 
             # check features
             feats = sample["features"]
-            assert len(feats["subword_list"]) == len(feats["subword2char_span"]) == len(subword2word_id) and \
-                   len(feats["word_list"]) == len(feats["ner_tag_list"]) == len(feats["pos_tag_list"]) \
-                   == len(feats["word2char_span"]) == len(word2subword_span)
+            num_words = len(word2subword_span)
+            for k in {"ner_tag_list", "pos_tag_list", "word2char_span", "word_list"}:
+                if k in feats:
+                    assert len(feats[k]) == num_words
+            assert len(feats["subword_list"]) == len(feats["subword2char_span"]) == len(subword2word_id)
             for subw_id, wid in enumerate(subword2word_id):
                 subw = sample["features"]["subword_list"][subw_id]
                 word = sample["features"]["word_list"][wid]
@@ -924,8 +947,6 @@ class Preprocessor:
         return data
 
     def generate_supporting_data(self, data, max_word_dict_size, min_word_freq):
-        # rel_type_set = set()
-        # ent_type_set = set()
         pos_tag_set = set()
         ner_tag_set = set()
         deprel_type_set = set()
@@ -935,16 +956,16 @@ class Preprocessor:
         max_word_seq_length, max_subword_seq_length = 0, 0
 
         for sample in tqdm(data, desc="generating supporting data"):
-            # # entity type
-            # ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
-            # # relation type
-            # rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
             # POS tag
-            pos_tag_set |= {pos_tag for pos_tag in sample["features"]["pos_tag_list"]}
+            if "pos_tag_list" in sample["features"]:
+                pos_tag_set |= {pos_tag for pos_tag in sample["features"]["pos_tag_list"]}
             # NER tag
-            ner_tag_set |= {ner_tag for ner_tag in sample["features"]["ner_tag_list"]}
+            if "ner_tag_list" in sample["features"]:
+                ner_tag_set |= {ner_tag for ner_tag in sample["features"]["ner_tag_list"]}
             # dependency relations
-            deprel_type_set |= {deprel[-1] for deprel in sample["features"]["word_dependency_list"]}
+            if "word_dependency_list" in sample["features"]:
+                deprel_type_set |= {deprel[-1] for deprel in sample["features"]["word_dependency_list"]}
+
             # character
             char_set |= set(sample["text"])
             # word
@@ -953,25 +974,13 @@ class Preprocessor:
             max_word_seq_length = max(max_word_seq_length, len(sample["features"]["word_list"]))
             max_subword_seq_length = max(max_subword_seq_length, len(sample["features"]["subword_list"]))
 
-        # rel_type_set = sorted(rel_type_set)
-        # rel2id = {rel: ind for ind, rel in enumerate(rel_type_set)}
-        #
-        # ent_type_set = sorted(ent_type_set)
-        # ent2id = {ent: ind for ind, ent in enumerate(ent_type_set)}
-
         def get_dict(tag_set):
             tag2id = {tag: ind + 2 for ind, tag in enumerate(sorted(tag_set))}
             tag2id["[PAD]"] = 0
             tag2id["[UNK]"] = 1
             return tag2id
 
-        deprel_type2id = get_dict(deprel_type_set)
-        pos_tag2id = get_dict(pos_tag_set)
-
         char2id = get_dict(char_set)
-        ner_tag_set.remove("O")
-        ner_tag2id = {ner_tag: ind + 1 for ind, ner_tag in enumerate(sorted(ner_tag_set))}
-        ner_tag2id["O"] = 0
 
         word2num = dict(sorted(word2num.items(), key=lambda x: x[1], reverse=True))
         for tok, num in word2num.items():
@@ -983,11 +992,6 @@ class Preprocessor:
         word2id = get_dict(word_set)
 
         data_statistics = {
-            # "relation_type_num": len(rel2id),
-            # "entity_type_num": len(ent2id),
-            "pos_tag_num": len(pos_tag2id),
-            "ner_tag_num": len(ner_tag2id),
-            "deprel_type_num": len(deprel_type2id),
             "word_num": len(word2id),
             "char_num": len(char2id),
             "max_word_seq_length": max_word_seq_length,
@@ -995,14 +999,25 @@ class Preprocessor:
         }
 
         dicts = {
-            # "rel_type2id": rel2id,
-            # "ent_type2id": ent2id,
-            "pos_tag2id": pos_tag2id,
-            "ner_tag2id": ner_tag2id,
-            "deprel_type2id": deprel_type2id,
             "char2id": char2id,
             "word2id": word2id,
         }
+        if "pos_tag_list" in data[0]["features"]:
+            pos_tag2id = get_dict(pos_tag_set)
+            data_statistics["pos_tag_num"] = len(pos_tag2id)
+            dicts["pos_tag2id"] = pos_tag2id
+
+        if "ner_tag_list" in data[0]["features"]:
+            ner_tag_set.remove("O")
+            ner_tag2id = {ner_tag: ind + 1 for ind, ner_tag in enumerate(sorted(ner_tag_set))}
+            ner_tag2id["O"] = 0
+            data_statistics["ner_tag_num"] = len(ner_tag2id)
+            dicts["ner_tag2id"] = ner_tag2id
+
+        if "word_dependency_list" in data[0]["features"]:
+            deprel_type2id = get_dict(deprel_type_set)
+            data_statistics["deprel_type_num"] = len(deprel_type2id)
+            dicts["deprel_type2id"] = deprel_type2id
 
         return dicts, data_statistics
 
@@ -1517,6 +1532,8 @@ class Preprocessor:
 
 if __name__ == "__main__":
     bert = BertTokenizerFast.from_pretrained("../../data/pretrained_models/bert-base-uncased")
-    bert_dict = bert.get_vocab()
-    print(type(bert_dict))
+    text = "type1; type2; type3[SEP]FSAN jkfsn"
+    codes = bert.encode_plus(text, return_offsets_mapping=True)
+    print(bert.tokenize(text))
+    print(codes["offset_mapping"])
     pass

@@ -225,4 +225,5 @@ class Evaluator:
         :param final_score_key: which score is the final score: trigger_class_f1, rel_f1
         :return:
         '''
+
         return self.model.metrics_cal.score(pred_data, golden_data, data_filename)
