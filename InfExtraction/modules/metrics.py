@@ -233,9 +233,6 @@ class MetricsCalculator:
         # pred_rel_list = [rel for rel in pred_rel_list if rel["predicate"].split(":")[0] not in {"EE"}]
         # pred_ent_list = [ent for ent in pred_ent_list if ent["type"].split(":")[0] not in {"EXT", "EE"}]
 
-        gold_rel_list = [rel for rel in gold_rel_list
-                         if "EE:" not in rel["predicate"] and "EXT:" not in rel["predicate"]]
-
         # filter extra entities
         ent_type_set = {ent["type"] for ent in gold_ent_list}
         ent_types2filter = {"REL:", "EE:"}
