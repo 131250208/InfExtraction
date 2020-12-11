@@ -9,12 +9,12 @@ Train the model
 # Put the data into a Dataloaders
 # Set optimizer and trainer
 '''
-from InfExtraction.modules.preprocess import Preprocessor, MyDataset
+from InfExtraction.modules.preprocess import Preprocessor
 from InfExtraction.modules import taggers
 from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.work_flows.utils import DefaultLogger
+from InfExtraction.modules.utils import DefaultLogger, MyDataset
 
 import os
 import sys, getopt
@@ -28,10 +28,6 @@ import re
 from glob import glob
 import numpy as np
 import importlib
-
-
-def worker_init_fn(worker_id):
-    np.random.seed(np.random.get_state()[1][0] + worker_id)
 
 
 def get_dataloader(data,
@@ -49,11 +45,11 @@ def get_dataloader(data,
                    ):
     # split test data
     data = Preprocessor.split_into_short_samples(data,
-                                                       max_seq_len,
-                                                       sliding_len,
-                                                       data_type,
-                                                       token_level=token_level,
-                                                       wordpieces_prefix=wdp_prefix)
+                                                 max_seq_len,
+                                                 sliding_len,
+                                                 data_type,
+                                                 token_level=token_level,
+                                                 wordpieces_prefix=wdp_prefix)
 
     if combine:
         data = Preprocessor.combine(data, max_seq_len)
@@ -64,7 +60,6 @@ def get_dataloader(data,
         logging.warning("mismatch errors in {}".format(data_type))
         pprint(sample_id2mismatched)
     # check decoding
-
 
     # inexing
     indexed_data = Preprocessor.index_features(data,
@@ -86,8 +81,17 @@ def get_dataloader(data,
     return dataloader
 
 
+def worker_init_fn(worker_id):
+    np.random.seed(np.random.get_state()[1][0] + worker_id)
+
+
 def get_score_fr_path(model_path):
     return float(re.search("_([\d\.]+)\.pt", model_path.split("/")[-1]).group(1))
+
+
+def get_last_k_paths(path_list, k):
+    path_list = sorted(path_list, key=get_score_fr_path)
+    return path_list[-k:]
 
 
 if __name__ == "__main__":
@@ -111,14 +115,16 @@ if __name__ == "__main__":
     run_name = settings.run_name
     model_name = settings.model_name
     tagger_name = settings.tagger_name
+    stage = settings.stage
 
     # data
     data_in_dir = settings.data_in_dir
+    data_out_dir = settings.data_out_dir
     train_data_path = settings.train_data
     valid_data_path = settings.valid_data
     dicts = settings.dicts
     statistics = settings.statistics
-    key2dict = settings.key2dict # map from feature key to indexing dict
+    key2dict = settings.key2dict  # map from feature key to indexing dict
 
     # logger settings
     use_wandb = settings.use_wandb
@@ -150,7 +156,13 @@ if __name__ == "__main__":
     trainer_config = settings.trainer_config
     use_ghm = settings.use_ghm
     lr = settings.lr
-    model_state_dict_path = settings.model_state_dict_path # pretrained model state
+    model_state_dict_path = settings.model_state_dict_path  # pretrained model state
+
+    # test settings
+    model_dir_for_test = settings.model_dir_for_test
+    target_run_ids = settings.target_run_ids
+    top_k_models = settings.top_k_models
+    cal_scores = settings.cal_scores
 
     # match_pattern, only for relation extraction
     match_pattern = settings.match_pattern if "re" in task_type else None
@@ -166,7 +178,7 @@ if __name__ == "__main__":
     wdp_prefix = None
     if token_level == "subword":
         wdp_prefix = model_settings["subwd_encoder_config"]["wordpieces_prefix"]
-    max_char_num_in_tok=None
+    max_char_num_in_tok = None
     if "char_encoder_config" in model_settings and model_settings["char_encoder_config"] is not None:
         max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
 
@@ -246,109 +258,160 @@ if __name__ == "__main__":
         if not os.path.exists(dir_to_save_model):
             os.makedirs(dir_to_save_model)
 
-    # dataloader
-    train_dataloader = get_dataloader(train_data,
-                                      "train",
-                                      token_level,
-                                      max_seq_len_train,
-                                      sliding_len_train,
-                                      combine,
-                                      batch_size_train,
-                                      key2dict,
-                                      tagger,
-                                      collate_fn,
-                                      wdp_prefix,
-                                      max_char_num_in_tok,
-                                      )
-    valid_dataloader = get_dataloader(valid_data,
-                                      "valid",
-                                      token_level,
-                                      max_seq_len_valid,
-                                      sliding_len_valid,
-                                      combine,
-                                      batch_size_valid,
-                                      key2dict,
-                                      tagger,
-                                      collate_fn,
-                                      wdp_prefix,
-                                      max_char_num_in_tok,
-                                      )
-    # # # have a look at dataloader
-    # train_data_iter = iter(train_dataloader)
-    # batch_data = next(train_data_iter)
-    # print(batch_data)
-
-    filename2test_data_loader = {}
-    for filename, test_data in filename2test_data.items():
-        filename2test_data_loader[filename] = get_dataloader(test_data,
-                                                             "test",
-                                                             token_level,
-                                                             max_seq_len_test,
-                                                             sliding_len_test,
-                                                             combine,
-                                                             batch_size_test,
-                                                             key2dict,
-                                                             tagger,
-                                                             collate_fn,
-                                                             wdp_prefix,
-                                                             max_char_num_in_tok,
-                                                             )
-
-    # optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=float(lr))
-
-    # load pretrained model
-    if model_state_dict_path is not None:
-        model.load_state_dict(torch.load(model_state_dict_path))
-        print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
-
     # trainer and evaluator
-    trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
     evaluator = Evaluator(model, device)
 
-    # debug: checking tagging and decoding
-    if check_tagging_n_decoding:
-        pprint(evaluator.check_tagging_n_decoding(valid_dataloader, valid_data))
+    # test dataloader
+    filename2test_data_loader = {}
+    for filename, test_data in filename2test_data.items():
+        test_dataloader = get_dataloader(test_data,
+                                         "test",
+                                         token_level,
+                                         max_seq_len_test,
+                                         sliding_len_test,
+                                         combine,
+                                         batch_size_test,
+                                         key2dict,
+                                         tagger,
+                                         collate_fn,
+                                         wdp_prefix,
+                                         max_char_num_in_tok,
+                                         )
+        filename2test_data_loader[filename] = test_dataloader
 
-    # train and eval
-    best_val_score = 0.
-    for ep in range(epochs):
-        # train
-        trainer.train(ep, epochs)
-        # valid
-        pred_samples = evaluator.predict(valid_dataloader, valid_data)
-        score_dict = evaluator.score(pred_samples, valid_data, "val")
-        logger.log(score_dict)
-        dataset2score_dict = {
-            "valid_data.json": score_dict,
-        }
-        current_val_fin_score = score_dict["{}_{}".format("val", fin_score_key)] # 将trigger_class_f1设为参数
+    if stage == "inference":
 
-        # test
-        for filename, test_data_loader in filename2test_data_loader.items():
-            gold_test_data = filename2test_data[filename]
-            pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-            score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
+        pass
+
+    if stage == "train":
+        train_dataloader = get_dataloader(train_data,
+                                          "train",
+                                          token_level,
+                                          max_seq_len_train,
+                                          sliding_len_train,
+                                          combine,
+                                          batch_size_train,
+                                          key2dict,
+                                          tagger,
+                                          collate_fn,
+                                          wdp_prefix,
+                                          max_char_num_in_tok,
+                                          )
+        valid_dataloader = get_dataloader(valid_data,
+                                          "valid",
+                                          token_level,
+                                          max_seq_len_valid,
+                                          sliding_len_valid,
+                                          combine,
+                                          batch_size_valid,
+                                          key2dict,
+                                          tagger,
+                                          collate_fn,
+                                          wdp_prefix,
+                                          max_char_num_in_tok,
+                                          )
+        # debug: checking tagging and decoding
+        if check_tagging_n_decoding:
+            pprint(evaluator.check_tagging_n_decoding(valid_dataloader, valid_data))
+
+        # load pretrained model
+        if model_state_dict_path is not None:
+            model.load_state_dict(torch.load(model_state_dict_path))
+            print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
+
+        # optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=float(lr))
+
+        trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
+        # train and valid
+        best_val_score = 0.
+        for ep in range(epochs):
+            # train
+            trainer.train(ep, epochs)
+            # valid
+            pred_samples = evaluator.predict(valid_dataloader, valid_data)
+            score_dict = evaluator.score(pred_samples, valid_data, "val")
             logger.log(score_dict)
-            dataset2score_dict[filename] = score_dict
+            dataset2score_dict = {
+                "valid_data.json": score_dict,
+            }
+            current_val_fin_score = score_dict["{}_{}".format("val", fin_score_key)]
 
-        pprint(dataset2score_dict)
+            # test
+            for filename, test_data_loader in filename2test_data_loader.items():
+                gold_test_data = filename2test_data[filename]
+                pred_samples = evaluator.predict(test_data_loader, gold_test_data)
+                score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
+                logger.log(score_dict)
+                dataset2score_dict[filename] = score_dict
 
-        if current_val_fin_score > score_threshold:
-            # save model state
-            torch.save(model.state_dict(),
-                       os.path.join(dir_to_save_model,
-                                    "model_state_dict_{}_{:.5}.pt".format(ep, current_val_fin_score * 100)))
+            pprint(dataset2score_dict)
 
-            # all state paths
-            model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model))
-            # sorted by scores
-            sorted_model_state_path_list = sorted(model_state_path_list,
-                                                  key=get_score_fr_path)
-            # best score in the bag
-            model_path_max_score = sorted_model_state_path_list[-1]
-            best_val_score = get_score_fr_path(model_path_max_score)
-            # only save <model_bag_size> model states
-            if len(sorted_model_state_path_list) > model_bag_size:
-                os.remove(sorted_model_state_path_list[0])  # drop the state with minimum score
-        print("Current val score: {:.5}, Best val score: {:.5}".format(current_val_fin_score * 100, best_val_score))
+            if current_val_fin_score > score_threshold:
+                # save model state
+                torch.save(model.state_dict(),
+                           os.path.join(dir_to_save_model,
+                                        "model_state_dict_{}_{:.5}.pt".format(ep, current_val_fin_score * 100)))
+
+                # all state paths
+                model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model))
+                # sorted by scores
+                sorted_model_state_path_list = sorted(model_state_path_list,
+                                                      key=get_score_fr_path)
+                # best score in the bag
+                model_path_max_score = sorted_model_state_path_list[-1]
+                best_val_score = get_score_fr_path(model_path_max_score)
+                # only save <model_bag_size> model states
+                if len(sorted_model_state_path_list) > model_bag_size:
+                    os.remove(sorted_model_state_path_list[0])  # drop the state with minimum score
+            print("Current val score: {:.5}, Best val score: {:.5}".format(current_val_fin_score * 100, best_val_score))
+
+    elif stage == "inference":
+        # get model state paths
+        target_run_ids = set(target_run_ids)
+        assert model_dir_for_test is not None and model_dir_for_test.strip() != ""
+        run_id2model_state_paths = {}
+        for root, dirs, files in os.walk(model_dir_for_test):
+            for file_name in files:
+                run_id = root[-8:]
+                if re.match(".*model_state.*\.pt", file_name) and run_id in target_run_ids:
+                    if run_id not in run_id2model_state_paths:
+                        run_id2model_state_paths[run_id] = []
+                    model_state_path = os.path.join(root, file_name)
+                    run_id2model_state_paths[run_id].append(model_state_path)
+
+        # predicting
+        run_id2scores = {}
+        for run_id, model_path_list in run_id2model_state_paths.items():
+            # only top k models
+            model_path_list = get_last_k_paths(model_path_list, top_k_models)
+            for path in model_path_list:
+                # load model
+                model.load_state_dict(torch.load(path))
+                print("model state loaded: {}".format("/".join(path.split("/")[-2:])))
+                model.eval()
+                model_name = re.sub("\.pt", "", path.split("/")[-1])
+                save_dir = os.path.join(data_out_dir, task_type, run_id, model_name)
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir)
+
+                # test
+                for filename, test_data_loader in filename2test_data_loader.items():
+                    gold_test_data = filename2test_data[filename]
+                    # predicate
+                    pred_samples = evaluator.predict(test_data_loader, gold_test_data)
+
+                    # save results
+                    json.dump(pred_samples, open(os.path.join(save_dir, filename), "w", encoding="utf-8"))
+
+                    # score
+                    if cal_scores:
+                        score_dict = evaluator.score(pred_samples, gold_test_data)
+                        if run_id not in run_id2scores:
+                            run_id2scores[run_id] = {}
+                        if model_name not in run_id2scores[run_id]:
+                            run_id2scores[run_id][model_name] = {}
+                        run_id2scores[run_id][model_name][filename] = score_dict
+
+        if cal_scores:
+            pprint(run_id2scores)
