@@ -225,11 +225,4 @@ class Evaluator:
         :param final_score_key: which score is the final score: trigger_class_f1, rel_f1
         :return:
         '''
-        # clean extra info added by preprocessing
-        def clean_data(data):
-            for sample in data:
-                sample["entity_list"] = [ent for ent in sample["entity_list"] if ent["type"].split(":")[0] != "EXT"]
-        clean_data(pred_data)
-        clean_data(golden_data)
-
         return self.model.metrics_cal.score(pred_data, golden_data, data_filename)

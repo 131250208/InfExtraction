@@ -313,12 +313,11 @@ class HandshakingTagger4TPLPlus(Tagger):
         # filter extra relations
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
         # filter extra entities
-        ent_type_set = {ent["type"] for ent in ent_list}
         ent_types2filter = {"REL:"}
-        if len(ent_type_set) == 1 and list(ent_type_set)[0] == "EXT:DEFAULT":
-            pass
-        else:
-            ent_types2filter.add("EXT:")
+        for ent in ent_list:
+            if re.search("[A-Z]+:", ent["type"]) is None:  # if entity types are annotated, filter default type
+                ent_types2filter.add("EXT:")
+                break
         filter_pattern = "({})".format("|".join(ent_types2filter))
         pred_sample["entity_list"] = [ent for ent in ent_list if re.search(filter_pattern, ent["type"]) is None]
         return pred_sample
@@ -374,7 +373,8 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
         ent_type_set = set()
         for sample in data:
             # entity type
-            ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
+            if "entity_list" in sample:
+                ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
             # relation type
             rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
         rel_type_set = sorted(rel_type_set)
@@ -542,12 +542,11 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
         # filter extra relations
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
         # filter extra entities
-        ent_type_set = {ent["type"] for ent in ent_list}
         ent_types2filter = {"REL:"}
-        if len(ent_type_set) == 1 and list(ent_type_set)[0] == "EXT:DEFAULT":
-            pass
-        else:
-            ent_types2filter.add("EXT:")
+        for ent in ent_list:
+            if re.search("[A-Z]+:", ent["type"]) is None:  # if entity types are annotated, filter default type
+                ent_types2filter.add("EXT:")
+                break
         filter_pattern = "({})".format("|".join(ent_types2filter))
         pred_sample["entity_list"] = [ent for ent in ent_list if re.search(filter_pattern, ent["type"]) is None]
 
