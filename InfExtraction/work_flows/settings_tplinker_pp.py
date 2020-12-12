@@ -34,29 +34,30 @@ from glob import glob
 exp_name = "genia"
 task_type = "re+ner"  # re
 
-if "re" in task_type:
+if task_type == "re":
     final_score_key = "rel_f1"
-if "ee" in task_type:
+elif task_type == "re+ee":
     final_score_key = "trigger_class_f1"
+elif task_type == "re+ner":
+    final_score_key = "ent_f1"
 
 # match_pattern: for joint entity and relation extraction
 # only_head_text (nyt_star, webnlg_star),
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-match_pattern = "only_head_text"
+match_pattern = "whole_span"
 
 # model and tagger(decoder)
 model_name = "TPLinkerPP"
 tagger_name = "HandshakingTagger4TPLPP"
 
-
 # data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
 train_data = os.path.join(data_in_dir, exp_name, "train_data.json")
-valid_data = os.path.join(data_in_dir, exp_name, "valid_data.json")
-test_data_list = glob("{}/*test*".format(os.path.join(data_in_dir, exp_name))) # ["test_triples.json", ], ["test_data.json", ]
+valid_data = os.path.join(data_in_dir, exp_name, "test_data.json")
+test_data_list = [] # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name))) # ["test_triples.json", ], ["test_data.json", ]
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)
@@ -65,17 +66,28 @@ statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # for preprocessing
-key2dict = {
-    "char_list": dicts["char2id"],
-    "word_list": dicts["word2id"],
-    "subword_list": dicts["bert_dict"],
-    "pos_tag_list": dicts["pos_tag2id"],
-    "ner_tag_list": dicts["ner_tag2id"],
-    "dependency_list": dicts["deprel_type2id"],
+key_map = {
+    "char2id": "char_list",
+    "word2id": "word_list",
+    "bert_dict": "subword_list",
+    "pos_tag2id": "pos_tag_list",
+    "ner_tag2id": "ner_tag_list",
+    "deprel_type2id": "dependency_list",
 }
+key2dict = {}
+for key, val in dicts.items():
+    key2dict[key_map[key]] = val
+# key2dict = {
+#     "char_list": dicts["char2id"],
+#     "word_list": dicts["word2id"],
+#     "subword_list": dicts["bert_dict"],
+#     "pos_tag_list": dicts["pos_tag2id"],
+#     "ner_tag_list": dicts["ner_tag2id"],
+#     "dependency_list": dicts["deprel_type2id"],
+# }
 
 # train, valid, test settings
-stage = "train"
+stage = "train"  # inference
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 check_tagging_n_decoding = True
 device_num = 1
@@ -139,23 +151,38 @@ model_state_dict_path = None
 
 
 # for test
-model_dir_for_test = "./default_log_dir"  # "./default_log_dir"
-target_run_ids = ["cYqIiJLZ", ]
+model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
+target_run_ids = ["0kQIoiOs", ]
 top_k_models = 1
-cal_scores = True # set False if the test sets are not annotated with golden results
+cal_scores = True  # set False if the test sets are not annotated
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+pos_tag_emb = False
+ner_tag_emb = False
+char_encoder = False
+
+word_encoder = True
+subwd_encoder = True
+
+dep_gcn = False
+
+use_attns4rel = False
+
+conv4local_info = True
+inter_kernel = True
+
+
 pos_tag_emb_config = {
     "pos_tag_num": statistics["pos_tag_num"],
     "emb_dim": 64,
     "emb_dropout": 0.1
-}
+} if pos_tag_emb else None
 
 ner_tag_emb_config = {
     "ner_tag_num": statistics["ner_tag_num"],
     "emb_dim": 32,
     "emb_dropout": 0.1
-}
+} if ner_tag_emb else None
 
 char_encoder_config = {
     "char_size": statistics["char_num"],
@@ -165,25 +192,25 @@ char_encoder_config = {
     "bilstm_hidden_size": [16, 32], # hidden sizes of bilstm1 and bilstm2
     "bilstm_dropout": [0., 0.1, 0.], # dropout rates for bilstm1, middle dropout layer, bilstm2
     "max_char_num_in_tok": 16,
-}
+} if char_encoder else None
 
 word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
-    "word_emb_file_path": "../../data/pretrained_emb/glove.6B.100d.txt",
+    "word_emb_file_path": "../../data/pretrained_emb/PubMed-shuffle-win-30.bin",
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
     "bilstm_dropout": [0., 0.1, 0.],
     "freeze_word_emb": False,
-}
+} if word_encoder else None
 
 subwd_encoder_config = {
-    "pretrained_model_path": "../../data/pretrained_models/bert-base-cased",
+    "pretrained_model_path": "../../data/pretrained_models/biobert-large-cased-pubmed-58k",
     "finetune": True,
     "use_last_k_layers": 1,
     "wordpieces_prefix": "##",
-}
+} if subwd_encoder else None
 
 dep_config = {
     "dep_type_num": statistics["deprel_type_num"],
@@ -192,7 +219,7 @@ dep_config = {
     "gcn_dim": 128,
     "gcn_dropout": 0.1,
     "gcn_layer_num": 1,
-}
+} if dep_gcn else None
 
 handshaking_kernel_config = {
     "ent_shaking_type": "cat+lstm",
@@ -204,7 +231,7 @@ conv_config = {
     "rel_conv_layers": 2,
     "ent_conv_kernel_size": 3,  # must be odd
     "rel_conv_kernel_size": 3,  # must be odd
-}
+} if conv4local_info else None
 
 inter_kernel_config = {
     #"cross_enc_type": "pool",
@@ -219,35 +246,36 @@ inter_kernel_config = {
     #     "num_layers_crlstm": 1,
     #     "hv_comb_type_crlstm": "add"
     # },
-}
+} if inter_kernel else None
 
 # model settings
-token_level = "subword" # token is word or subword
+token_level = "word" # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 
 # to do an ablation study, you can remove components by commenting the configurations below
 # except for handshaking_kernel_config, which is a must for the model
 model_settings = {
-#     "pos_tag_emb_config": pos_tag_emb_config,
-#     "ner_tag_emb_config": ner_tag_emb_config,
-#     "char_encoder_config": char_encoder_config,
+    "pos_tag_emb_config": pos_tag_emb_config,
+    "ner_tag_emb_config": ner_tag_emb_config,
+    "char_encoder_config": char_encoder_config,
     "subwd_encoder_config": subwd_encoder_config,
-#     "word_encoder_config": word_encoder_config,
-#     "dep_config": dep_config,
+    "word_encoder_config": word_encoder_config,
+    "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-#    "use_attns4rel": True,
+    "use_attns4rel": use_attns4rel,
     "conv_config": conv_config,
     "inter_kernel_config": inter_kernel_config,
+    # "fin_hidden_size": 768,
     "ent_dim": 768,
     "rel_dim": 768,
 #    "fin_hidden_size": 768,
 }
 
-#if model_name == "TPLinkerPP":
-#    assert max_seq_len_train == max_seq_len_valid == max_seq_len_test
-#    model_settings["matrix_size"] = max_seq_len_train
-
+if model_name == "TPLinkerPP" and \
+        "inter_kernel_config" in model_settings and \
+        model_settings["inter_kernel_config"]["cross_enc_type"] == "conv":
+    assert max_seq_len_train == max_seq_len_valid == max_seq_len_test
 
 model_settings_log = copy.deepcopy(model_settings)
 if "word_encoder_config" in model_settings_log and model_settings_log["word_encoder_config"] is not None:
@@ -275,4 +303,6 @@ config_to_log = {
     **model_settings_log,
     "token_level": token_level,
 }
+if task_type == "re":
+    config_to_log["match_pattern"] = match_pattern
 

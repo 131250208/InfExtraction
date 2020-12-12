@@ -234,7 +234,7 @@ class MetricsCalculator:
         # pred_ent_list = [ent for ent in pred_ent_list if ent["type"].split(":")[0] not in {"EXT", "EE"}]
 
         # filter extra entities and relations
-        ent_types2filter = {"REL:", "EE:"}
+        ent_types2filter = {"REL:", "EE:", "NER:"}
         for ent in gold_ent_list:
             if re.search("[A-Z]+:", ent["type"]) is None:  # if entity types are annotated, filter default type
                 ent_types2filter.add("EXT:")

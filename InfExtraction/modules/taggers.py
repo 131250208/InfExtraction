@@ -744,6 +744,31 @@ def create_rebased_ee_tagger(base_class):
     return REBasedEETagger
 
 
+def create_rebased_ner_tagger(base_class):
+    class REBasedNERTagger(base_class):
+        def decode(self, sample, pred_outs):
+            pred_sample = super(REBasedNERTagger, self).decode(sample, pred_outs)
+            pred_sample["entity_list"] = self._trans2ner(pred_sample["relation_list"], pred_sample["entity_list"])
+            return pred_sample
+
+        def _trans2ner(self, rel_list, ent_list):
+            fin_ent_list = [ent for ent in ent_list if ent["type"] != "NER:Ontology"]
+            ner_fr_re = []
+            for rel in rel_list:
+                assert rel["predicate"] == "isA"
+                ent = {
+                    "text": rel["subject"],
+                    "type": rel["object"],
+                    "char_span": rel["subj_char_span"],
+                    "tok_span": rel["subj_tok_span"],
+                }
+                ner_fr_re.append(ent)
+            fin_ent_list.extend(ner_fr_re)
+            return fin_ent_list
+
+    return REBasedNERTagger
+
+
 class MatrixTaggerEE(Tagger):
     def __init__(self, data):
         '''

@@ -358,6 +358,7 @@ class Preprocessor:
                                                                                    add_special_tokens=False,
                                                                                    do_lower_case=False,
                                                                                    stanza_language=self.language)
+            print("tokenizer loaded: {}".format(self.pretrained_model_path))
         return self.subword_tokenizer
 
     def _get_char2tok_span(self, tok2char_span):
@@ -1030,21 +1031,33 @@ class Preprocessor:
                 new_features = {
                     "subword_list": features["subword_list"],
                     "tok2char_span": features["subword2char_span"],
-                    "word_list": [features["word_list"][wid] for wid in subword2word_id], # alignment
-                    "ner_tag_list": [features["ner_tag_list"][wid] for wid in subword2word_id],
-                    "pos_tag_list": [features["pos_tag_list"][wid] for wid in subword2word_id],
-                    "dependency_list": features["subword_dependency_list"],
+                    "word_list": [features["word_list"][wid] for wid in subword2word_id],
+                    # "ner_tag_list": [features["ner_tag_list"][wid] for wid in subword2word_id],
+                    # "pos_tag_list": [features["pos_tag_list"][wid] for wid in subword2word_id],
+                    # "dependency_list": features["subword_dependency_list"],
                 }
+                if "ner_tag_list" in features:
+                    new_features["ner_tag_list"] = [features["ner_tag_list"][wid] for wid in subword2word_id]
+                if "pos_tag_list" in features:
+                    new_features["pos_tag_list"] = [features["pos_tag_list"][wid] for wid in subword2word_id]
+                if "subword_dependency_list" in features:
+                    new_features["dependency_list"] = features["subword_dependency_list"]
                 sample["features"] = new_features
             else:
                 new_features = {
                     "word_list": features["word_list"],
                     "subword_list": features["word_list"],
                     "tok2char_span": features["word2char_span"],
-                    "ner_tag_list": features["ner_tag_list"],
-                    "pos_tag_list": features["pos_tag_list"],
-                    "dependency_list": features["word_dependency_list"],
+                    # "ner_tag_list": features["ner_tag_list"],
+                    # "pos_tag_list": features["pos_tag_list"],
+                    # "dependency_list": features["word_dependency_list"],
                 }
+                if "ner_tag_list" in features:
+                    new_features["ner_tag_list"] = features["ner_tag_list"]
+                if "pos_tag_list" in features:
+                    new_features["pos_tag_list"] = features["pos_tag_list"]
+                if "word_dependency_list" in features:
+                    new_features["dependency_list"] = features["word_dependency_list"]
                 sample["features"] = new_features
         return data
 
@@ -1173,14 +1186,20 @@ class Preprocessor:
                                   "subword_list": features["subword_list"][start_ind:end_ind],
                                   "tok2char_span": [[char_sp[0] - char_level_offset, char_sp[1] - char_level_offset]
                                                     for char_sp in features["tok2char_span"][start_ind:end_ind]],
-                                  "pos_tag_list": features["pos_tag_list"][start_ind:end_ind],
-                                  "ner_tag_list": features["ner_tag_list"][start_ind:end_ind],
-                                  "dependency_list": []}
-
-                for dep in features["dependency_list"]:
-                    if start_ind <= dep[0] < end_ind and start_ind <= dep[1] < end_ind:
-                        new_dep = [dep[0] - tok_level_offset, dep[1] - tok_level_offset, dep[2]]
-                        split_features["dependency_list"].append(new_dep)
+                                  # "pos_tag_list": features["pos_tag_list"][start_ind:end_ind],
+                                  # "ner_tag_list": features["ner_tag_list"][start_ind:end_ind],
+                                  # "dependency_list": [],
+                                  }
+                if "pos_tag_list" in features:
+                    split_features["pos_tag_list"] = features["pos_tag_list"][start_ind:end_ind]
+                if "ner_tag_list" in features:
+                    split_features["ner_tag_list"] = features["ner_tag_list"][start_ind:end_ind]
+                if "dependency_list" in features:
+                    split_features["dependency_list"] = []
+                    for dep in features["dependency_list"]:
+                        if start_ind <= dep[0] < end_ind and start_ind <= dep[1] < end_ind:
+                            new_dep = [dep[0] - tok_level_offset, dep[1] - tok_level_offset, dep[2]]
+                            split_features["dependency_list"].append(new_dep)
 
                 new_sample = {
                     "id": id,
