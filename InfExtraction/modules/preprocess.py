@@ -464,18 +464,19 @@ class Preprocessor:
             normal_sample["relation_list"] = normal_rel_list
             normal_sample_list.append(normal_sample)
 
-        def clean_text(text):
-            text = re.sub("�", "", text)
-            #             text = re.sub("([A-Za-z]+)", r" \1 ", text)
-            #             text = re.sub("(\d+)", r" \1 ", text)
-            #             text = re.sub("\s+", " ", text).strip()
-            return text
-
-        for sample in tqdm(normal_sample_list, desc="Clean"):
-            sample["text"] = clean_text(sample["text"])
-            for rel in sample["relation_list"]:
-                rel["subject"] = clean_text(rel["subject"])
-                rel["object"] = clean_text(rel["object"])
+        # def clean_text(text):
+        #     text = re.sub("�", "", text)
+        #     #             text = re.sub("([A-Za-z]+)", r" \1 ", text)
+        #     #             text = re.sub("(\d+)", r" \1 ", text)
+        #     #             text = re.sub("\s+", " ", text).strip()
+        #     return text
+        #
+        # for sample in tqdm(normal_sample_list, desc="Clean"):
+        #     sample["text"] = clean_text(sample["text"])
+        #
+        #     for rel in sample["relation_list"]:
+        #         rel["subject"] = clean_text(rel["subject"])
+        #         rel["object"] = clean_text(rel["object"])
 
         return normal_sample_list
 
