@@ -31,8 +31,8 @@ import copy
 import re
 from glob import glob
 
-exp_name = "nyt_star"
-task_type = "re"  # re
+exp_name = "genia"
+task_type = "re+ner"  # re
 
 if "re" in task_type:
     final_score_key = "rel_f1"
@@ -75,22 +75,23 @@ key2dict = {
 }
 
 # train, valid, test settings
+stage = "train"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 check_tagging_n_decoding = True
-device_num = 0
+device_num = 1
 epochs = 100
 lr = 5e-5 # 5e-5, 1e-4
-batch_size_train = 24
-batch_size_valid = 24
-batch_size_test = 24
+batch_size_train = 16
+batch_size_valid = 16
+batch_size_test = 16
 
-max_seq_len_train = 64
-max_seq_len_valid = 64
-max_seq_len_test = 64
+max_seq_len_train = 100
+max_seq_len_valid = 100
+max_seq_len_test = 100
 
-sliding_len_train = 64
-sliding_len_valid = 64
-sliding_len_test = 64
+sliding_len_train = 20
+sliding_len_valid = 20
+sliding_len_test = 20
 
 combine = False
 
@@ -116,7 +117,7 @@ scheduler_dict = {
 }
 
 # logger
-use_wandb = False
+use_wandb = True
 log_interval = 10
 
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
@@ -138,9 +139,9 @@ model_state_dict_path = None
 
 
 # for test
-model_dir_for_test = "wandb"  # "./default_log_dir"
-target_run_ids = ["1zbzg5ml", "11p5ec06"]
-top_k_models = 3
+model_dir_for_test = "./default_log_dir"  # "./default_log_dir"
+target_run_ids = ["cYqIiJLZ", ]
+top_k_models = 1
 cal_scores = True # set False if the test sets are not annotated with golden results
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -194,19 +195,30 @@ dep_config = {
 }
 
 handshaking_kernel_config = {
-    "ent_shaking_type": "cln+lstm",
+    "ent_shaking_type": "cat+lstm",
     "rel_shaking_type": "cln",
 }
 
 conv_config = {
     "ent_conv_layers": 2,
-    "rel_conv_layers": 3,
+    "rel_conv_layers": 2,
     "ent_conv_kernel_size": 3,  # must be odd
     "rel_conv_kernel_size": 3,  # must be odd
 }
 
 inter_kernel_config = {
+    #"cross_enc_type": "pool",
 
+    "cross_enc_type": "conv",
+    "cross_enc_config": {
+        "matrix_size": max_seq_len_test,
+    }
+
+    # "cross_enc_type": "bilstm",
+    # "cross_enc_config": {
+    #     "num_layers_crlstm": 1,
+    #     "hv_comb_type_crlstm": "add"
+    # },
 }
 
 # model settings
@@ -229,11 +241,12 @@ model_settings = {
     "inter_kernel_config": inter_kernel_config,
     "ent_dim": 768,
     "rel_dim": 768,
+#    "fin_hidden_size": 768,
 }
 
-if model_name == "TPLinkerPP":
-    assert max_seq_len_train == max_seq_len_valid == max_seq_len_test
-    model_settings["matrix_size"] = max_seq_len_train
+#if model_name == "TPLinkerPP":
+#    assert max_seq_len_train == max_seq_len_valid == max_seq_len_test
+#    model_settings["matrix_size"] = max_seq_len_train
 
 
 model_settings_log = copy.deepcopy(model_settings)
