@@ -219,17 +219,19 @@ if __name__ == "__main__":
         tagger_class_name = taggers.create_rebased_ner_tagger(tagger_class_name)
 
     # additional preprocessing
+    all_data4gen_tag_dict = []
     train_data = tagger_class_name.additional_preprocess(ori_train_data, "train")
+    all_data4gen_tag_dict.extend(train_data)
     valid_data = tagger_class_name.additional_preprocess(ori_valid_data, "valid")
+    all_data4gen_tag_dict.extend(tagger_class_name.additional_preprocess(ori_valid_data, "train"))
+
     filename2test_data = {}
     for filename, ori_test_data in filename2ori_test_data.items():
         filename2test_data[filename] = tagger_class_name.additional_preprocess(ori_test_data, "test")
+        all_data4gen_tag_dict.extend(tagger_class_name.additional_preprocess(ori_test_data, "train"))
 
     # instance
-    # all_data = train_data + valid_data
-    # for filename, test_data in filename2test_data.items():
-    #     all_data.extend(test_data)
-    tagger = tagger_class_name(train_data)
+    tagger = tagger_class_name(all_data4gen_tag_dict)
 
     # metrics_calculator
     metrics_cal = MetricsCalculator(task_type, match_pattern, use_ghm)
