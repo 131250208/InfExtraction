@@ -58,12 +58,12 @@ class Tagger(metaclass=ABCMeta):
 
 
 class HandshakingTagger4TPLPlus(Tagger):
-    # @classmethod
-    # def is_additional_ent_type(cls, ent_type):
-    #     if re.search("(EXT:|REL:|NER:)", ent_type) is None:
-    #         return False
-    #     else:
-    #         return True
+    @classmethod
+    def is_additional_ent_type(cls, ent_type):
+        if re.search("(EXT:|REL:)", ent_type) is None:
+            return False
+        else:
+            return True
 
     @classmethod
     def additional_preprocess(cls, data, data_type):
