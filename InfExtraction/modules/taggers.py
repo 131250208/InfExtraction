@@ -126,24 +126,24 @@ class HandshakingTagger4TPLPlus(Tagger):
                         ent_j_cp = copy.deepcopy(ent_j)
                         ent_j_cp["type"] = "REL:EXT:NESTED_IN"
                         fin_ent_list.append(ent_j_cp)
-                    # # same type co-occurrence
-                    # if ent_j["type"] == ent_i["type"] and not cls.is_additional_ent_type(ent_i["type"]):
-                    #     fin_rel_list.append({
-                    #         "subject": ent_i["text"],
-                    #         "subj_char_span": [*ent_i["char_span"]],
-                    #         "subj_tok_span": [*ent_i["tok_span"]],
-                    #         "object": ent_j["text"],
-                    #         "obj_char_span": [*ent_j["char_span"]],
-                    #         "obj_tok_span": [*ent_j["tok_span"]],
-                    #         "predicate": "EXT:SAME_TYPE",
-                    #     })
-                    #     ent_i_cp = copy.deepcopy(ent_i)
-                    #     ent_i_cp["type"] = "REL:EXT:SAME_TYPE"
-                    #     fin_ent_list.append(ent_i_cp)
-                    #
-                    #     ent_j_cp = copy.deepcopy(ent_j)
-                    #     ent_j_cp["type"] = "REL:EXT:SAME_TYPE"
-                    #     fin_ent_list.append(ent_j_cp)
+                    # same type co-occurrence
+                    if ent_j["type"] == ent_i["type"] and not cls.is_additional_ent_type(ent_i["type"]):
+                        fin_rel_list.append({
+                            "subject": ent_i["text"],
+                            "subj_char_span": [*ent_i["char_span"]],
+                            "subj_tok_span": [*ent_i["tok_span"]],
+                            "object": ent_j["text"],
+                            "obj_char_span": [*ent_j["char_span"]],
+                            "obj_tok_span": [*ent_j["tok_span"]],
+                            "predicate": "EXT:SAME_TYPE",
+                        })
+                        ent_i_cp = copy.deepcopy(ent_i)
+                        ent_i_cp["type"] = "REL:EXT:SAME_TYPE"
+                        fin_ent_list.append(ent_i_cp)
+
+                        ent_j_cp = copy.deepcopy(ent_j)
+                        ent_j_cp["type"] = "REL:EXT:SAME_TYPE"
+                        fin_ent_list.append(ent_j_cp)
 
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
             sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
