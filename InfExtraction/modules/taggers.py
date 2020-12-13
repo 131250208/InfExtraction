@@ -47,16 +47,6 @@ class Tagger(metaclass=ABCMeta):
         '''
         pass
 
-    # @abstractmethod
-    # def decode_batch(self, data, batch_pred_tags):
-    #     '''
-    #     decoding function for batch data, based on decode()
-    #     :param data: examples (to offer text, tok2char_span for decoding)
-    #     :param batch_pred_tags:
-    #     :return:predicted example list
-    #     '''
-    #     pass
-
     def decode_batch(self, sample_list, batch_pred_tags):
         pred_sample_list = []
         for ind in range(len(sample_list)):
@@ -68,12 +58,12 @@ class Tagger(metaclass=ABCMeta):
 
 
 class HandshakingTagger4TPLPlus(Tagger):
-    @classmethod
-    def is_additional_ent_type(cls, ent_type):
-        if re.search("(EXT:|REL:|NER:)", ent_type) is None:
-            return False
-        else:
-            return True
+    # @classmethod
+    # def is_additional_ent_type(cls, ent_type):
+    #     if re.search("(EXT:|REL:|NER:)", ent_type) is None:
+    #         return False
+    #     else:
+    #         return True
 
     @classmethod
     def additional_preprocess(cls, data, data_type):
@@ -197,12 +187,12 @@ class HandshakingTagger4TPLPlus(Tagger):
         self.tag2id = {t: idx for idx, t in enumerate(self.tags)}
         self.id2tag = {idx: t for t, idx in self.tag2id.items()}
 
-        ent_types2filter = {"REL:"}
-        for ent_type in ent_type_set:
-            if not self.is_additional_ent_type(ent_type):  # if entity types are annotated, filter default type
-                ent_types2filter.add("EXT:")
-                break
-        self.ent_filter_pattern = "({})".format("|".join(ent_types2filter))
+        # ent_types2filter = {"REL:"}
+        # for ent_type in ent_type_set:
+        #     if not self.is_additional_ent_type(ent_type):  # if entity types are annotated, filter default type
+        #         ent_types2filter.add("EXT:")
+        #         break
+        # self.ent_filter_pattern = "({})".format("|".join(ent_types2filter))
 
     def get_tag_size(self):
         return len(self.tag2id)
@@ -350,7 +340,9 @@ class HandshakingTagger4TPLPlus(Tagger):
         # filter extra relations
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
         # filter extra entities
-        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(self.ent_filter_pattern, ent["type"]) is None]
+        ent_types2filter = {"REL:", "EXT:"}
+        ent_filter_pattern = "({})".format("|".join(ent_types2filter))
+        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None]
         return pred_sample
 
 
@@ -574,7 +566,9 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
         # filter extra relations
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
         # filter extra entities
-        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(self.ent_filter_pattern, ent["type"]) is None]
+        ent_types2filter = {"REL:", "EXT:"}
+        ent_filter_pattern = "({})".format("|".join(ent_types2filter))
+        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None]
         return pred_sample
 
 
