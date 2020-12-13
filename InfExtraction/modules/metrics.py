@@ -216,11 +216,13 @@ class MetricsCalculator:
         for mark_str in pred_set:
             if mark_str in gold_set:
                 cpg[0] += 1
+            else:
+                print("!")
 
         cpg[1] += len(pred_set)
         cpg[2] += len(gold_set)
-        # if len(pred_set) != len(gold_set):
-        #     print("!")
+        if len(pred_set) != len(gold_set):
+            print("!")
 
     def _cal_rel_cpg(self, pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict, pattern):
         '''
@@ -233,15 +235,15 @@ class MetricsCalculator:
         # pred_rel_list = [rel for rel in pred_rel_list if rel["predicate"].split(":")[0] not in {"EE"}]
         # pred_ent_list = [ent for ent in pred_ent_list if ent["type"].split(":")[0] not in {"EXT", "EE"}]
 
-        # filter extra entities and relations
-        ent_types2filter = {"REL:", "EE:", "NER:"}
-        for ent in gold_ent_list:
-            if re.search("[A-Z]+:", ent["type"]) is None:  # if entity types are annotated, filter default type
-                ent_types2filter.add("EXT:")
-                break
-        filter_pattern = "({})".format("|".join(ent_types2filter))
-        gold_ent_list = [ent for ent in gold_ent_list if re.search(filter_pattern, ent["type"]) is None]
-        gold_rel_list = [rel for rel in gold_rel_list if re.search("EXT:|EE:", rel["predicate"]) is None]
+        # # filter extra entities and relations
+        # ent_types2filter = {"REL:", "EE:", "NER:"}
+        # for ent in gold_ent_list:
+        #     if re.search("[A-Z]+:", ent["type"]) is None:  # if entity types are annotated, filter default type
+        #         ent_types2filter.add("EXT:")
+        #         break
+        # filter_pattern = "({})".format("|".join(ent_types2filter))
+        # gold_ent_list = [ent for ent in gold_ent_list if re.search(filter_pattern, ent["type"]) is None]
+        # gold_rel_list = [rel for rel in gold_rel_list if re.search("EXT:|EE:", rel["predicate"]) is None]
 
         gold_rel_set, gold_ent_set = self._get_mark_sets_rel(gold_rel_list, gold_ent_list, pattern)
         pred_rel_set, pred_ent_set = self._get_mark_sets_rel(pred_rel_list, pred_ent_list, pattern)
@@ -338,6 +340,12 @@ class MetricsCalculator:
     def score(self, pred_data, golden_data, data_filename=""):
         if data_filename != "":
             data_filename += "_"
+
+        # add keys to avoid key errors
+        for sample in golden_data:
+            for key in {"entity_list", "event_list", "relation_list"}:
+                if key not in sample:
+                    sample[key] = []
 
         total_cpg_dict = {}
         if "re" in self.task_type:

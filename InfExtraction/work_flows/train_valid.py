@@ -192,23 +192,23 @@ if __name__ == "__main__":
 
     # load data
     print("load data...")
-    train_data = json.load(open(train_data_path, "r", encoding="utf-8"))
-    valid_data = json.load(open(valid_data_path, "r", encoding="utf-8"))
-    filename2test_data = {}
+    ori_train_data = json.load(open(train_data_path, "r", encoding="utf-8"))
+    ori_valid_data = json.load(open(valid_data_path, "r", encoding="utf-8"))
+    filename2ori_test_data = {}
     for test_data_path in settings.test_data_list:
         filename = test_data_path.split("/")[-1]
-        test_data = json.load(open(test_data_path, "r", encoding="utf-8"))
-        filename2test_data[filename] = test_data
+        ori_test_data = json.load(open(test_data_path, "r", encoding="utf-8"))
+        filename2ori_test_data[filename] = ori_test_data
     print("done!")
 
     # choose features and spans by token level
-    train_data = Preprocessor.choose_features_by_token_level(train_data, token_level)
-    train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
-    valid_data = Preprocessor.choose_features_by_token_level(valid_data, token_level)
-    valid_data = Preprocessor.choose_spans_by_token_level(valid_data, token_level)
-    for filename, test_data in filename2test_data.items():
-        filename2test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level)
-        filename2test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
+    ori_train_data = Preprocessor.choose_features_by_token_level(ori_train_data, token_level)
+    ori_train_data = Preprocessor.choose_spans_by_token_level(ori_train_data, token_level)
+    ori_valid_data = Preprocessor.choose_features_by_token_level(ori_valid_data, token_level)
+    ori_valid_data = Preprocessor.choose_spans_by_token_level(ori_valid_data, token_level)
+    for filename, test_data in filename2ori_test_data.items():
+        filename2ori_test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level)
+        filename2ori_test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # tagger
@@ -219,16 +219,17 @@ if __name__ == "__main__":
         tagger_class_name = taggers.create_rebased_ner_tagger(tagger_class_name)
 
     # additional preprocessing
-    train_data = tagger_class_name.additional_preprocess(train_data)
-    valid_data = tagger_class_name.additional_preprocess(valid_data)
-    for filename, test_data in filename2test_data.items():
-        filename2test_data[filename] = tagger_class_name.additional_preprocess(test_data)
+    train_data = tagger_class_name.additional_preprocess(ori_train_data, "train")
+    valid_data = tagger_class_name.additional_preprocess(ori_valid_data, "valid")
+    filename2test_data = {}
+    for filename, ori_test_data in filename2ori_test_data.items():
+        filename2test_data[filename] = tagger_class_name.additional_preprocess(ori_test_data, "test")
 
     # instance
-    all_data = train_data + valid_data
-    for filename, test_data in filename2test_data.items():
-        all_data.extend(test_data)
-    tagger = tagger_class_name(all_data)
+    # all_data = train_data + valid_data
+    # for filename, test_data in filename2test_data.items():
+    #     all_data.extend(test_data)
+    tagger = tagger_class_name(train_data)
 
     # metrics_calculator
     metrics_cal = MetricsCalculator(task_type, match_pattern, use_ghm)
@@ -310,7 +311,23 @@ if __name__ == "__main__":
                                           )
         # debug: checking tagging and decoding
         if check_tagging_n_decoding:
-            pprint(evaluator.check_tagging_n_decoding(valid_dataloader, valid_data))
+            # for checking, take valid data as train data, do additional preprocessing
+            # but take original valid data as golden dataset to evaluate
+            valid_data4checking = tagger_class_name.additional_preprocess(ori_valid_data, "train")
+            valid_dataloader4checking = get_dataloader(valid_data4checking,
+                                                       "train",  # only train data will be set a tag sequence
+                                                       token_level,
+                                                       max_seq_len_valid,
+                                                       sliding_len_valid,
+                                                       combine,
+                                                       batch_size_valid,
+                                                       key2dict,
+                                                       tagger,
+                                                       collate_fn,
+                                                       wdp_prefix,
+                                                       max_char_num_in_tok,
+                                                       )
+            pprint(evaluator.check_tagging_n_decoding(valid_dataloader4checking, ori_valid_data))
 
         # load pretrained model
         if model_state_dict_path is not None:
@@ -327,8 +344,8 @@ if __name__ == "__main__":
             # train
             trainer.train(ep, epochs)
             # valid
-            pred_samples = evaluator.predict(valid_dataloader, valid_data)
-            score_dict = evaluator.score(pred_samples, valid_data, "val")
+            pred_samples = evaluator.predict(valid_dataloader, ori_valid_data)
+            score_dict = evaluator.score(pred_samples, ori_valid_data, "val")
             logger.log(score_dict)
             dataset2score_dict = {
                 "valid_data.json": score_dict,
@@ -337,7 +354,7 @@ if __name__ == "__main__":
 
             # test
             for filename, test_data_loader in filename2test_data_loader.items():
-                gold_test_data = filename2test_data[filename]
+                gold_test_data = filename2ori_test_data[filename]
                 pred_samples = evaluator.predict(test_data_loader, gold_test_data)
                 score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
                 logger.log(score_dict)
@@ -411,7 +428,6 @@ if __name__ == "__main__":
                         if model_name not in run_id2scores[run_id]:
                             run_id2scores[run_id][model_name] = {}
                         run_id2scores[run_id][model_name][filename] = score_dict
-
 
         if cal_scores:
             pprint(run_id2scores)

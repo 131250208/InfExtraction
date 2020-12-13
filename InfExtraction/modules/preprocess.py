@@ -1212,7 +1212,7 @@ class Preprocessor:
                     "relation_list": [],
                     "event_list": [],
                 }
-                if data_type == "test":
+                if data_type == "test" or data_type == "valid":
                     if len(sub_text) > 0:
                         split_sample_list.append(new_sample)
                 else:

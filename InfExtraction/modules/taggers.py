@@ -7,7 +7,7 @@ from InfExtraction.modules.preprocess import Indexer, Preprocessor
 
 class Tagger(metaclass=ABCMeta):
     @classmethod
-    def additional_preprocess(cls, data):
+    def additional_preprocess(cls, data, data_type):
         return data
 
     @abstractmethod
@@ -69,10 +69,21 @@ class Tagger(metaclass=ABCMeta):
 
 class HandshakingTagger4TPLPlus(Tagger):
     @classmethod
-    def additional_preprocess(cls, data):
-        for sample in data:
+    def is_additional_ent_type(cls, ent_type):
+        if re.search("(EXT:|REL:|NER:)", ent_type) is None:
+            return False
+        else:
+            return True
+
+    @classmethod
+    def additional_preprocess(cls, data, data_type):
+        if data_type != "train":
+            return data
+
+        new_data = copy.deepcopy(data)
+        for sample in new_data:
             fin_ent_list = sample["entity_list"] if "entity_list" in sample else []
-            fin_rel_list = sample["relation_list"]
+            fin_rel_list = sample["relation_list"] if "relation_list" in sample else []
 
             for rel in fin_rel_list:
                 # add additional types to entities
@@ -88,33 +99,34 @@ class HandshakingTagger4TPLPlus(Tagger):
                     "char_span": rel["obj_char_span"],
                     "tok_span": rel["obj_tok_span"],
                 })
-                fin_ent_list.append({
-                    "text": rel["subject"],
-                    "type": "EXT:DEFAULT",
-                    "char_span": rel["subj_char_span"],
-                    "tok_span": rel["subj_tok_span"],
-                })
-                fin_ent_list.append({
-                    "text": rel["object"],
-                    "type": "EXT:DEFAULT",
-                    "char_span": rel["obj_char_span"],
-                    "tok_span": rel["obj_tok_span"],
-                })
+
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
 
-            # add additional relations btw nested entities
-            for ent_i in sample["entity_list"]:
-                for ent_j in sample["entity_list"]:
+            # add default type to all entities
+            for ent in sample["entity_list"]:
+                fin_ent_list.append({
+                    "text": ent["text"],
+                    "type": "EXT:DEFAULT",
+                    "char_span": ent["char_span"],
+                    "tok_span": ent["tok_span"],
+                })
+
+            # add additional relations
+            for idx_i, ent_i in enumerate(sample["entity_list"]):
+                for idx_j, ent_j in enumerate(sample["entity_list"]):
+                    if idx_i == idx_j:
+                        continue
+                    # nested
                     if (ent_i["tok_span"][1] - ent_i["tok_span"][0]) < (ent_j["tok_span"][1] - ent_j["tok_span"][0]) \
                             and ent_i["tok_span"][0] >= ent_j["tok_span"][0] \
                             and ent_i["tok_span"][1] <= ent_j["tok_span"][1]:
                         fin_rel_list.append({
                             "subject": ent_i["text"],
-                            "subj_char_span": ent_i["char_span"],
-                            "subj_tok_span": ent_i["tok_span"],
+                            "subj_char_span": [*ent_i["char_span"]],
+                            "subj_tok_span": [*ent_i["tok_span"]],
                             "object": ent_j["text"],
-                            "obj_char_span": ent_j["char_span"],
-                            "obj_tok_span": ent_j["tok_span"],
+                            "obj_char_span": [*ent_j["char_span"]],
+                            "obj_tok_span": [*ent_j["tok_span"]],
                             "predicate": "EXT:NESTED_IN",
                         })
                         ent_i_cp = copy.deepcopy(ent_i)
@@ -124,10 +136,28 @@ class HandshakingTagger4TPLPlus(Tagger):
                         ent_j_cp = copy.deepcopy(ent_j)
                         ent_j_cp["type"] = "REL:EXT:NESTED_IN"
                         fin_ent_list.append(ent_j_cp)
+                    # same type co-occurrence
+                    if ent_j["type"] == ent_i["type"] and not cls.is_additional_ent_type(ent_i["type"]):
+                        fin_rel_list.append({
+                            "subject": ent_i["text"],
+                            "subj_char_span": [*ent_i["char_span"]],
+                            "subj_tok_span": [*ent_i["tok_span"]],
+                            "object": ent_j["text"],
+                            "obj_char_span": [*ent_j["char_span"]],
+                            "obj_tok_span": [*ent_j["tok_span"]],
+                            "predicate": "EXT:SAME_TYPE",
+                        })
+                        ent_i_cp = copy.deepcopy(ent_i)
+                        ent_i_cp["type"] = "REL:EXT:SAME_TYPE"
+                        fin_ent_list.append(ent_i_cp)
+
+                        ent_j_cp = copy.deepcopy(ent_j)
+                        ent_j_cp["type"] = "REL:EXT:SAME_TYPE"
+                        fin_ent_list.append(ent_j_cp)
 
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
             sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
-        return data
+        return new_data
 
     def __init__(self, data):
         '''
@@ -166,6 +196,13 @@ class HandshakingTagger4TPLPlus(Tagger):
         self.tags = sorted(self.tags)
         self.tag2id = {t: idx for idx, t in enumerate(self.tags)}
         self.id2tag = {idx: t for t, idx in self.tag2id.items()}
+
+        ent_types2filter = {"REL:"}
+        for ent_type in ent_type_set:
+            if not self.is_additional_ent_type(ent_type):  # if entity types are annotated, filter default type
+                ent_types2filter.add("EXT:")
+                break
+        self.ent_filter_pattern = "({})".format("|".join(ent_types2filter))
 
     def get_tag_size(self):
         return len(self.tag2id)
@@ -313,13 +350,7 @@ class HandshakingTagger4TPLPlus(Tagger):
         # filter extra relations
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
         # filter extra entities
-        ent_types2filter = {"REL:"}
-        for ent in ent_list:
-            if re.search("[A-Z]+:", ent["type"]) is None:  # if entity types are annotated, filter default type
-                ent_types2filter.add("EXT:")
-                break
-        filter_pattern = "({})".format("|".join(ent_types2filter))
-        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(filter_pattern, ent["type"]) is None]
+        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(self.ent_filter_pattern, ent["type"]) is None]
         return pred_sample
 
 
@@ -367,14 +398,14 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
         '''
         :param data: all data, used to generate entity type and relation type dicts
         '''
+        super(HandshakingTagger4TPLPP, self).__init__(data)
 
         # generate entity type and relation type dicts
         rel_type_set = set()
         ent_type_set = set()
         for sample in data:
             # entity type
-            if "entity_list" in sample:
-                ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
+            ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
             # relation type
             rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
         rel_type_set = sorted(rel_type_set)
@@ -489,6 +520,7 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
         for pt in rel_points:
             tag = self.id2rel_tag[pt[2]]
             rel, link_type = tag.split(self.separator)
+
             if link_type == "ST2OT":
                 tail_link_memory = self.separator.join([rel, str(pt[0]), str(pt[1])])
                 tail_link_memory_set.add(tail_link_memory)
@@ -542,14 +574,7 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
         # filter extra relations
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
         # filter extra entities
-        ent_types2filter = {"REL:"}
-        for ent in ent_list:
-            if re.search("[A-Z]+:", ent["type"]) is None:  # if entity types are annotated, filter default type
-                ent_types2filter.add("EXT:")
-                break
-        filter_pattern = "({})".format("|".join(ent_types2filter))
-        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(filter_pattern, ent["type"]) is None]
-
+        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(self.ent_filter_pattern, ent["type"]) is None]
         return pred_sample
 
 
@@ -567,9 +592,13 @@ def create_rebased_ee_tagger(base_class):
                         self.event_type2arg_rols[event_type].add(arg["type"])
 
         @classmethod
-        def additional_preprocess(cls, data):
+        def additional_preprocess(cls, data, data_type):
+            if data_type != "train":
+                return data
+
+            new_data = copy.deepcopy(data)
             separator = "\u2E82"
-            for sample in data:
+            for sample in new_data:
                 # transform event list to relation list and entity list
                 fin_ent_list = []
                 fin_rel_list = []
@@ -601,8 +630,8 @@ def create_rebased_ee_tagger(base_class):
                 if "entity_list" in sample:
                     fin_ent_list.extend(sample["entity_list"])
                 sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
-            data = super().additional_preprocess(data)
-            return data
+            new_data = super().additional_preprocess(new_data, data_type)
+            return new_data
 
         def decode(self, sample, pred_outs):
             pred_sample = super(REBasedEETagger, self).decode(sample, pred_outs)
