@@ -170,6 +170,9 @@ if __name__ == "__main__":
     lr = settings.lr
     model_state_dict_path = settings.model_state_dict_path  # pretrained model state
 
+    # optimizer
+    optimizer_config = settings.optimizer_config
+
     # test settings
     model_dir_for_test = settings.model_dir_for_test
     target_run_ids = settings.target_run_ids
@@ -351,7 +354,8 @@ if __name__ == "__main__":
             print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
 
         # optimizer
-        optimizer = torch.optim.Adam(model.parameters(), lr=float(lr))
+        optimizer_class_name = getattr(torch.optim, optimizer_config["class_name"])
+        optimizer = optimizer_class_name(model.parameters(), lr=float(lr), **optimizer_config["parameters"])
 
         trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
         # train and valid
