@@ -126,6 +126,18 @@ if __name__ == "__main__":
     statistics = settings.statistics
     key2dict = settings.key2dict  # map from feature key to indexing dict
 
+    # additonal preprocessing config
+    try:
+        addtional_preprocessing_config = settings.addtional_preprocessing_config
+    except Exception as e:
+        addtional_preprocessing_config = {}
+
+    # tagger config
+    try:
+        tagger_config = settings.tagger_config
+    except:
+        tagger_config = {}
+
     # logger settings
     use_wandb = settings.use_wandb
     config2log = settings.config_to_log
@@ -219,19 +231,21 @@ if __name__ == "__main__":
         tagger_class_name = taggers.create_rebased_ner_tagger(tagger_class_name)
 
     # additional preprocessing
+    def additional_preprocess(data, data_type):
+        return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
+    
     all_data4gen_tag_dict = []
-    train_data = tagger_class_name.additional_preprocess(ori_train_data, "train")
+    train_data = additional_preprocess(ori_train_data, "train")
     all_data4gen_tag_dict.extend(train_data)
-    valid_data = tagger_class_name.additional_preprocess(ori_valid_data, "valid")
-    all_data4gen_tag_dict.extend(tagger_class_name.additional_preprocess(ori_valid_data, "train"))
-
+    valid_data = additional_preprocess(ori_valid_data, "valid")
+    all_data4gen_tag_dict.extend(additional_preprocess(ori_valid_data, "train"))
     filename2test_data = {}
     for filename, ori_test_data in filename2ori_test_data.items():
-        filename2test_data[filename] = tagger_class_name.additional_preprocess(ori_test_data, "test")
-        all_data4gen_tag_dict.extend(tagger_class_name.additional_preprocess(ori_test_data, "train"))
+        filename2test_data[filename] = additional_preprocess(ori_test_data, "test")
+        all_data4gen_tag_dict.extend(additional_preprocess(ori_test_data, "train"))
 
-    # instance
-    tagger = tagger_class_name(all_data4gen_tag_dict)
+    # tagger
+    tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
 
     # metrics_calculator
     metrics_cal = MetricsCalculator(task_type, match_pattern, use_ghm)
@@ -315,7 +329,7 @@ if __name__ == "__main__":
         if check_tagging_n_decoding:
             # for checking, take valid data as train data, do additional preprocessing
             # but take original valid data as golden dataset to evaluate
-            valid_data4checking = tagger_class_name.additional_preprocess(ori_valid_data, "train")
+            valid_data4checking = additional_preprocess(ori_valid_data, "train")
             valid_dataloader4checking = get_dataloader(valid_data4checking,
                                                        "train",  # only train data will be set a tag sequence
                                                        token_level,
