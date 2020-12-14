@@ -111,12 +111,12 @@ class HandshakingTagger4TPLPlus(Tagger):
             add_nested_relation = kwargs["add_nested_relation"]
             add_same_type_relation = kwargs["add_same_type_relation"]
             # add additional relations
-            for idx_i, ent_i in enumerate(all_entities):
-                for idx_j, ent_j in enumerate(all_entities):
+            for idx_i, ent_i in enumerate(fin_ent_list):
+                for idx_j, ent_j in enumerate(fin_ent_list):
                     if idx_i == idx_j:
                         continue
+                    # nested
                     if add_nested_relation:
-                        # nested
                         if (ent_i["tok_span"][1] - ent_i["tok_span"][0]) < (
                                 ent_j["tok_span"][1] - ent_j["tok_span"][0]) \
                                 and ent_i["tok_span"][0] >= ent_j["tok_span"][0] \

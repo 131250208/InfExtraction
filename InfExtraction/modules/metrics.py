@@ -216,13 +216,13 @@ class MetricsCalculator:
         for mark_str in pred_set:
             if mark_str in gold_set:
                 cpg[0] += 1
-            else:
-                print("!")
+            # else:
+            #     raise Exception("debug")
 
         cpg[1] += len(pred_set)
         cpg[2] += len(gold_set)
-        if len(pred_set) != len(gold_set):
-            print("!")
+        # if len(pred_set) != len(gold_set):
+        #     raise Exception("debug")
 
     def _cal_rel_cpg(self, pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict, pattern):
         '''
@@ -306,7 +306,10 @@ class MetricsCalculator:
             gold_sample = golden_sample_list[idx]
             pred_event_list = pred_sample["event_list"]
             gold_event_list = gold_sample["event_list"]
+            # try:
             self._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
+            # except Exception as e:
+            #     print("!")
         return ee_cpg_dict
 
     def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list, match_pattern):
