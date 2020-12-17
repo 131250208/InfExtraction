@@ -24,6 +24,7 @@ def enable_benchmark():
 
 set_seed()
 enable_benchmark()
+torch.autograd.set_detect_anomaly(True)
 
 import string
 import json
