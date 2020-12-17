@@ -614,7 +614,7 @@ class TPLinker3(IEModel):
 
         aggr_hiddens = self.aggr_fc(cat_hiddens)
         batch_size, seq_len, hidden_size = aggr_hiddens.size()
-
+        set_trace()
         # ent_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
         ent_hs_hiddens = self.ent_handshaking_kernel(aggr_hiddens)
         pred_ent_output = self.ent_fc(MyMatrix.drop_lower_diag(ent_hs_hiddens))  # elements in lower diag are all zero
