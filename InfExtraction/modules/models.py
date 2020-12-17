@@ -552,6 +552,7 @@ class TPLinkerPP(IEModel):
             "rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(rel_pred_tag, rel_gold_tag),
         }
 
+
 class TPLinker3(IEModel):
     def __init__(self,
                  tagger,
@@ -621,8 +622,8 @@ class TPLinker3(IEModel):
         # span_hiddens: (seq_len, batch_size * seq_len, hidden_size)
         span_hiddens = ent_hs_hiddens.view(-1, seq_len, hidden_size).permute(1, 0, 2)
         # head_rel_query: (head_rel_tag_size, batch_size * seq_len, hidden_size)
-        head_rel_query = self.head_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
-        tail_rel_query = self.tail_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
+        head_rel_query = self.head_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1).clone()
+        tail_rel_query = self.tail_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1).clone()
 
         # head_tok_feats: (head_rel_tag_size, batch_size, seq_len, hidden_size)
         head_tok_feats, _ = self.head_attn(head_rel_query, span_hiddens, span_hiddens)
