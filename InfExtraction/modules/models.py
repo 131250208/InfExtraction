@@ -7,10 +7,11 @@ import pandas as pd
 from transformers import BertModel
 from InfExtraction.modules.model_components import (HandshakingKernel,
                                                     HandshakingKernelDora,
+                                                    HandshakingKernel4Ent,
                                                     GraphConvLayer,
                                                     InteractionKernel,
                                                     SingleSourceHandshakingKernel)
-
+from torch.nn.parameter import Parameter
 from InfExtraction.modules.preprocess import Indexer
 from gensim.models import KeyedVectors
 import logging
@@ -550,6 +551,113 @@ class TPLinkerPP(IEModel):
             "rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(rel_pred_tag, rel_gold_tag),
         }
 
+class TPLinker3(IEModel):
+    def __init__(self,
+                 tagger,
+                 metrics_cal,
+                 handshaking_kernel_config=None,
+                 fin_hidden_size=None,
+                 **kwargs,
+                 ):
+        super().__init__(tagger, metrics_cal, **kwargs)
+
+        self.ent_tag_size, self.head_rel_tag_size, self.tail_rel_tag_size = tagger.get_tag_size()
+
+        self.metrics_cal = metrics_cal
+
+        self.aggr_fc = nn.Linear(self.cat_hidden_size, fin_hidden_size)
+
+        # handshaking kernel
+        ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
+
+        self.ent_handshaking_kernel = HandshakingKernel4Ent(fin_hidden_size,
+                                                            ent_shaking_type,
+                                                            )
+
+        self.head_attn = nn.MultiheadAttention(fin_hidden_size, 1)
+        self.tail_attn = nn.MultiheadAttention(fin_hidden_size, 1)
+
+        self.head_rel_query = Parameter(torch.randn([self.head_rel_tag_size, fin_hidden_size]))
+        self.tail_rel_query = Parameter(torch.randn([self.tail_rel_tag_size, fin_hidden_size]))
+        self.ent_fc = nn.Linear(fin_hidden_size, self.ent_tag_size)
+        self.head_rel_fc = nn.Linear(fin_hidden_size, fin_hidden_size)
+        self.tail_rel_fc = nn.Linear(fin_hidden_size, fin_hidden_size)
+
+    def generate_batch(self, batch_data):
+        seq_length = len(batch_data[0]["features"]["tok2char_span"])
+        batch_dict = super(TPLinker3, self).generate_batch(batch_data)
+        # tags
+        batch_ent_points = [sample["ent_points"] for sample in batch_data]
+        batch_head_rel_points = [sample["head_rel_points"] for sample in batch_data]
+        batch_tail_rel_points = [sample["tail_rel_points"] for sample in batch_data]
+        batch_dict["golden_tags"] = [Indexer.points2shaking_seq_batch(batch_ent_points,
+                                                                      seq_length,
+                                                                      self.ent_tag_size,
+                                                                      ),
+                                     Indexer.points2multilabel_matrix_batch(batch_head_rel_points,
+                                                                            seq_length,
+                                                                            self.head_rel_tag_size,
+                                                                            ),
+                                     Indexer.points2multilabel_matrix_batch(batch_tail_rel_points,
+                                                                            seq_length,
+                                                                            self.tail_rel_tag_size,
+                                                                            ),
+                                     ]
+        return batch_dict
+
+    def forward(self, **kwargs):
+        super(TPLinker3, self).forward()
+
+        cat_hiddens = self._cat_features(**kwargs)
+
+        aggr_hiddens = self.aggr_fc(cat_hiddens)
+        batch_size, seq_len, hidden_size = aggr_hiddens.size()
+
+        # ent_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
+        ent_hs_hiddens = self.ent_handshaking_kernel(aggr_hiddens)
+        pred_ent_output = self.ent_fc(MyMatrix.drop_lower_diag(ent_hs_hiddens))  # elements in lower diag are all zero
+
+        # span_hiddens: (seq_len, batch_size * seq_len, hidden_size)
+        span_hiddens = ent_hs_hiddens.view(-1, seq_len, hidden_size).permute(1, 0, 2)
+        # head_rel_query: (head_rel_tag_size, batch_size * seq_len, hidden_size)
+        head_rel_query = self.head_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
+        tail_rel_query = self.tail_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
+
+        # head_tok_feats: (head_rel_tag_size, batch_size, seq_len, hidden_size)
+        head_tok_feats, _ = self.head_attn(head_rel_query, span_hiddens, span_hiddens)
+        head_tok_feats = self.head_rel_fc(head_tok_feats.view(-1, batch_size, seq_len, hidden_size))
+        pred_head_rel_output = torch.matmul(head_tok_feats, head_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
+
+        # tail_tok_feats: (tail_rel_tag_size, batch_size, seq_len, hidden_size)
+        tail_tok_feats, _ = self.tail_attn(tail_rel_query, span_hiddens, span_hiddens)
+        tail_tok_feats = self.tail_rel_fc(tail_tok_feats.view(-1, batch_size, seq_len, hidden_size))
+        pred_tail_rel_output = torch.matmul(tail_tok_feats, tail_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
+
+        return pred_ent_output, pred_head_rel_output, pred_tail_rel_output
+
+    def pred_output2pred_tag(self, pred_output):
+        return (pred_output > 0.).long()
+
+    def get_metrics(self, pred_outputs, gold_tags):
+        ent_pred_out, head_rel_pred_out, tail_rel_pred_out, \
+        ent_gold_tag, head_rel_gold_tag, tail_rel_gold_tag = pred_outputs[0], pred_outputs[1], pred_outputs[2], \
+                                                             gold_tags[0], gold_tags[1], gold_tags[2]
+
+        ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
+        head_rel_pred_tag = self.pred_output2pred_tag(head_rel_pred_out)
+        tail_rel_pred_tag = self.pred_output2pred_tag(tail_rel_pred_out)
+
+        loss = self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
+               self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out, head_rel_gold_tag,
+                                                                    self.bp_steps) + \
+               self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out, tail_rel_gold_tag, self.bp_steps)
+
+        return {
+            "loss": loss,
+            "ent_seq_acc": self.metrics_cal.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
+            "head_rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(head_rel_pred_tag, head_rel_gold_tag),
+            "tail_rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(tail_rel_pred_tag, tail_rel_gold_tag),
+        }
 
 class TriggerFreeEventExtractor(IEModel):
     def __init__(self,
