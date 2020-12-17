@@ -236,7 +236,7 @@ class SingleSourceHandshakingKernel(nn.Module):
         return shaking_pre
 
 
-class HandshakingKernel4Ent(nn.Module):
+class HandshakingKernel4TP3(nn.Module):
     def __init__(self, hidden_size, shaking_type):
         super().__init__()
         self.shaking_type = shaking_type
@@ -245,24 +245,32 @@ class HandshakingKernel4Ent(nn.Module):
             self.cat_fc = nn.Linear(hidden_size * 2, hidden_size)
         if "cln" in shaking_type:
             self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-        if "lstm" in shaking_type:
-            self.lstm4span = nn.LSTM(hidden_size,
-                                     hidden_size,
-                                     num_layers=1,
-                                     bidirectional=False,
-                                     batch_first=True)
+
+        self.lstm4span = nn.LSTM(hidden_size,
+                                 hidden_size,
+                                 num_layers=1,
+                                 bidirectional=False,
+                                 batch_first=True)
+
+        self.head_attn = nn.MultiheadAttention(hidden_size, 1)
+        self.tail_attn = nn.MultiheadAttention(hidden_size, 1)
+
+        self.head_rel_query = Parameter(torch.randn([self.head_rel_tag_size, hidden_size]))
+        self.tail_rel_query = Parameter(torch.randn([self.tail_rel_tag_size, hidden_size]))
+        self.ent_fc = nn.Linear(hidden_size, self.ent_tag_size)
+        self.head_rel_fc = nn.Linear(hidden_size, hidden_size)
+        self.tail_rel_fc = nn.Linear(hidden_size, hidden_size)
 
     def forward(self, seq_hiddens):
         '''
         seq_hiddens: (batch_size, seq_len, hidden_size_x)
         shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
         '''
-        seq_len = seq_hiddens.size()[1]
-
+        batch_size, seq_len, hidden_size = seq_hiddens.size()
         guide = seq_hiddens[:, :, None, :].repeat(1, 1, seq_len, 1)
         visible = guide.permute(0, 2, 1, 3)
 
-        feature_pre = None
+        ent_feature_pre = None
         # pre_num = 0
 
         def add_presentation(all_prst, prst):
@@ -272,31 +280,46 @@ class HandshakingKernel4Ent(nn.Module):
                 all_prst += prst
             return all_prst
 
-        batch_size, _, matrix_size, vis_hidden_size = visible.size()
+
+        # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
         # mask lower triangle
         upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
-        upper_guide = guide.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
-
-        if "lstm" in self.shaking_type:
-            # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
-            visible4lstm = upper_visible.view(-1, matrix_size, vis_hidden_size)
-            span_pre, _ = self.lstm4span(visible4lstm)
-            span_pre = span_pre.view(batch_size, matrix_size, matrix_size, vis_hidden_size)
-            feature_pre = add_presentation(feature_pre, span_pre)
-            # pre_num += 1
+        visible4lstm = upper_visible.view(-1, seq_len, hidden_size)
+        span_matrix_pre, _ = self.lstm4span(visible4lstm)
+        span_matrix_pre = span_matrix_pre.view(batch_size, seq_len, seq_len, hidden_size)
+        span_seq_pre = MyMatrix.drop_lower_diag(span_matrix_pre)
+        ent_feature_pre = add_presentation(ent_feature_pre, span_seq_pre)
 
         if "cat" in self.shaking_type:
-            tp_cat_pre = torch.cat([upper_guide, upper_visible], dim=-1)
+            tp_cat_pre = torch.cat([guide, visible], dim=-1)
             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
-            feature_pre = add_presentation(feature_pre, tp_cat_pre)
+            ent_feature_pre = add_presentation(ent_feature_pre, tp_cat_pre)
             # pre_num += 1
 
         if "cln" in self.shaking_type:
-            tp_cln_pre = self.tp_cln(upper_visible, upper_guide)
-            feature_pre = add_presentation(feature_pre, tp_cln_pre)
+            tp_cln_pre = self.tp_cln(visible, guide)
+            ent_feature_pre = add_presentation(ent_feature_pre, tp_cln_pre)
             # pre_num += 1
 
-        return feature_pre
+        pred_ent_output = self.ent_fc(ent_feature_pre)  # elements in lower diag are all zero
+
+        # span_hiddens: (seq_len, batch_size * seq_len, hidden_size)
+        span_hiddens = span_matrix_pre.view(-1, seq_len, hidden_size).permute(1, 0, 2)
+        # head_rel_query: (head_rel_tag_size, batch_size * seq_len, hidden_size)
+        head_rel_query = self.head_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
+        tail_rel_query = self.tail_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
+
+        # head_tok_feats: (head_rel_tag_size, batch_size, seq_len, hidden_size)
+        head_tok_feats, _ = self.head_attn(head_rel_query, span_hiddens, span_hiddens)
+        head_tok_feats = self.head_rel_fc(head_tok_feats.view(-1, batch_size, seq_len, hidden_size))
+        pred_head_rel_output = torch.matmul(head_tok_feats, head_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
+
+        # tail_tok_feats: (tail_rel_tag_size, batch_size, seq_len, hidden_size)
+        tail_tok_feats, _ = self.tail_attn(tail_rel_query, span_hiddens, span_hiddens)
+        tail_tok_feats = self.tail_rel_fc(tail_tok_feats.view(-1, batch_size, seq_len, hidden_size))
+        pred_tail_rel_output = torch.matmul(tail_tok_feats, tail_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
+
+        return pred_ent_output, pred_head_rel_output, pred_tail_rel_output
 
 
 class HandshakingKernel(nn.Module):
