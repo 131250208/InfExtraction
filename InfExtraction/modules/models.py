@@ -644,6 +644,9 @@ class TPLinker3(IEModel):
         span_seq_pre = MyMatrix.drop_lower_diag(span_matrix_pre)
         ent_feature_pre = add_presentation(ent_feature_pre, span_seq_pre)
 
+        guide = MyMatrix.drop_lower_diag(guide)
+        visible = MyMatrix.drop_lower_diag(visible)
+
         if "cat" in self.shaking_type:
             tp_cat_pre = torch.cat([guide, visible], dim=-1)
             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
