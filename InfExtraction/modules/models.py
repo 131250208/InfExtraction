@@ -572,7 +572,7 @@ class TPLinker3(IEModel):
 
         # handshaking kernel
         shaking_type = handshaking_kernel_config["ent_shaking_type"]
-
+        self.shaking_type = shaking_type
         if "cat" in shaking_type:
             self.cat_fc = nn.Linear(fin_hidden_size * 2, fin_hidden_size)
         if "cln" in shaking_type:
