@@ -13,6 +13,7 @@ from InfExtraction.modules.model_components import (HandshakingKernel,
                                                     SingleSourceHandshakingKernel)
 from torch.nn.parameter import Parameter
 from InfExtraction.modules.preprocess import Indexer
+from InfExtraction.modules.utils import MyMatrix
 from gensim.models import KeyedVectors
 import logging
 from IPython.core.debugger import set_trace
