@@ -1262,8 +1262,8 @@ class Preprocessor:
                     new_sample = Preprocessor.span_offset(new_sample, - tok_level_offset, - char_level_offset)
                     split_sample_list.append(new_sample)
 
-                if end_ind > len(tokens):
-                    break
+                # if end_ind > len(tokens):
+                #     break
         return split_sample_list
 
     @staticmethod
