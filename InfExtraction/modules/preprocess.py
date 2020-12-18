@@ -1159,7 +1159,6 @@ class Preprocessor:
         :return:
         '''
         split_sample_list = []
-
         for sample in tqdm(data, desc="splitting"):
             id = sample["id"]
             text = sample["text"]
@@ -1270,8 +1269,6 @@ class Preprocessor:
                     # offset
                     new_sample = Preprocessor.span_offset(new_sample, - tok_level_offset, - char_level_offset)
                     split_sample_list.append(new_sample)
-
-            split_sample_list.extend(split_sample_list)
         return split_sample_list
 
     @staticmethod
