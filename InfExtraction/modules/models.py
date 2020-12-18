@@ -590,6 +590,9 @@ class TPLinker3(IEModel):
                                                                          tail_rel_shaking_type,
                                                                          only_look_after=False,
                                                                          )
+        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
+        self.head_rel_fc = nn.Linear(head_rel_dim, self.head_rel_tag_size)
+        self.tail_rel_fc = nn.Linear(tail_rel_dim, self.tail_rel_tag_size)
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
@@ -628,8 +631,8 @@ class TPLinker3(IEModel):
         tail_rel_hs_hiddens = self.tail_rel_handshaking_kernel(tail_rel_hiddens)
 
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
-        pred_head_rel_output = self.rel_fc(head_rel_hs_hiddens)
-        pred_tail_rel_output = self.rel_fc(tail_rel_hs_hiddens)
+        pred_head_rel_output = self.head_rel_fc(head_rel_hs_hiddens)
+        pred_tail_rel_output = self.tail_rel_fc(tail_rel_hs_hiddens)
 
         return pred_ent_output, pred_head_rel_output, pred_tail_rel_output
 
