@@ -543,8 +543,16 @@ class TPLinkerPP(IEModel):
                                                                  gold_tags[1]
         ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
         rel_pred_tag = self.pred_output2pred_tag(rel_pred_out)
-        loss = self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
-               self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out, rel_gold_tag, self.bp_steps)
+
+        z = ent_gold_tag.size()[-1] + rel_gold_tag.size()[-1]
+        ent_w = ent_gold_tag.size()[-1] / z
+        rel_w = rel_gold_tag.size()[-1] / z
+        loss = ent_w * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
+                                                                            ent_gold_tag,
+                                                                            self.bp_steps) + \
+               rel_w * self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out,
+                                                                            rel_gold_tag,
+                                                                            self.bp_steps)
 
         return {
             "loss": loss,
