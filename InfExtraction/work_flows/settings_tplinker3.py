@@ -32,7 +32,7 @@ import copy
 import re
 from glob import glob
 
-exp_name = "webnlg"
+exp_name = "webnlg_star"
 task_type = "re"  # re
 
 if task_type == "re":
@@ -47,7 +47,7 @@ elif task_type == "re+ner":
 # whole_text (nyt, webnlg),
 # only_head_index,
 # whole_span
-match_pattern = "whole_text"
+match_pattern = "only_head_text"
 
 # model and tagger(decoder)
 model_name = "TPLinker3"
@@ -234,6 +234,8 @@ dep_config = {
 
 handshaking_kernel_config = {
     "ent_shaking_type": "cln+lstm",
+    "head_rel_shaking_type": "cln",
+    "tail_rel_shaking_type": "cln",
 }
 
 # to do an ablation study, you can remove components by commenting the configurations below
@@ -246,7 +248,9 @@ model_settings = {
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "fin_hidden_size": 768,
+    "ent_dim": 768,
+    "head_rel_dim": 768,
+    "tail_rel_dim": 768,
 }
 
 model_settings_log = copy.deepcopy(model_settings)

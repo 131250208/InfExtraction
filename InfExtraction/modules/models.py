@@ -559,7 +559,9 @@ class TPLinker3(IEModel):
                  tagger,
                  metrics_cal,
                  handshaking_kernel_config=None,
-                 fin_hidden_size=None,
+                 ent_dim=None,
+                 head_rel_dim=None,
+                 tail_rel_dim=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -568,30 +570,26 @@ class TPLinker3(IEModel):
 
         self.metrics_cal = metrics_cal
 
-        self.aggr_fc = nn.Linear(self.cat_hidden_size, fin_hidden_size)
+        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
+        self.aggr_fc4head_rel_hsk = nn.Linear(self.cat_hidden_size, head_rel_dim)
+        self.aggr_fc4tail_rel_hsk = nn.Linear(self.cat_hidden_size, tail_rel_dim)
 
         # handshaking kernel
-        shaking_type = handshaking_kernel_config["ent_shaking_type"]
-        self.shaking_type = shaking_type
-        if "cat" in shaking_type:
-            self.cat_fc = nn.Linear(fin_hidden_size * 2, fin_hidden_size)
-        if "cln" in shaking_type:
-            self.tp_cln = LayerNorm(fin_hidden_size, fin_hidden_size, conditional=True)
+        ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
+        head_rel_shaking_type = handshaking_kernel_config["head_rel_shaking_type"]
+        tail_rel_shaking_type = handshaking_kernel_config["tail_rel_shaking_type"]
 
-        self.lstm4span = nn.LSTM(fin_hidden_size,
-                                 fin_hidden_size,
-                                 num_layers=1,
-                                 bidirectional=False,
-                                 batch_first=True)
-
-        self.head_attn = nn.MultiheadAttention(fin_hidden_size, 1)
-        self.tail_attn = nn.MultiheadAttention(fin_hidden_size, 1)
-
-        self.head_rel_query = Parameter(torch.randn([self.head_rel_tag_size, fin_hidden_size]))
-        self.tail_rel_query = Parameter(torch.randn([self.tail_rel_tag_size, fin_hidden_size]))
-        self.ent_fc = nn.Linear(fin_hidden_size, self.ent_tag_size)
-        self.head_rel_fc = nn.Linear(fin_hidden_size, fin_hidden_size)
-        self.tail_rel_fc = nn.Linear(fin_hidden_size, fin_hidden_size)
+        self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
+                                                                    ent_shaking_type,
+                                                                    )
+        self.head_rel_handshaking_kernel = SingleSourceHandshakingKernel(head_rel_dim,
+                                                                         head_rel_shaking_type,
+                                                                         only_look_after=False,
+                                                                         )
+        self.tail_rel_handshaking_kernel = SingleSourceHandshakingKernel(tail_rel_dim,
+                                                                         tail_rel_shaking_type,
+                                                                         only_look_after=False,
+                                                                         )
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
@@ -618,63 +616,20 @@ class TPLinker3(IEModel):
     def forward(self, **kwargs):
         super(TPLinker3, self).forward()
         cat_hiddens = self._cat_features(**kwargs)
-        seq_hiddens = self.aggr_fc(cat_hiddens)
 
-        batch_size, seq_len, hidden_size = seq_hiddens.size()
-        guide = seq_hiddens[:, :, None, :].repeat(1, 1, seq_len, 1)
-        visible = guide.permute(0, 2, 1, 3)
+        ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
+        head_rel_hiddens = self.aggr_fc4head_rel_hsk(cat_hiddens)
+        tail_rel_hiddens = self.aggr_fc4tail_rel_hsk(cat_hiddens)
 
-        ent_feature_pre = None
+        # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
+        # rel_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
+        ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens)
+        head_rel_hs_hiddens = self.head_rel_handshaking_kernel(head_rel_hiddens)
+        tail_rel_hs_hiddens = self.tail_rel_handshaking_kernel(tail_rel_hiddens)
 
-        # pre_num = 0
-
-        def add_presentation(all_prst, prst):
-            if all_prst is None:
-                all_prst = prst
-            else:
-                all_prst += prst
-            return all_prst
-
-        # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
-        # mask lower triangle
-        upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
-        visible4lstm = upper_visible.view(-1, seq_len, hidden_size)
-        span_matrix_pre, _ = self.lstm4span(visible4lstm)
-        span_matrix_pre = span_matrix_pre.view(batch_size, seq_len, seq_len, hidden_size)
-        span_seq_pre = MyMatrix.drop_lower_diag(span_matrix_pre)
-        ent_feature_pre = add_presentation(ent_feature_pre, span_seq_pre)
-
-        guide = MyMatrix.drop_lower_diag(guide)
-        visible = MyMatrix.drop_lower_diag(visible)
-
-        if "cat" in self.shaking_type:
-            tp_cat_pre = torch.cat([guide, visible], dim=-1)
-            tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
-            ent_feature_pre = add_presentation(ent_feature_pre, tp_cat_pre)
-            # pre_num += 1
-
-        if "cln" in self.shaking_type:
-            tp_cln_pre = self.tp_cln(visible, guide)
-            ent_feature_pre = add_presentation(ent_feature_pre, tp_cln_pre)
-            # pre_num += 1
-
-        pred_ent_output = self.ent_fc(ent_feature_pre)  # elements in lower diag are all zero
-
-        # span_hiddens: (seq_len, batch_size * seq_len, hidden_size)
-        span_hiddens = span_matrix_pre.view(-1, seq_len, hidden_size).permute(1, 0, 2)
-        # head_rel_query: (head_rel_tag_size, batch_size * seq_len, hidden_size)
-        head_rel_query = self.head_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
-        tail_rel_query = self.tail_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
-
-        # head_tok_feats: (head_rel_tag_size, batch_size, seq_len, hidden_size)
-        head_tok_feats, _ = self.head_attn(head_rel_query, span_hiddens, span_hiddens)
-        head_tok_feats = self.head_rel_fc(head_tok_feats.view(-1, batch_size, seq_len, hidden_size))
-        pred_head_rel_output = torch.matmul(head_tok_feats, head_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
-
-        # tail_tok_feats: (tail_rel_tag_size, batch_size, seq_len, hidden_size)
-        tail_tok_feats, _ = self.tail_attn(tail_rel_query, span_hiddens, span_hiddens)
-        tail_tok_feats = self.tail_rel_fc(tail_tok_feats.view(-1, batch_size, seq_len, hidden_size))
-        pred_tail_rel_output = torch.matmul(tail_tok_feats, tail_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
+        pred_ent_output = self.ent_fc(ent_hs_hiddens)
+        pred_head_rel_output = self.rel_fc(head_rel_hs_hiddens)
+        pred_tail_rel_output = self.rel_fc(tail_rel_hs_hiddens)
 
         return pred_ent_output, pred_head_rel_output, pred_tail_rel_output
 
@@ -701,6 +656,7 @@ class TPLinker3(IEModel):
             "head_rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(head_rel_pred_tag, head_rel_gold_tag),
             "tail_rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(tail_rel_pred_tag, tail_rel_gold_tag),
         }
+
 
 class TriggerFreeEventExtractor(IEModel):
     def __init__(self,
