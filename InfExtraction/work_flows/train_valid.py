@@ -40,6 +40,7 @@ def get_dataloader(data,
                    key2dict,
                    tagger,
                    collate_fn,
+                   task_type,
                    wdp_prefix=None,
                    max_char_num_in_tok=None,
                    ):
@@ -48,7 +49,8 @@ def get_dataloader(data,
                                                  max_seq_len,
                                                  sliding_len,
                                                  data_type,
-                                                 token_level=token_level,
+                                                 token_level,
+                                                 task_type,
                                                  wordpieces_prefix=wdp_prefix)
 
     if combine:
@@ -296,6 +298,7 @@ if __name__ == "__main__":
                                          key2dict,
                                          tagger,
                                          collate_fn,
+                                         task_type,
                                          wdp_prefix,
                                          max_char_num_in_tok,
                                          )
@@ -312,6 +315,7 @@ if __name__ == "__main__":
                                           key2dict,
                                           tagger,
                                           collate_fn,
+                                          task_type,
                                           wdp_prefix,
                                           max_char_num_in_tok,
                                           )
@@ -325,6 +329,7 @@ if __name__ == "__main__":
                                           key2dict,
                                           tagger,
                                           collate_fn,
+                                          task_type,
                                           wdp_prefix,
                                           max_char_num_in_tok,
                                           )
@@ -343,6 +348,7 @@ if __name__ == "__main__":
                                                        key2dict,
                                                        tagger,
                                                        collate_fn,
+                                                       task_type,
                                                        wdp_prefix,
                                                        max_char_num_in_tok,
                                                        )

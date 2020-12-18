@@ -1149,7 +1149,7 @@ class Preprocessor:
 
     @staticmethod
     def split_into_short_samples(data, max_seq_len, sliding_len, data_type,
-                                 token_level, wordpieces_prefix="##"):
+                                 token_level, task_type, wordpieces_prefix="##"):
         '''
         split samples with long text into samples with short subtexts
         :param data: original data
@@ -1218,8 +1218,8 @@ class Preprocessor:
                 else:
                     # if not test data, need to filter entities, relations, and events in the subtext
                     # relation
+                    sub_rel_list = []
                     if "relation_list" in sample:
-                        sub_rel_list = []
                         for rel in sample["relation_list"]:
                             subj_tok_span = rel["subj_tok_span"]
                             obj_tok_span = rel["obj_tok_span"]
@@ -1228,22 +1228,22 @@ class Preprocessor:
                                     and obj_tok_span[0] >= start_ind and obj_tok_span[1] <= end_ind:
                                 rel_cp = copy.deepcopy(rel)
                                 sub_rel_list.append(rel_cp)
-                        new_sample["relation_list"] = sub_rel_list
+                    new_sample["relation_list"] = sub_rel_list
 
                     # entity
+                    sub_ent_list = []
                     if "entity_list" in sample:
-                        sub_ent_list = []
                         for ent in sample["entity_list"]:
                             tok_span = ent["tok_span"]
                             # if entity in this subtext, add the entity to new sample
                             if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
                                 ent_cp = copy.deepcopy(ent)
                                 sub_ent_list.append(ent_cp)
-                        new_sample["entity_list"] = sub_ent_list
+                    new_sample["entity_list"] = sub_ent_list
 
                     # event
+                    sub_event_list = []
                     if "event_list" in sample:
-                        sub_event_list = []
                         for event in sample["event_list"]:
                             trigger_tok_span = event["trigger_tok_span"]
                             if trigger_tok_span[1] > end_ind or trigger_tok_span[0] < start_ind:
@@ -1257,13 +1257,21 @@ class Preprocessor:
                                     new_arg_list.append(arg_cp)
                             event_cp["argument_list"] = new_arg_list
                             sub_event_list.append(event_cp)
-                        new_sample["event_list"] = sub_event_list
+                    new_sample["event_list"] = sub_event_list
+
+                    # do not introduce excessive negative samples
+                    if "re" in task_type and len(new_sample["relation_list"]) == 0:
+                        continue
+                    if "ner" in task_type and len(new_sample["entity_list"]) == 0:
+                        continue
+                    if ("ee" in task_type or "ed" in task_type) and len(new_sample["event_list"]) == 0:
+                        continue
+
                     # offset
                     new_sample = Preprocessor.span_offset(new_sample, - tok_level_offset, - char_level_offset)
                     split_sample_list.append(new_sample)
 
-                # if end_ind > len(tokens):
-                #     break
+            split_sample_list.extend(split_sample_list)
         return split_sample_list
 
     @staticmethod
