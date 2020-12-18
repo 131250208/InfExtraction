@@ -193,9 +193,10 @@ class Evaluator:
 
         # alignment by id (in order)
         pred_data = []
+        pseudo_pred_sample = {"relation_list": [], "entity_list": [], "event_list": [], "id": -1, "text": ""}
         for sample in golden_data:
             id_ = sample["id"]
-            pred_data.append(merged_pred_samples.get(id_, {}))
+            pred_data.append(merged_pred_samples.get(id_, pseudo_pred_sample))
 
         for sample in pred_data:
             if "entity_list" in sample:
