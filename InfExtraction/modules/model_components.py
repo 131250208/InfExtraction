@@ -130,9 +130,9 @@ class HandshakingKernelDora(nn.Module):
 
         # drop lower triangle and convert matrix to sequence
         # span_pre: (batch_size, shaking_seq_len, hidden_size)
-        span_pre = MyMatrix.drop_lower_diag(span_pre)
-        ent_guide_sks = MyMatrix.drop_lower_diag(ent_guide)
-        ent_vis_sks = MyMatrix.drop_lower_diag(ent_vis)
+        span_pre = MyMatrix.upper_reg2seq(span_pre)
+        ent_guide_sks = MyMatrix.upper_reg2seq(ent_guide)
+        ent_vis_sks = MyMatrix.upper_reg2seq(ent_vis)
         boundary_pre = torch.relu(self.cat_fc4ent_tp(torch.cat([ent_vis_sks, ent_guide_sks], dim=-1)))
         ent_pre = boundary_pre + span_pre
 
@@ -207,13 +207,13 @@ class SingleSourceHandshakingKernel(nn.Module):
 
                 # drop lower triangle and convert matrix to sequence
                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
-                span_pre = MyMatrix.drop_lower_diag(span_pre)
+                span_pre = MyMatrix.upper_reg2seq(span_pre)
                 shaking_pre = add_presentation(shaking_pre, span_pre)
                 # pre_num += 1
 
             # guide, visible: (batch_size, shaking_seq_len, hidden_size)
-            guide = MyMatrix.drop_lower_diag(guide)
-            visible = MyMatrix.drop_lower_diag(visible)
+            guide = MyMatrix.upper_reg2seq(guide)
+            visible = MyMatrix.upper_reg2seq(visible)
 
         if "cat" in self.shaking_type:
             tp_cat_pre = torch.cat([guide, visible], dim=-1)
@@ -287,7 +287,7 @@ class HandshakingKernel4TP3(nn.Module):
         visible4lstm = upper_visible.view(-1, seq_len, hidden_size)
         span_matrix_pre, _ = self.lstm4span(visible4lstm)
         span_matrix_pre = span_matrix_pre.view(batch_size, seq_len, seq_len, hidden_size)
-        span_seq_pre = MyMatrix.drop_lower_diag(span_matrix_pre)
+        span_seq_pre = MyMatrix.upper_reg2seq(span_matrix_pre)
         ent_feature_pre = add_presentation(ent_feature_pre, span_seq_pre)
 
         if "cat" in self.shaking_type:
@@ -386,13 +386,13 @@ class HandshakingKernel(nn.Module):
 
                 # drop lower triangle and convert matrix to sequence
                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
-                span_pre = MyMatrix.drop_lower_diag(span_pre)
+                span_pre = MyMatrix.upper_reg2seq(span_pre)
                 shaking_pre = add_presentation(shaking_pre, span_pre)
                 pre_num += 1
 
             # guide, visible: (batch_size, shaking_seq_len, hidden_size)
-            guide = MyMatrix.drop_lower_diag(guide)
-            visible = MyMatrix.drop_lower_diag(visible)
+            guide = MyMatrix.upper_reg2seq(guide)
+            visible = MyMatrix.upper_reg2seq(visible)
         
         if "cat" in self.shaking_type:
             tp_cat_pre = torch.cat([guide, visible], dim=-1)
@@ -589,8 +589,8 @@ class InteractionKernel(nn.Module):
         # rel_context = torch.matmul(rel_row_cont, rel_col_cont).permute(0, 2, 3, 1)
         rel_context = self.cross_enc4rel(rel_hs_hiddens_guided)
 
-        rel_upper_context = MyMatrix.drop_lower_diag(rel_context)
-        rel_lower_context = MyMatrix.drop_lower_diag(rel_context.permute(0, 2, 1, 3))
+        rel_upper_context = MyMatrix.upper_reg2seq(rel_context)
+        rel_lower_context = MyMatrix.upper_reg2seq(rel_context.permute(0, 2, 1, 3))
         # rel_context_flat: (batch_size, shaking_seq_len, rel_dim)
         rel_context_flat = self.lamtha4rel_cont * rel_upper_context + (1 - self.lamtha4rel_cont) * rel_lower_context
 

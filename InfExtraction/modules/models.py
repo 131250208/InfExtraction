@@ -562,6 +562,8 @@ class TPLinker3(IEModel):
                  ent_dim=None,
                  head_rel_dim=None,
                  tail_rel_dim=None,
+                 emb_ent_info2rel=False,
+                 golden_ent_cla_guide=False,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -594,6 +596,12 @@ class TPLinker3(IEModel):
         self.head_rel_fc = nn.Linear(head_rel_dim, self.head_rel_tag_size)
         self.tail_rel_fc = nn.Linear(tail_rel_dim, self.tail_rel_tag_size)
 
+        self.emb_ent_info2rel = emb_ent_info2rel
+        self.golden_ent_cla_guide = golden_ent_cla_guide
+        if emb_ent_info2rel:
+            self.cln4head_rel = LayerNorm(head_rel_dim, 2 * (ent_dim + self.ent_tag_size), conditional=True)
+            self.cln4tail_rel = LayerNorm(tail_rel_dim, 2 * (ent_dim + self.ent_tag_size), conditional=True)
+
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
         batch_dict = super(TPLinker3, self).generate_batch(batch_data)
@@ -614,10 +622,41 @@ class TPLinker3(IEModel):
                                                                             self.tail_rel_tag_size,
                                                                             ),
                                      ]
+        batch_dict["golden_ent_class_guide"] = Indexer.points2shaking_seq_batch(batch_ent_points,
+                                                                      seq_length,
+                                                                      self.ent_tag_size,
+                                                                      )
         return batch_dict
+
+    def get_rel_guide(self, ent_hs_hiddens, ent_class_guide, head_tok=True):
+        '''
+        :param ent_hs_hiddens: (batch_size, shaking_seq_len, ent_hidden_size)
+        :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
+        :return: ent_guide4rel: (batch_size, seq_len, seq_len, 2 * (ent_type_size + ent_hidden_size))
+        '''
+        # guide_ent_class_matrix: (batch_size, seq_len, seq_len, ent_type_size)
+        guide_ent_class_matrix = MyMatrix.shaking_seq2matrix(ent_class_guide)
+        # guide_ent_hiddens_matrix: (batch_size, seq_len, seq_len, ent_hidden_size)
+        guide_ent_hiddens_matrix = MyMatrix.shaking_seq2matrix(ent_hs_hiddens)
+        if not head_tok:
+            guide_ent_class_matrix = guide_ent_class_matrix.permute(0, 2, 1, 3)
+            guide_ent_hiddens_matrix = guide_ent_hiddens_matrix.permute(0, 2, 1, 3)
+
+        # weight4rel: (batch_size, seq_len, seq_len)
+        ent_type_num_at_this_span = torch.sum(guide_ent_class_matrix, dim=-1)
+        weight4rel = ent_type_num_at_this_span / (torch.sum(ent_type_num_at_this_span, dim=-1)[:, :, None] + 1e-20)
+        weight4rel = weight4rel[:, :, :, None]
+        # ent_guide4rel: (batch_size, seq_len, ent_hidden_size + ent_type_size)
+        ent_guide4rel = torch.cat([guide_ent_hiddens_matrix, guide_ent_class_matrix], dim=-1) * weight4rel
+        seq_len = ent_guide4rel.size()[1]
+        ent_guide4rel = torch.sum(ent_guide4rel, dim=-2)[:, :, None, :].repeat(1, 1, seq_len, 1)
+        ent_guide4rel = torch.cat([ent_guide4rel, ent_guide4rel.permute(0, 2, 1, 3)], dim=-1)
+        return ent_guide4rel
 
     def forward(self, **kwargs):
         super(TPLinker3, self).forward()
+        ent_class_guide = kwargs["golden_ent_class_guide"]
+        del kwargs["golden_ent_class_guide"]
         cat_hiddens = self._cat_features(**kwargs)
 
         ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
@@ -631,9 +670,20 @@ class TPLinker3(IEModel):
         tail_rel_hs_hiddens = self.tail_rel_handshaking_kernel(tail_rel_hiddens)
 
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
+
+        # embed entity info into relation hiddens
+        if self.emb_ent_info2rel:
+            # ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
+            if not self.training or not self.golden_ent_cla_guide:
+                ent_class_guide = (pred_ent_output > 0.).long()
+            head_tok_pair_context = self.get_rel_guide(ent_hs_hiddens, ent_class_guide)
+            tail_tok_pair_context = self.get_rel_guide(ent_hs_hiddens, ent_class_guide, head_tok=False)
+
+            head_rel_hs_hiddens = self.cln4head_rel(head_rel_hs_hiddens, head_tok_pair_context)
+            tail_rel_hs_hiddens = self.cln4tail_rel(tail_rel_hs_hiddens, tail_tok_pair_context)
+
         pred_head_rel_output = self.head_rel_fc(head_rel_hs_hiddens)
         pred_tail_rel_output = self.tail_rel_fc(tail_rel_hs_hiddens)
-
         return pred_ent_output, pred_head_rel_output, pred_tail_rel_output
 
     def pred_output2pred_tag(self, pred_output):

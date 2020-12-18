@@ -3,6 +3,7 @@ from InfExtraction.modules.preprocess import Indexer
 import os
 import json
 from torch.utils.data import Dataset
+import torch.nn.functional as F
 
 
 class MyDataset(Dataset):
@@ -44,6 +45,11 @@ class MyMaths:
 class MyMatrix:
     @staticmethod
     def mirror(shaking_seq):
+        '''
+        copy upper region to lower region
+        :param shaking_seq:
+        :return:
+        '''
         batch_size, handshaking_seq_len, hidden_size = shaking_seq.size()
 
         # if self.cached_mirror_gather_tensor is None or \
@@ -64,8 +70,9 @@ class MyMatrix:
         return matrix
 
     @staticmethod
-    def drop_lower_diag(ori_tensor):
+    def upper_reg2seq(ori_tensor):
         '''
+        drop lower region and flat upper region to sequence
         :param ori_tensor: (batch_size, matrix_size, matrix_size, hidden_size)
         :return: (batch_size, matrix_size + ... + 1, hidden_size)
         '''
@@ -77,3 +84,19 @@ class MyMatrix:
         tensor_upper = torch.index_select(flat_tensor, dim=1, index=upper_diag_ids)
         return tensor_upper
 
+    @staticmethod
+    def shaking_seq2matrix(sequence):
+        '''
+        map sequence to matrix upper region, pad 0 to lower region
+        :param sequence:
+        :return:
+        '''
+        # sequence: (batch_size, seq_len, hidden_size)
+        batch_size, seq_len, hidden_size = sequence.size()
+        matrix_size = MyMaths.handshaking_len2matrix_size(seq_len)
+        map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        index_ids = [map_[i][j] if i <= j else seq_len for i in range(matrix_size) for j in range(matrix_size)]
+        sequence_w_ze = F.pad(sequence, (0, 0, 0, 1), "constant", 0)
+        index_tensor = torch.LongTensor(index_ids).to(sequence.device)
+        long_seq = torch.index_select(sequence_w_ze, dim=1, index=index_tensor)
+        return long_seq.view(batch_size, matrix_size, matrix_size, hidden_size)
