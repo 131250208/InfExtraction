@@ -195,7 +195,7 @@ class Evaluator:
         pred_data = []
         for sample in golden_data:
             id_ = sample["id"]
-            pred_data.append(merged_pred_samples[id_])
+            pred_data.append(merged_pred_samples.get(id_, {}))
 
         for sample in pred_data:
             if "entity_list" in sample:
