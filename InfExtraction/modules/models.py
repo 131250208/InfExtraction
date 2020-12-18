@@ -650,6 +650,7 @@ class TPLinker3(IEModel):
             guide_ent_hiddens_matrix = guide_ent_hiddens_matrix.permute(0, 2, 1, 3)
 
         # weight4rel: (batch_size, seq_len, seq_len)
+        guide_ent_class_matrix = guide_ent_class_matrix.float()
         ent_type_num_at_this_span = torch.sum(guide_ent_class_matrix, dim=-1)
         weight4rel = ent_type_num_at_this_span / (torch.sum(ent_type_num_at_this_span, dim=-1)[:, :, None] + 1e-20)
         weight4rel = weight4rel[:, :, :, None]
