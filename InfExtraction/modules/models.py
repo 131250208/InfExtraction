@@ -636,31 +636,46 @@ class TPLinker3(IEModel):
                                                                       )
         return batch_dict
 
+    def get_tok_pre(self, ent_hs_hiddens, ent_class_guide, head_tok=True):
+        '''
+        :param ent_hs_hiddens: (batch_size, shaking_seq_len, ent_hidden_size)
+        :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
+        :return: tok_hiddens: (batch_size, seq_len, ent_type_size + ent_hidden_size)
+        '''
+        ent_class_guide = ent_class_guide.float()
+        # guide_ent_class_matrix: (batch_size, seq_len, seq_len, ent_type_size)
+        guide_ent_class_matrix = MyMatrix.shaking_seq2matrix(ent_class_guide)
+        # guide_ent_hiddens_matrix: (batch_size, seq_len, seq_len, ent_hidden_size)
+        guide_ent_hiddens_matrix = MyMatrix.shaking_seq2matrix(ent_hs_hiddens)
+
+        ent_type_num_at_this_span = torch.sum(ent_class_guide, dim=-1)[:, :, None]
+        weight_at_this_span = ent_type_num_at_this_span * 10 + 1
+        # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
+        weight_at_this_span = MyMatrix.shaking_seq2matrix(weight_at_this_span)
+
+        if not head_tok:
+            guide_ent_class_matrix = guide_ent_class_matrix.permute(0, 2, 1, 3)
+            guide_ent_hiddens_matrix = guide_ent_hiddens_matrix.permute(0, 2, 1, 3)
+            weight_at_this_span = weight_at_this_span.permute(0, 2, 1, 3)
+
+        # weight4rel: (batch_size, seq_len, seq_len, 1)
+        weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-2)[:, :, None, :]
+
+        # tok_pre: (batch_size, seq_len, ent_hidden_size + ent_type_size)
+        tok_pre = torch.cat([guide_ent_hiddens_matrix, guide_ent_class_matrix], dim=-1) * weight4rel
+        tok_pre = torch.sum(tok_pre, dim=-2)
+
+        return tok_pre
+
     def get_rel_guide(self, ent_hs_hiddens, ent_class_guide, head_tok=True):
         '''
         :param ent_hs_hiddens: (batch_size, shaking_seq_len, ent_hidden_size)
         :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
         :return: ent_guide4rel: (batch_size, seq_len, seq_len, 2 * (ent_type_size + ent_hidden_size))
         '''
-        # guide_ent_class_matrix: (batch_size, seq_len, seq_len, ent_type_size)
-        guide_ent_class_matrix = MyMatrix.shaking_seq2matrix(ent_class_guide)
-        # guide_ent_hiddens_matrix: (batch_size, seq_len, seq_len, ent_hidden_size)
-        guide_ent_hiddens_matrix = MyMatrix.shaking_seq2matrix(ent_hs_hiddens)
-        if not head_tok:
-            guide_ent_class_matrix = guide_ent_class_matrix.permute(0, 2, 1, 3)
-            guide_ent_hiddens_matrix = guide_ent_hiddens_matrix.permute(0, 2, 1, 3)
-
-        guide_ent_class_matrix = guide_ent_class_matrix.float()
-        ent_type_num_at_this_span = torch.sum(guide_ent_class_matrix, dim=-1)
-        weight_at_this_span = ent_type_num_at_this_span * 10 + 1
-        weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-1)[:, :, None]
-        # weight4rel: (batch_size, seq_len, seq_len, 1)
-        weight4rel = weight4rel[:, :, :, None]
-
-        # ent_guide4rel: (batch_size, seq_len, ent_hidden_size + ent_type_size)
-        ent_guide4rel = torch.cat([guide_ent_hiddens_matrix, guide_ent_class_matrix], dim=-1) * weight4rel
-        seq_len = ent_guide4rel.size()[1]
-        ent_guide4rel = torch.sum(ent_guide4rel, dim=-2)[:, :, None, :].repeat(1, 1, seq_len, 1)
+        tok_pre = self.get_tok_pre(ent_hs_hiddens, ent_class_guide, head_tok)
+        seq_len = tok_pre.size()[1]
+        ent_guide4rel = tok_pre[:, :, None, :].repeat(1, 1, seq_len, 1)
         ent_guide4rel = torch.cat([ent_guide4rel, ent_guide4rel.permute(0, 2, 1, 3)], dim=-1)
         return ent_guide4rel
 
@@ -719,7 +734,6 @@ class TPLinker3(IEModel):
         current_step = self.bp_steps
         w_ent = max(ent_tag_size / z + 1 - current_step / total_steps, ent_tag_size / z)
         w_rel = min((head_rel_tag_size / z) * current_step / total_steps, (head_rel_tag_size / z))
-        logging.debug("bp_steps: {}, ent_w: {:.5}, rel_w: {:.5}".format(current_step, w_ent, w_rel))
 
         loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
                w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out, head_rel_gold_tag,
@@ -878,7 +892,7 @@ class TPLinkerTree(IEModel):
         current_step = self.bp_steps
         w_ent = max(ent_tag_size / z + 1 - current_step / total_steps, ent_tag_size / z)
         w_rel = min((head_rel_tag_size / z) * current_step / total_steps, (head_rel_tag_size / z))
-        logging.debug("bp_steps: {}, ent_w: {:.5}, rel_w: {:.5}".format(current_step, w_ent, w_rel))
+        print("bp_steps: {}, ent_w: {:.5}, rel_w: {:.5}".format(current_step, w_ent, w_rel))
 
         loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
                w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out, head_rel_gold_tag,
