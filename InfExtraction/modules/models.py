@@ -396,7 +396,6 @@ class TPLinkerPP(IEModel):
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  rel_dim=None,
-                 # fin_hidden_size=None,
                  conv_config=None,
                  inter_kernel_config=None,
                  use_attns4rel=None,
@@ -544,15 +543,12 @@ class TPLinkerPP(IEModel):
         ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
         rel_pred_tag = self.pred_output2pred_tag(rel_pred_out)
 
-        z = ent_gold_tag.size()[-1] + rel_gold_tag.size()[-1]
-        ent_w = ent_gold_tag.size()[-1] / z
-        rel_w = rel_gold_tag.size()[-1] / z
-        loss = ent_w * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
-                                                                            ent_gold_tag,
-                                                                            self.bp_steps) + \
-               rel_w * self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out,
-                                                                            rel_gold_tag,
-                                                                            self.bp_steps)
+        loss = self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
+                                                                    ent_gold_tag,
+                                                                    self.bp_steps) + \
+               self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out,
+                                                                    rel_gold_tag,
+                                                                    self.bp_steps)
 
         return {
             "loss": loss,
@@ -631,9 +627,9 @@ class TPLinker3(IEModel):
                                                                             ),
                                      ]
         batch_dict["golden_ent_class_guide"] = Indexer.points2shaking_seq_batch(batch_ent_points,
-                                                                      seq_length,
-                                                                      self.ent_tag_size,
-                                                                      )
+                                                                                seq_length,
+                                                                                self.ent_tag_size,
+                                                                                )
         return batch_dict
 
     def get_tok_pre(self, ent_hs_hiddens, ent_class_guide, head_tok=True):
@@ -724,21 +720,28 @@ class TPLinker3(IEModel):
         head_rel_pred_tag = self.pred_output2pred_tag(head_rel_pred_out)
         tail_rel_pred_tag = self.pred_output2pred_tag(tail_rel_pred_out)
 
-        ent_tag_size = ent_gold_tag.size()[-1]
-        head_rel_tag_size = head_rel_gold_tag.size()[-1]
-        tail_rel_tag_size = tail_rel_gold_tag.size()[-1]
-        assert head_rel_tag_size == tail_rel_tag_size
+        # ent_tag_size = ent_gold_tag.size()[-1]
+        # head_rel_tag_size = head_rel_gold_tag.size()[-1]
+        # tail_rel_tag_size = tail_rel_gold_tag.size()[-1]
+        # assert head_rel_tag_size == tail_rel_tag_size
+        #
+        # z = ent_tag_size + head_rel_tag_size + tail_rel_tag_size
 
-        z = ent_tag_size + head_rel_tag_size + tail_rel_tag_size
         total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
         current_step = self.bp_steps
-        w_ent = max(ent_tag_size / z + 1 - current_step / total_steps, ent_tag_size / z)
-        w_rel = min((head_rel_tag_size / z) * current_step / total_steps, (head_rel_tag_size / z))
+        ori_w_ent, ori_w_head_rel, ori_w_tail_rel = 1 / 3, 1 / 3, 1 / 3
+        w_ent = max(1 - ori_w_ent * current_step / total_steps, ori_w_ent)
+        w_rel = min(ori_w_head_rel * current_step / total_steps, ori_w_head_rel)
 
-        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out, head_rel_gold_tag,
-                                                                    self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out, tail_rel_gold_tag, self.bp_steps)
+        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
+                                                                            ent_gold_tag,
+                                                                            self.bp_steps) + \
+               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out,
+                                                                            head_rel_gold_tag,
+                                                                            self.bp_steps) + \
+               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out,
+                                                                            tail_rel_gold_tag,
+                                                                            self.bp_steps)
 
         return {
             "loss": loss,
@@ -804,9 +807,9 @@ class TPLinkerTree(IEModel):
                                                                             ),
                                      ]
         batch_dict["golden_ent_class_guide"] = Indexer.points2shaking_seq_batch(batch_ent_points,
-                                                                      seq_length,
-                                                                      self.ent_tag_size,
-                                                                      )
+                                                                                seq_length,
+                                                                                self.ent_tag_size,
+                                                                                )
         return batch_dict
 
     def get_tok_pre(self, ent_hs_hiddens, ent_class_guide, head_tok=True):
@@ -887,17 +890,28 @@ class TPLinkerTree(IEModel):
         tail_rel_tag_size = tail_rel_gold_tag.size()[-1]
         assert head_rel_tag_size == tail_rel_tag_size
 
-        z = ent_tag_size + head_rel_tag_size + tail_rel_tag_size
+        # z = ent_tag_size + head_rel_tag_size + tail_rel_tag_size
+        # total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
+        # current_step = self.bp_steps
+        # w_ent = max(ent_tag_size / z + 1 - current_step / total_steps, ent_tag_size / z)
+        # w_rel = min((head_rel_tag_size / z) * current_step / total_steps, (head_rel_tag_size / z))
+
         total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
         current_step = self.bp_steps
-        w_ent = max(ent_tag_size / z + 1 - current_step / total_steps, ent_tag_size / z)
-        w_rel = min((head_rel_tag_size / z) * current_step / total_steps, (head_rel_tag_size / z))
+        ori_w_ent, ori_w_head_rel, ori_w_tail_rel = 1 / 3, 1 / 3, 1 / 3
+        w_ent = max(1 - ori_w_ent * current_step / total_steps, ori_w_ent)
+        w_rel = min(ori_w_head_rel * current_step / total_steps, ori_w_head_rel)
+
         print("bp_steps: {}, ent_w: {:.5}, rel_w: {:.5}".format(current_step, w_ent, w_rel))
 
-        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out, head_rel_gold_tag,
-                                                                    self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out, tail_rel_gold_tag, self.bp_steps)
+        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
+                                                                            ent_gold_tag,
+                                                                            self.bp_steps) + \
+               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out,
+                                                                            head_rel_gold_tag,
+                                                                            self.bp_steps) + \
+               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out, tail_rel_gold_tag,
+                                                                            self.bp_steps)
 
         return {
             "loss": loss,
