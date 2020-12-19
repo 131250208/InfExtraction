@@ -801,9 +801,9 @@ class TPLinkerTree(IEModel):
         :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
         :return: tok_hiddens: (batch_size, seq_len, ent_type_size + ent_hidden_size)
         '''
+        ent_class_guide = ent_class_guide.float()
         # guide_ent_class_matrix: (batch_size, seq_len, seq_len, ent_type_size)
         guide_ent_class_matrix = MyMatrix.shaking_seq2matrix(ent_class_guide)
-        guide_ent_class_matrix = guide_ent_class_matrix.float()
         # guide_ent_hiddens_matrix: (batch_size, seq_len, seq_len, ent_hidden_size)
         guide_ent_hiddens_matrix = MyMatrix.shaking_seq2matrix(ent_hs_hiddens)
 
