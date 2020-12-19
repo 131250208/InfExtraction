@@ -726,11 +726,13 @@ class TPLinkerTree(IEModel):
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  golden_ent_cla_guide=False,
+                 loss_weight_recover_steps=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
 
         self.ent_tag_size, self.head_rel_tag_size, self.tail_rel_tag_size = tagger.get_tag_size()
+        self.loss_weight_recover_steps = loss_weight_recover_steps
 
         self.metrics_cal = metrics_cal
 

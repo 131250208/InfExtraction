@@ -249,6 +249,7 @@ model_settings = {
     "handshaking_kernel_config": handshaking_kernel_config,
     "ent_dim": 768,
     "golden_ent_cla_guide": True,
+    "loss_weight_recover_steps": 6000,
 }
 
 model_settings_log = copy.deepcopy(model_settings)
