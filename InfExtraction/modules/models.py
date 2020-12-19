@@ -650,11 +650,13 @@ class TPLinker3(IEModel):
             guide_ent_class_matrix = guide_ent_class_matrix.permute(0, 2, 1, 3)
             guide_ent_hiddens_matrix = guide_ent_hiddens_matrix.permute(0, 2, 1, 3)
 
-        # weight4rel: (batch_size, seq_len, seq_len)
         guide_ent_class_matrix = guide_ent_class_matrix.float()
         ent_type_num_at_this_span = torch.sum(guide_ent_class_matrix, dim=-1)
-        weight4rel = ent_type_num_at_this_span / (torch.sum(ent_type_num_at_this_span, dim=-1)[:, :, None] + 1e-20)
+        weight_at_this_span = ent_type_num_at_this_span * 10 + 1
+        weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-1)[:, :, None]
+        # weight4rel: (batch_size, seq_len, seq_len, 1)
         weight4rel = weight4rel[:, :, :, None]
+
         # ent_guide4rel: (batch_size, seq_len, ent_hidden_size + ent_type_size)
         ent_guide4rel = torch.cat([guide_ent_hiddens_matrix, guide_ent_class_matrix], dim=-1) * weight4rel
         seq_len = ent_guide4rel.size()[1]
@@ -801,17 +803,22 @@ class TPLinkerTree(IEModel):
         '''
         # guide_ent_class_matrix: (batch_size, seq_len, seq_len, ent_type_size)
         guide_ent_class_matrix = MyMatrix.shaking_seq2matrix(ent_class_guide)
+        guide_ent_class_matrix = guide_ent_class_matrix.float()
         # guide_ent_hiddens_matrix: (batch_size, seq_len, seq_len, ent_hidden_size)
         guide_ent_hiddens_matrix = MyMatrix.shaking_seq2matrix(ent_hs_hiddens)
+
+        ent_type_num_at_this_span = torch.sum(ent_class_guide, dim=-1)[:, :, None]
+        weight_at_this_span = ent_type_num_at_this_span * 10 + 1
+        # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
+        weight_at_this_span = MyMatrix.shaking_seq2matrix(weight_at_this_span)
+
         if not head_tok:
             guide_ent_class_matrix = guide_ent_class_matrix.permute(0, 2, 1, 3)
             guide_ent_hiddens_matrix = guide_ent_hiddens_matrix.permute(0, 2, 1, 3)
+            weight_at_this_span = weight_at_this_span.permute(0, 2, 1, 3)
 
-        # weight4rel: (batch_size, seq_len, seq_len)
-        guide_ent_class_matrix = guide_ent_class_matrix.float()
-        ent_type_num_at_this_span = torch.sum(guide_ent_class_matrix, dim=-1)
-        weight4rel = ent_type_num_at_this_span / (torch.sum(ent_type_num_at_this_span, dim=-1)[:, :, None] + 1e-20)
-        weight4rel = weight4rel[:, :, :, None]
+        # weight4rel: (batch_size, seq_len, seq_len, 1)
+        weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-2)[:, :, None, :]
 
         # tok_pre: (batch_size, seq_len, ent_hidden_size + ent_type_size)
         tok_pre = torch.cat([guide_ent_hiddens_matrix, guide_ent_class_matrix], dim=-1) * weight4rel
