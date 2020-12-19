@@ -571,12 +571,13 @@ class TPLinker3(IEModel):
                  tail_rel_dim=None,
                  emb_ent_info2rel=False,
                  golden_ent_cla_guide=False,
+                 loss_weight_recover_steps=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
 
         self.ent_tag_size, self.head_rel_tag_size, self.tail_rel_tag_size = tagger.get_tag_size()
-
+        self.loss_weight_recover_steps = loss_weight_recover_steps
         self.metrics_cal = metrics_cal
 
         self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
@@ -706,10 +707,22 @@ class TPLinker3(IEModel):
         head_rel_pred_tag = self.pred_output2pred_tag(head_rel_pred_out)
         tail_rel_pred_tag = self.pred_output2pred_tag(tail_rel_pred_out)
 
-        loss = self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
-               self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out, head_rel_gold_tag,
+        ent_tag_size = ent_gold_tag.size()[-1]
+        head_rel_tag_size = head_rel_gold_tag.size()[-1]
+        tail_rel_tag_size = tail_rel_gold_tag.size()[-1]
+        assert head_rel_tag_size == tail_rel_tag_size
+
+        z = ent_tag_size + head_rel_tag_size + tail_rel_tag_size
+        total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
+        current_step = self.bp_steps
+        w_ent = max(ent_tag_size / z + 1 - current_step / total_steps, ent_tag_size / z)
+        w_rel = min((head_rel_tag_size / z) * current_step / total_steps, (head_rel_tag_size / z))
+        logging.debug("bp_steps: {}, ent_w: {:.5}, rel_w: {:.5}".format(current_step, w_ent, w_rel))
+
+        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out, ent_gold_tag, self.bp_steps) + \
+               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out, head_rel_gold_tag,
                                                                     self.bp_steps) + \
-               self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out, tail_rel_gold_tag, self.bp_steps)
+               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out, tail_rel_gold_tag, self.bp_steps)
 
         return {
             "loss": loss,
