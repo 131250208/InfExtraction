@@ -902,7 +902,7 @@ class TPLinkerTree(IEModel):
         w_ent = max(1 - ori_w_ent * current_step / total_steps, ori_w_ent)
         w_rel = min(ori_w_head_rel * current_step / total_steps, ori_w_head_rel)
 
-        print("bp_steps: {}, ent_w: {:.5}, rel_w: {:.5}".format(current_step, w_ent, w_rel))
+        # print("bp_steps: {}, ent_w: {:.5}, rel_w: {:.5}".format(current_step, w_ent, w_rel))
 
         loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
                                                                             ent_gold_tag,
