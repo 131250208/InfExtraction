@@ -1214,6 +1214,8 @@ class Preprocessor:
                 if data_type == "test" or data_type == "valid":
                     if len(sub_text) > 0:
                         split_sample_list.append(new_sample)
+                    if end_ind > len(tokens):
+                        break
                 else:
                     # if not test data, need to filter entities, relations, and events in the subtext
                     # relation
