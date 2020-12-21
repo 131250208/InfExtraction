@@ -885,10 +885,10 @@ class TPLinkerTree(IEModel):
         head_rel_pred_tag = self.pred_output2pred_tag(head_rel_pred_out)
         tail_rel_pred_tag = self.pred_output2pred_tag(tail_rel_pred_out)
 
-        ent_tag_size = ent_gold_tag.size()[-1]
-        head_rel_tag_size = head_rel_gold_tag.size()[-1]
-        tail_rel_tag_size = tail_rel_gold_tag.size()[-1]
-        assert head_rel_tag_size == tail_rel_tag_size
+        # ent_tag_size = ent_gold_tag.size()[-1]
+        # head_rel_tag_size = head_rel_gold_tag.size()[-1]
+        # tail_rel_tag_size = tail_rel_gold_tag.size()[-1]
+        # assert head_rel_tag_size == tail_rel_tag_size
 
         # z = ent_tag_size + head_rel_tag_size + tail_rel_tag_size
         # total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
@@ -910,7 +910,8 @@ class TPLinkerTree(IEModel):
                w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out,
                                                                             head_rel_gold_tag,
                                                                             self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out, tail_rel_gold_tag,
+               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out,
+                                                                            tail_rel_gold_tag,
                                                                             self.bp_steps)
 
         return {

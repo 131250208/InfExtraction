@@ -43,6 +43,7 @@ def get_dataloader(data,
                    task_type,
                    wdp_prefix=None,
                    max_char_num_in_tok=None,
+                   split_early_stop=True
                    ):
     # split test data
     data = Preprocessor.split_into_short_samples(data,
@@ -51,7 +52,8 @@ def get_dataloader(data,
                                                  data_type,
                                                  token_level,
                                                  task_type,
-                                                 wordpieces_prefix=wdp_prefix)
+                                                 wordpieces_prefix=wdp_prefix,
+                                                 early_stop=split_early_stop)
 
     if combine:
         data = Preprocessor.combine(data, max_seq_len)
@@ -166,6 +168,7 @@ if __name__ == "__main__":
     sliding_len_test = settings.sliding_len_test
 
     combine = settings.combine
+    split_early_stop = settings.split_early_stop
 
     trainer_config = settings.trainer_config
     use_ghm = settings.use_ghm
@@ -301,6 +304,7 @@ if __name__ == "__main__":
                                          task_type,
                                          wdp_prefix,
                                          max_char_num_in_tok,
+                                         split_early_stop
                                          )
         filename2test_data_loader[filename] = test_dataloader
 
@@ -318,6 +322,7 @@ if __name__ == "__main__":
                                           task_type,
                                           wdp_prefix,
                                           max_char_num_in_tok,
+                                          split_early_stop
                                           )
         valid_dataloader = get_dataloader(valid_data,
                                           "valid",
@@ -332,6 +337,7 @@ if __name__ == "__main__":
                                           task_type,
                                           wdp_prefix,
                                           max_char_num_in_tok,
+                                          split_early_stop
                                           )
         # debug: checking tagging and decoding
         if check_tagging_n_decoding:
@@ -351,6 +357,7 @@ if __name__ == "__main__":
                                                        task_type,
                                                        wdp_prefix,
                                                        max_char_num_in_tok,
+                                                       split_early_stop
                                                        )
             pprint(evaluator.check_tagging_n_decoding(valid_dataloader4checking, ori_valid_data))
 

@@ -1149,7 +1149,7 @@ class Preprocessor:
 
     @staticmethod
     def split_into_short_samples(data, max_seq_len, sliding_len, data_type,
-                                 token_level, task_type, wordpieces_prefix="##"):
+                                 token_level, task_type, wordpieces_prefix="##", early_stop=True):
         '''
         split samples with long text into samples with short subtexts
         :param data: original data
@@ -1271,6 +1271,8 @@ class Preprocessor:
                     # offset
                     new_sample = Preprocessor.span_offset(new_sample, - tok_level_offset, - char_level_offset)
                     split_sample_list.append(new_sample)
+                    if early_stop and end_ind > len(tokens):
+                        break
         return split_sample_list
 
     @staticmethod
