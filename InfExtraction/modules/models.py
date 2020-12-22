@@ -407,8 +407,10 @@ class TPLinkerPP(IEModel):
 
         self.metrics_cal = metrics_cal
 
-        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim) if self.cat_hidden_size != ent_dim else None
-        self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim) if self.cat_hidden_size != rel_dim else None
+        # self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim) if self.cat_hidden_size != ent_dim else None
+        # self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim) if self.cat_hidden_size != rel_dim else None
+        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
+        self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
 
         # handshaking kernel
         ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
@@ -505,8 +507,11 @@ class TPLinkerPP(IEModel):
         cat_hiddens = self._cat_features(**kwargs)
 
         # aggr_hiddens = self.aggr_fc(cat_hiddens)
-        ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens) if self.aggr_fc4ent_hsk is not None else cat_hiddens
-        rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens) if self.aggr_fc4rel_hsk is not None else cat_hiddens
+        ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
+        rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
+
+        # ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens) if self.aggr_fc4ent_hsk is not None else cat_hiddens
+        # rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens) if self.aggr_fc4rel_hsk is not None else cat_hiddens
 
         # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # rel_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
