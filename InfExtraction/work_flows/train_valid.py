@@ -184,8 +184,8 @@ if __name__ == "__main__":
     top_k_models = settings.top_k_models
     cal_scores = settings.cal_scores
 
-    # match_pattern, only for relation extraction
-    match_pattern = settings.match_pattern if "re" in task_type else None
+    # # match_pattern, only for relation extraction
+    # match_pattern = settings.match_pattern if "re" in task_type else None
 
     # save model
     score_threshold = settings.score_threshold
@@ -256,7 +256,9 @@ if __name__ == "__main__":
     tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
 
     # metrics_calculator
-    metrics_cal = MetricsCalculator(task_type, match_pattern, use_ghm)
+    metrics_cal = MetricsCalculator(task_type,
+                                    # match_pattern,
+                                    use_ghm)
 
     # model
     print("init model...")
