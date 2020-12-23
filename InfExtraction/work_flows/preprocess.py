@@ -14,7 +14,7 @@ from pprint import pprint
 exp_name = settings.exp_name
 data_in_dir = os.path.join(settings.data_in_dir, exp_name)
 data_out_dir = os.path.join(settings.data_out_dir, exp_name)
-generate_features = settings.generate_word_level_features_by_stanza
+word_tokenizer_type = settings.word_tokenizer_type
 language = settings.language
 pretrained_model_tokenizer_path = settings.pretrained_model_tokenizer_path
 ori_data_format = settings.ori_data_format
@@ -58,14 +58,15 @@ for file_name, data in file_name2data.items():
                     if "event_type" not in arg:
                         arg["event_type"] = event["trigger_type"]
 
-
 # process
 for filename, data in file_name2data.items():
     # add char spans
     if add_char_span:
         data = preprocessor.add_char_span(data, ignore_subword_match=ignore_subword_match)
+    # check char span and list alignment
+    preprocessor.pre_check_data_annotation(data)
     # create features
-    data = preprocessor.create_features(data, generate_features)
+    data = preprocessor.create_features(data, word_tokenizer_type)
     # add token level spans
     data = preprocessor.add_tok_span(data)
     file_name2data[filename] = data

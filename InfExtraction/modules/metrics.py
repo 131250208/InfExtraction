@@ -3,11 +3,16 @@ import re
 
 
 class MetricsCalculator:
-    def __init__(self, task_type, match_pattern=None, use_ghm=False):
+    def __init__(self,
+                 task_type,
+                 # match_pattern=None,
+                 use_ghm=False):
         self.task_type = task_type  # for scoring
-        self.match_pattern = match_pattern  # for scoring of relation extraction
-        if task_type == "re":
-            assert self.match_pattern is not None
+
+        # self.match_pattern = match_pattern  # for scoring of relation extraction
+        # if task_type == "re":
+        #     assert self.match_pattern is not None
+
         # for multilabel_categorical_crossentropy
         self.use_ghm = use_ghm
         self.last_weights = None  # for exponential moving averaging
@@ -32,7 +37,7 @@ class MetricsCalculator:
         count_hits = 0  # coungradient_normof hits
         for i in range(bins):
             bar = float((i + 1) / bins)
-            hits = torch.sum((gradient_norm <= bar)) - count_hits
+            hits = torch.sum((gradient_norm <= bar).float()) - count_hits
             count_hits += hits
             hits_vec[i] = hits.item()
             current_weights[i] = example_sum / bins / (hits.item() + example_sum / bins)
@@ -172,42 +177,72 @@ class MetricsCalculator:
                     arg_link_iden_set.add(link_iden_mark)
                     arg_link_class_set.add(link_class_mark)
 
-        return trigger_iden_set, \
-               trigger_class_set, \
-               arg_soft_iden_set, \
-               arg_soft_class_set, \
-               arg_hard_iden_set, \
-               arg_hard_class_set, \
-               arg_link_iden_set, \
-               arg_link_class_set
+        return {
+            "trigger_iden": trigger_iden_set,
+            "trigger_class": trigger_class_set,
+            "arg_soft_iden": arg_soft_iden_set,
+            "arg_soft_class": arg_soft_class_set,
+            "arg_hard_iden": arg_hard_iden_set,
+            "arg_hard_class": arg_hard_class_set,
+            "arg_link_iden": arg_link_iden_set,
+            "arg_link_class": arg_link_class_set,
+        }
 
-    def _get_mark_sets_rel(self, rel_list, ent_list, match_pattern="only_head_text"):
-        rel_set, ent_set = None, None
+    def _get_mark_sets_rel(self, rel_list, ent_list):
+        rel_partial_text_set, \
+        rel_partial_offset_set, \
+        rel_exact_text_set, \
+        rel_exact_offset_set, \
+        ent_partial_text_set, \
+        ent_partial_offset_set, \
+        ent_exact_text_set, \
+        ent_exact_offset_set = set(), set(), set(), set(), set(), set(), set(), set()
+        # rel_strict_exact_text_set, \
+        # rel_strict_exact_offset_set, \
 
-        if match_pattern == "only_head_index":
-            rel_set = set(
-                ["{}\u2E80{}\u2E80{}".format(rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]) for rel
-                 in rel_list])
-            ent_set = set(["{}\u2E80{}".format(ent["tok_span"][0], ent["type"]) for ent in ent_list])
+        for ent in ent_list:
+            ent_partial_text_set.add("{}\u2E80{}".format(ent["text"].split(" ")[0], ent["type"]))
+            ent_exact_text_set.add("{}\u2E80{}".format(ent["text"], ent["type"]))
+            ent_partial_offset_set.add("{}\u2E80{}".format(ent["tok_span"][0], ent["type"]))
+            ent_exact_offset_set.add("{}\u2E80{}\u2E80{}".format(*ent["tok_span"], ent["type"]))
 
-        elif match_pattern == "whole_span":
-            rel_set = set(["{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(rel["subj_tok_span"][0], rel["subj_tok_span"][1],
-                                                                       rel["predicate"], rel["obj_tok_span"][0],
-                                                                       rel["obj_tok_span"][1]) for rel in rel_list])
-            ent_set = set(
-                ["{}\u2E80{}\u2E80{}".format(ent["tok_span"][0], ent["tok_span"][1], ent["type"]) for ent in ent_list])
+        for rel in rel_list:
+            rel_partial_text_set.add("{}\u2E80{}\u2E80{}".format(rel["subject"].split(" ")[0],
+                                                                 rel["predicate"],
+                                                                 rel["object"].split(" ")[0]))
+            rel_partial_offset_set.add(
+                "{}\u2E80{}\u2E80{}".format(rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]))
+            rel_exact_text_set.add("{}\u2E80{}\u2E80{}".format(rel["subject"], rel["predicate"], rel["object"]))
+            rel_exact_offset_set.add("{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(*rel["subj_tok_span"],
+                                                                                 rel["predicate"],
+                                                                                 *rel["obj_tok_span"]))
 
-        elif match_pattern == "whole_text":
-            rel_set = set(
-                ["{}\u2E80{}\u2E80{}".format(rel["subject"], rel["predicate"], rel["object"]) for rel in rel_list])
-            ent_set = set(["{}\u2E80{}".format(ent["text"], ent["type"]) for ent in ent_list])
+            # rel_strict_exact_text_set.add("{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(rel["subject"],
+            #                                                                           rel["subj_type"],
+            #                                                                           rel["predicate"],
+            #                                                                           rel["object"],
+            #                                                                           rel["obj_type"]
+            #                                                                           ))
+            # rel_strict_exact_offset_set.add(
+            #     "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(*rel["subj_tok_span"],
+            #                                                                 rel["subj_type"],
+            #                                                                 rel["predicate"],
+            #                                                                 *rel["obj_tok_span"],
+            #                                                                 rel["obj_type"]
+            #                                                                 ))
 
-        elif match_pattern == "only_head_text":
-            rel_set = set(["{}\u2E80{}\u2E80{}".format(rel["subject"].split(" ")[0], rel["predicate"],
-                                                       rel["object"].split(" ")[0]) for rel in rel_list])
-            ent_set = set(["{}\u2E80{}".format(ent["text"].split(" ")[0], ent["type"]) for ent in ent_list])
-
-        return rel_set, ent_set
+        return {
+            "rel_partial_text": rel_partial_text_set,
+            "rel_partial_offset": rel_partial_offset_set,
+            "rel_exact_text": rel_exact_text_set,
+            "rel_exact_offset": rel_exact_offset_set,
+            # "rel_strict_exact_text": rel_strict_exact_text_set,
+            # "rel_strict_exact_offset": rel_strict_exact_offset_set,
+            "ent_partial_text": ent_partial_text_set,
+            "ent_partial_offset": ent_partial_offset_set,
+            "ent_exact_text": ent_exact_text_set,
+            "ent_exact_offset": ent_exact_offset_set,
+        }
 
     def _cal_cpg(self, pred_set, gold_set, cpg):
         '''
@@ -224,12 +259,20 @@ class MetricsCalculator:
         # if len(pred_set) != len(gold_set):
         #     raise Exception("debug")
 
-    def _cal_rel_cpg(self, pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict, pattern):
+    def _cal_rel_cpg(self, pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict):
         '''
         ere_cpg_dict = {
-                "rel": [0, 0, 0], # correct num, precise num, golden num
-                "ent": [0, 0, 0],
-                }
+            "rel_partial_text": [0, 0, 0],
+            "rel_partial_offset": [0, 0, 0],
+            "rel_exact_text": [0, 0, 0],
+            "rel_exact_offset": [0, 0, 0],
+            # "rel_strict_exact_text": [0, 0, 0],
+            # "rel_strict_exact_offset": [0, 0, 0],
+            "ent_partial_text": [0, 0, 0],
+            "ent_partial_offset": [0, 0, 0],
+            "ent_exact_text": [0, 0, 0],
+            "ent_exact_offset": [0, 0, 0],
+        }
         pattern: metric pattern
         '''
         # pred_rel_list = [rel for rel in pred_rel_list if rel["predicate"].split(":")[0] not in {"EE"}]
@@ -245,11 +288,11 @@ class MetricsCalculator:
         # gold_ent_list = [ent for ent in gold_ent_list if re.search(filter_pattern, ent["type"]) is None]
         # gold_rel_list = [rel for rel in gold_rel_list if re.search("EXT:|EE:", rel["predicate"]) is None]
 
-        gold_rel_set, gold_ent_set = self._get_mark_sets_rel(gold_rel_list, gold_ent_list, pattern)
-        pred_rel_set, pred_ent_set = self._get_mark_sets_rel(pred_rel_list, pred_ent_list, pattern)
-
-        self._cal_cpg(pred_rel_set, gold_rel_set, ere_cpg_dict["rel"])
-        self._cal_cpg(pred_ent_set, gold_ent_set, ere_cpg_dict["ent"])
+        gold_set_dict = self._get_mark_sets_rel(gold_rel_list, gold_ent_list)
+        pred_set_dict = self._get_mark_sets_rel(pred_rel_list, pred_ent_list)
+        for key in ere_cpg_dict.keys():
+            pred_rel_set, gold_rel_set = pred_set_dict[key], gold_set_dict[key]
+            self._cal_cpg(pred_rel_set, gold_rel_set, ere_cpg_dict[key])
 
     def _cal_ee_cpg(self, pred_event_list, gold_event_list, ee_cpg_dict):
         '''
@@ -264,32 +307,20 @@ class MetricsCalculator:
             "arg_link_class": [0, 0, 0],
         }
         '''
-        pred_trigger_iden_set, \
-        pred_trigger_class_set, \
-        pred_arg_soft_iden_set, \
-        pred_arg_soft_class_set, \
-        pred_arg_hard_iden_set, \
-        pred_arg_hard_class_set, \
-        pred_arg_link_iden_set, \
-        pred_arg_link_class_set = self._get_mark_sets_ee(pred_event_list)
-
-        gold_trigger_iden_set, \
-        gold_trigger_class_set, \
-        gold_arg_soft_iden_set, \
-        gold_arg_soft_class_set, \
-        gold_arg_hard_iden_set, \
-        gold_arg_hard_class_set, \
-        gold_arg_link_iden_set, \
-        gold_arg_link_class_set = self._get_mark_sets_ee(gold_event_list)
-
-        self._cal_cpg(pred_trigger_iden_set, gold_trigger_iden_set, ee_cpg_dict["trigger_iden"])
-        self._cal_cpg(pred_trigger_class_set, gold_trigger_class_set, ee_cpg_dict["trigger_class"])
-        self._cal_cpg(pred_arg_soft_iden_set, gold_arg_soft_iden_set, ee_cpg_dict["arg_soft_iden"])
-        self._cal_cpg(pred_arg_soft_class_set, gold_arg_soft_class_set, ee_cpg_dict["arg_soft_class"])
-        self._cal_cpg(pred_arg_hard_iden_set, gold_arg_hard_iden_set, ee_cpg_dict["arg_hard_iden"])
-        self._cal_cpg(pred_arg_hard_class_set, gold_arg_hard_class_set, ee_cpg_dict["arg_hard_class"])
-        self._cal_cpg(pred_arg_link_iden_set, gold_arg_link_iden_set, ee_cpg_dict["arg_link_iden"])
-        self._cal_cpg(pred_arg_link_class_set, gold_arg_link_class_set, ee_cpg_dict["arg_link_class"])
+        pred_set_dict = self._get_mark_sets_ee(pred_event_list)
+        gold_set_dict = self._get_mark_sets_ee(gold_event_list)
+        for key in ee_cpg_dict.keys():
+            pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
+            self._cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
+        #
+        # self._cal_cpg(pred_trigger_iden_set, gold_trigger_iden_set, ee_cpg_dict["trigger_iden"])
+        # self._cal_cpg(pred_trigger_class_set, gold_trigger_class_set, ee_cpg_dict["trigger_class"])
+        # self._cal_cpg(pred_arg_soft_iden_set, gold_arg_soft_iden_set, ee_cpg_dict["arg_soft_iden"])
+        # self._cal_cpg(pred_arg_soft_class_set, gold_arg_soft_class_set, ee_cpg_dict["arg_soft_class"])
+        # self._cal_cpg(pred_arg_hard_iden_set, gold_arg_hard_iden_set, ee_cpg_dict["arg_hard_iden"])
+        # self._cal_cpg(pred_arg_hard_class_set, gold_arg_hard_class_set, ee_cpg_dict["arg_hard_class"])
+        # self._cal_cpg(pred_arg_link_iden_set, gold_arg_link_iden_set, ee_cpg_dict["arg_link_iden"])
+        # self._cal_cpg(pred_arg_link_class_set, gold_arg_link_class_set, ee_cpg_dict["arg_link_class"])
 
     def get_ee_cpg_dict(self, pred_sample_list, golden_sample_list):
         ee_cpg_dict = {
@@ -312,10 +343,18 @@ class MetricsCalculator:
             #     print("!")
         return ee_cpg_dict
 
-    def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list, match_pattern):
+    def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list):
         ere_cpg_dict = {
-            "rel": [0, 0, 0],
-            "ent": [0, 0, 0],
+            "rel_partial_text": [0, 0, 0],
+            "rel_partial_offset": [0, 0, 0],
+            "rel_exact_text": [0, 0, 0],
+            "rel_exact_offset": [0, 0, 0],
+            # "rel_strict_exact_text": [0, 0, 0],
+            # "rel_strict_exact_offset": [0, 0, 0],
+            "ent_partial_text": [0, 0, 0],
+            "ent_partial_offset": [0, 0, 0],
+            "ent_exact_text": [0, 0, 0],
+            "ent_exact_offset": [0, 0, 0],
         }
         for idx, pred_sample in enumerate(pred_sample_list):
             gold_sample = golden_sample_list[idx]
@@ -323,7 +362,7 @@ class MetricsCalculator:
             gold_rel_list = gold_sample["relation_list"]
             pred_ent_list = pred_sample["entity_list"]
             gold_ent_list = gold_sample["entity_list"]
-            self._cal_rel_cpg(pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict, match_pattern)
+            self._cal_rel_cpg(pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict)
         return ere_cpg_dict
 
     def get_prf_scores(self, correct_num, pred_num, gold_num):
@@ -352,10 +391,11 @@ class MetricsCalculator:
 
         total_cpg_dict = {}
         if "re" in self.task_type:
-            assert self.match_pattern is not None
+            # assert self.match_pattern is not None
             cpg_dict = self.get_rel_cpg_dict(pred_data,
                                              golden_data,
-                                             self.match_pattern)
+                                             # self.match_pattern,
+                                             )
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
         if "ee" in self.task_type:

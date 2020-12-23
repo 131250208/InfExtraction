@@ -139,7 +139,6 @@ class Indexer:
                 batch_matrix[batch_id][pt[0]][pt[1]][pt[2]] = 1
         return batch_matrix
 
-
     @staticmethod
     def shaking_seq2points(shaking_tag):
         '''
@@ -180,10 +179,8 @@ class WordTokenizer:
     word level tokenizer,
     for word level encoders (LSTM, GRU, etc.)
     '''
+
     def __init__(self, stanza_nlp):
-        '''
-        :param word2idx: a dictionary, mapping words to ids
-        '''
         # self.word2idx = word2idx
         self.stanza_nlp = stanza_nlp
         # self.word_indexer = Indexer(word2idx, max_seq_len, {"[UNK]": word2idx["[UNK]"], "[PAD]": word2idx["[PAD]"]})
@@ -246,6 +243,35 @@ class WordTokenizer:
         return res
 
 
+class WhiteWordTokenizer:
+    '''
+    word level tokenizer,
+    for word level encoders (LSTM, GRU, etc.)
+    '''
+
+    @staticmethod
+    def tokenize(text):
+        return text.split(" ")
+
+    @staticmethod
+    def get_tok2char_span_map(tokens):
+        tok2char_span = []
+        char_num = 0
+        for tok in tokens:
+            tok2char_span.append((char_num, char_num + len(tok)))
+            char_num += len(tok) + 1  # +1: whitespace
+        return tok2char_span
+
+    @staticmethod
+    def tokenize_plus(text):
+        word_list = WhiteWordTokenizer.tokenize(text)
+        res = {
+            "word_list": word_list,
+            "word2char_span": WhiteWordTokenizer.get_tok2char_span_map(word_list),
+        }
+        return res
+
+
 class BertTokenizerAlignedWithStanza(BertTokenizerFast):
     '''
     why need this class?
@@ -260,6 +286,7 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
         super(BertTokenizerAlignedWithStanza, self).__init__(*args, **kwargs)
         self.stanza_language = kwargs["stanza_language"]
         self.stanza_nlp = None
+
     def get_stanza_nlp(self):
         if self.stanza_nlp is None:
             self.stanza_nlp = stanza.Pipeline(self.stanza_language)
@@ -275,11 +302,11 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
             else:
                 tokens = tokens[:max_length]
         return tokens
-    
+
     def tokenize(self, text, max_length=None, *args, **kwargs):
         words_by_stanza = [word.text for sent in self.get_stanza_nlp()(text).sentences for word in sent.words]
         return self.tokenize_fr_words(words_by_stanza, max_length=max_length, *args, **kwargs)
-    
+
     def encode_plus(self, text, *args, **kwargs):
         words_by_stanza = []
         word2char_span = []
@@ -289,9 +316,9 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
                 start_char, end_char = word.misc.split("|")
                 start_char, end_char = int(start_char.split("=")[1]), int(end_char.split("=")[1])
                 word2char_span.append([start_char, end_char])
-                
+
         return self.encode_plus_fr_words(words_by_stanza, word2char_span, *args, **kwargs)
-    
+
     def encode_plus_fr_words(self, words, word2char_span, *args, **kwargs):
         text = " ".join(words)
 
@@ -314,7 +341,7 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
             features["offset_mapping"] = new_offset_mapping
 
         max_length = kwargs["max_length"] if "max_length" in kwargs else None
-        
+
         features["subword_list"] = self.tokenize_fr_words(words, max_length=max_length)
 
         return features
@@ -329,12 +356,7 @@ class Preprocessor:
 
     @staticmethod
     def get_tok2char_span_map(tokens):
-        tok2char_span = []
-        char_num = 0
-        for tok in tokens:
-            tok2char_span.append((char_num, char_num + len(tok)))
-            char_num += len(tok) + 1  # +1: whitespace
-        return tok2char_span
+        return WhiteWordTokenizer.get_tok2char_span_map(tokens)
 
     @staticmethod
     def unique_list(inp_list):
@@ -346,18 +368,36 @@ class Preprocessor:
                 memory.add(str(item))
         return out_list
 
-    def get_word_tokenizer(self):
+    @staticmethod
+    def list_equal(list1, list2):
+        if len(list1) != len(list2):
+            return False
+
+        memory = {str(it) for it in list1}
+        for item in list2:
+            if str(item) not in memory:
+                return False
+        return True
+
+    def get_word_tokenizer(self, type="white"):
+        '''
+        :param type: whitespace or stanza
+        :return:
+        '''
         if self.word_tokenizer is None:
-            stanza_nlp = stanza.Pipeline(self.language)
-            self.word_tokenizer = WordTokenizer(stanza_nlp)
+            if type == "stanza":
+                stanza_nlp = stanza.Pipeline(self.language)
+                self.word_tokenizer = WordTokenizer(stanza_nlp)
+            elif type == "white":
+                self.word_tokenizer = WhiteWordTokenizer()
         return self.word_tokenizer
 
     def get_subword_tokenizer(self):
         if self.subword_tokenizer is None:
             self.subword_tokenizer = BertTokenizerAlignedWithStanza.from_pretrained(self.pretrained_model_path,
-                                                                                   add_special_tokens=False,
-                                                                                   do_lower_case=False,
-                                                                                   stanza_language=self.language)
+                                                                                    add_special_tokens=False,
+                                                                                    do_lower_case=False,
+                                                                                    stanza_language=self.language)
             print("tokenizer loaded: {}".format(self.pretrained_model_path))
         return self.subword_tokenizer
 
@@ -390,9 +430,9 @@ class Preprocessor:
                 tok_sp = char2tok_span[char_ind]
                 # 因为在bert中，char to tok 也可能出现1对多的情况，比如韩文。
                 # 所以char_span的pos1以第一个tok_ind为准，pos2以最后一个tok_ind为准
-                if tok_sp[0] == -1: # 第一次赋值以后不再修改
+                if tok_sp[0] == -1:  # 第一次赋值以后不再修改
                     tok_sp[0] = tok_ind
-                tok_sp[1] = tok_ind + 1 # 一直修改
+                tok_sp[1] = tok_ind + 1  # 一直修改
         return char2tok_span
 
     def _get_ent2char_spans(self, text, entities, ignore_subword_match=True):
@@ -453,15 +493,44 @@ class Preprocessor:
                 rel_list = sample["relationMentions"]
                 subj_key, pred_key, obj_key = "em1Text", "label", "em2Text"
             normal_sample["text"] = text
+
             normal_rel_list = []
-            for rel in rel_list:
-                normal_rel = {
-                    "subject": rel[subj_key],
-                    "predicate": rel[pred_key],
-                    "object": rel[obj_key],
-                }
-                normal_rel_list.append(normal_rel)
+            normal_ent_list = []
+            if ori_format != "raw_nyt":
+                for rel in rel_list:
+                    normal_rel_list.append({
+                        "subject": rel[subj_key],
+                        # "subj_type": "EXT:DEFAULT",
+                        "predicate": rel[pred_key],
+                        "object": rel[obj_key],
+                        # "obj_type": "EXT:DEFAULT",
+                    })
+                    normal_ent_list.append({
+                        "text": rel[subj_key],
+                        "type": "EXT:DEFAULT",
+                    })
+                    normal_ent_list.append({
+                        "text": rel[obj_key],
+                        "type": "EXT:DEFAULT",
+                    })
+            else:
+                # ent2type = {}
+                for ent in sample["entityMentions"]:
+                    normal_ent_list.append({
+                        "text": ent["text"],
+                        "type": ent["label"],
+                    })
+                    # ent2type[ent["text"]] = ent["label"]
+                for rel in rel_list:
+                    normal_rel_list.append({
+                        "subject": rel[subj_key],
+                        # "subj_type": ent2type[rel[subj_key]],
+                        "predicate": rel[pred_key],
+                        "object": rel[obj_key],
+                        # "obj_type": ent2type[rel[obj_key]],
+                    })
             normal_sample["relation_list"] = normal_rel_list
+            normal_sample["entity_list"] = normal_ent_list
             normal_sample_list.append(normal_sample)
 
         # def clean_text(text):
@@ -479,6 +548,66 @@ class Preprocessor:
         #         rel["object"] = clean_text(rel["object"])
 
         return normal_sample_list
+
+    @staticmethod
+    def pre_check_data_annotation(data):
+        def check_ent_span(entity_list):
+            for ent in entity_list:
+                ent_char_span = ent["char_span"]
+                ent_ext_fr_span = text[ent_char_span[0]:ent_char_span[1]]
+                if ent["text"] != ent_ext_fr_span:
+                    raise Exception("char span error: ent_text: {} != ent_ext_fr_span: {}".format(ent["text"],
+                                                                                                  ent_ext_fr_span))
+
+        for sample in data:
+            text = sample["text"]
+
+            if "entity_list" in sample:
+                check_ent_span(sample["entity_list"])
+
+            if "relation_list" in sample:
+                entities_fr_rel = []
+                for rel in sample["relation_list"]:
+                    entities_fr_rel.append({
+                        "text": rel["subject"],
+                        # "type": rel["subj_type"],
+                        "char_span": [*rel["subj_char_span"]]
+                    })
+
+                    entities_fr_rel.append({
+                        "text": rel["object"],
+                        # "type": rel["obj_type"],
+                        "char_span": [*rel["obj_char_span"]]
+                    })
+                entities_fr_rel = Preprocessor.unique_list(entities_fr_rel)
+                check_ent_span(entities_fr_rel)
+
+                entities_mem = {str({"text": ent["text"], "char_span": ent["char_span"]})
+                                for ent in sample["entity_list"]}
+                for ent in entities_fr_rel:
+                    if str(ent) not in entities_mem:
+                        raise Exception("entity list misses some entities in relation list")
+
+            if "event_list" in sample:
+                entities_fr_event = []
+                for event in sample["event_list"]:
+                    entities_fr_event.append({
+                        "text": event["trigger"],
+                        "char_span": [*event["trigger_char_span"]]
+                    })
+                    for arg in event["argument_list"]:
+                        entities_fr_event.append({
+                            "text": arg["text"],
+                            "char_span": [*arg["char_span"]]
+                        })
+                entities_fr_event = Preprocessor.unique_list(entities_fr_event)
+                check_ent_span(entities_fr_event)
+
+                entities_mem = {str({"text": ent["text"], "char_span": ent["char_span"]})
+                                for ent in sample["entity_list"]}
+                for ent in entities_fr_event:
+                    if str(ent) not in entities_mem:
+                        raise Exception("entity list misses some entities in relation list")
 
     def add_char_span(self, dataset, ignore_subword_match=True):
         '''
@@ -509,13 +638,10 @@ class Preprocessor:
                     obj_char_spans = ent2char_spans[rel["object"]]
                     for subj_sp in subj_char_spans:
                         for obj_sp in obj_char_spans:
-                            relation_list.append({
-                                "subject": rel["subject"],
-                                "object": rel["object"],
-                                "subj_char_span": subj_sp,
-                                "obj_char_span": obj_sp,
-                                "predicate": rel["predicate"],
-                            })
+                            rel_cp = copy.deepcopy(rel)
+                            rel_cp["subj_char_span"] = subj_sp
+                            rel_cp["obj_char_span"] = obj_sp
+                            relation_list.append(rel_cp)
 
                 assert len(sample["relation_list"]) <= len(relation_list)
                 sample["relation_list"] = relation_list
@@ -549,6 +675,7 @@ class Preprocessor:
         '''
         add token level span according to the character spans, character level spans are required
         '''
+
         def char_span2tok_span(char_span, char2tok_span):
             tok_span_list = char2tok_span[char_span[0]:char_span[1]]
             tok_span = [tok_span_list[0][0], tok_span_list[-1][1]]
@@ -557,7 +684,7 @@ class Preprocessor:
         for sample in tqdm(data, desc="adding word level and subword level spans"):
             char2word_span = self._get_char2tok_span(sample["features"]["word2char_span"])
             char2subwd_span = self._get_char2tok_span(sample["features"]["subword2char_span"])
-            
+
             if "relation_list" in sample:
                 for rel in sample["relation_list"]:
                     subj_char_span = rel["subj_char_span"]
@@ -566,13 +693,13 @@ class Preprocessor:
                     rel["obj_wd_span"] = char_span2tok_span(obj_char_span, char2word_span)
                     rel["subj_subwd_span"] = char_span2tok_span(subj_char_span, char2subwd_span)
                     rel["obj_subwd_span"] = char_span2tok_span(obj_char_span, char2subwd_span)
-                    
+
             if "entity_list" in sample:
                 for ent in sample["entity_list"]:
                     char_span = ent["char_span"]
                     ent["wd_span"] = char_span2tok_span(char_span, char2word_span)
                     ent["subwd_span"] = char_span2tok_span(char_span, char2subwd_span)
-                    
+
             if "event_list" in sample:
                 for event in sample["event_list"]:
                     event["trigger_wd_span"] = char_span2tok_span(event["trigger_char_span"], char2word_span)
@@ -676,7 +803,7 @@ class Preprocessor:
                 del sample_id2mismatched_ents[sample["id"]]
         return sample_id2mismatched_ents
 
-    def create_features(self, data, generate=False):
+    def create_features(self, data, word_tokenizer_type="white"):
         # create features
         for sample in tqdm(data, desc="create features"):
             text = sample["text"]
@@ -689,15 +816,19 @@ class Preprocessor:
             #         generate = True
 
             word_features = {}
-            if "word_list" not in sample or generate:
-                word_features = self.get_word_tokenizer().tokenize_plus(text)  # generate word level features
+            if "word_list" not in sample:
+                # generate word level features
+                word_features = self.get_word_tokenizer(word_tokenizer_type).tokenize_plus(text)
             else:
                 for key in word_level_feature_keys:
                     if key in sample:
                         word_features[key] = sample[key]
                         del sample[key]
                 if "word_list" in word_features and "word2char_span" not in word_features:
-                    word_features["word2char_span"] = Preprocessor.get_tok2char_span_map(word_features["word_list"])
+                    if self.language == "en":
+                        word_features["word2char_span"] = Preprocessor.get_tok2char_span_map(word_features["word_list"])
+                    else:
+                        raise Exception("miss word2char_span!")
                 # word_features = {
                 #     "word_list": sample["word_list"],
                 #     "word2char_span": sample["word2char_span"],
@@ -715,10 +846,10 @@ class Preprocessor:
 
             # subword level features
             codes = self.get_subword_tokenizer().encode_plus_fr_words(sample["features"]["word_list"],
-                                                                                 sample["features"]["word2char_span"],
-                                                                                 return_offsets_mapping=True,
-                                                                                 add_special_tokens=False,
-                                                                                 )
+                                                                      sample["features"]["word2char_span"],
+                                                                      return_offsets_mapping=True,
+                                                                      add_special_tokens=False,
+                                                                      )
             subword_features = {
                 "subword_list": codes["subword_list"],
                 "subword2char_span": codes["offset_mapping"],
@@ -749,7 +880,7 @@ class Preprocessor:
                 ## generate subword level dependency list
                 subword_dep_list = []
                 for dep in sample["features"]["word_dependency_list"]:
-                    for subw_id1 in range(*word2subword_span[dep[0]]): # debug
+                    for subw_id1 in range(*word2subword_span[dep[0]]):  # debug
                         for subw_id2 in range(*word2subword_span[dep[1]]):
                             subword_dep_list.append([subw_id1, subw_id2, dep[2]])
                 subword_features["subword_dependency_list"] = subword_dep_list
@@ -778,174 +909,6 @@ class Preprocessor:
                 subw = re.sub("##", "", subw)
                 subw_extr = sample["text"][char_sp[0]:char_sp[1]]
                 assert subw_extr == subw or subw == "[UNK]"
-        return data
-
-    def _process_main_data(self, data, task, add_char_span, ignore_subword_match):
-        # add char spans
-        if add_char_span:
-            self.add_char_span(data, ignore_subword_match=ignore_subword_match)
-
-        # build features
-        separator = "_"  # for event extraction task
-        for sample in tqdm(data, desc="processing main data"):
-            text = sample["text"]
-            # features
-            ## word level
-            word_feature_keys = {"ner_tag_list", "word_list", "pos_tag_list", "dependency_list", "tok2char_span"}
-            # if a key not exists, generate features from scratch
-            # (to guarantee the lengths are equal)
-            generate = False
-            for key in word_feature_keys:
-                if key not in sample:
-                    generate = True
-            if generate:
-                sample["word_level_features"] = self.get_word_tokenizer().tokenize_plus(text)
-            else:
-                word_level_features = {
-                    "word_list": sample["word_list"],
-                    "tok2char_span": sample["tok2char_span"],
-                    "pos_tag_list": sample["pos_tag_list"],
-                    "ner_tag_list": sample["ner_tag_list"],
-                    "dependency_list": sample["dependency_list"],
-                }
-                sample["word_level_features"] = word_level_features
-                del sample["word_list"]
-                del sample["tok2char_span"]
-                del sample["dependency_list"]
-                del sample["pos_tag_list"]
-                del sample["ner_tag_list"]
-
-            ### transform dependencies to matrix point
-            new_dep_list = []
-            for wid, dep in enumerate(sample["word_level_features"]["dependency_list"]):
-                new_dep_list.append([wid, dep[0] + wid, dep[1]])
-            sample["word_level_features"]["dependency_list"] = new_dep_list
-
-            ## subword level
-            subword_features = self.get_subword_tokenizer().encode_plus_fr_words(sample["word_level_features"]["word_list"],
-                                                                           sample["word_level_features"]["tok2char_span"],
-                                                                           return_offsets_mapping=True,
-                                                                           add_special_tokens=False,
-                                                                           )
-            # generate subword2word_idx dict
-            subword2char_span = subword_features["offset_mapping"]
-
-            char2word_span = self._get_char2tok_span(sample["word_level_features"]["tok2char_span"])
-            subword2word_idx = []
-            for subw_id, char_sp in enumerate(subword2char_span):
-                wd_sps = char2word_span[char_sp[0]:char_sp[1]]
-                assert wd_sps[0][0] == wd_sps[-1][1] - 1 # the same word idx
-                subword2word_idx.append(wd_sps[0][0])
-
-            subword_features["tok2char_span"] = subword_features["offset_mapping"]
-            del subword_features["offset_mapping"]
-            sample["subword_level_features"] = {
-                **subword_features,
-                "word_list": [sample["word_level_features"]["word_list"][wid] for wid in subword2word_idx],
-                "ner_tag_list": [sample["word_level_features"]["ner_tag_list"][wid] for wid in subword2word_idx],
-                "pos_tag_list": [sample["word_level_features"]["pos_tag_list"][wid] for wid in subword2word_idx],
-            }
-            subw_feats = sample["subword_level_features"]
-
-            ### generate subword level dependency list
-            word2subword_ids = [[] for _ in range(len(sample["word_level_features"]["word_list"]))]
-            for sbw_idx, wid in enumerate(subword2word_idx):
-                word2subword_ids[wid].append(sbw_idx)
-            subword_dep_list = []
-            for dep in sample["word_level_features"]["dependency_list"]:
-                for subw_id1 in word2subword_ids[dep[0]]:
-                    for subw_id2 in word2subword_ids[dep[1]]:
-                        subword_dep_list.append([subw_id1, subw_id2, dep[2]])
-            sample["subword_level_features"]["dependency_list"] = subword_dep_list
-
-            # check features
-            assert len(subw_feats["subword_list"]) == len(subw_feats["tok2char_span"]) == len(
-                subw_feats["word_list"]) == len(subw_feats["ner_tag_list"]) == len(subw_feats["pos_tag_list"])
-            for subw_id, wid in enumerate(subword2word_idx):
-                subw = sample["subword_level_features"]["subword_list"][subw_id]
-                word = sample["word_level_features"]["word_list"][wid]
-                assert re.sub("##", "", subw) in word or subw == "[UNK]"
-            for subw_id, char_sp in enumerate(subword2char_span):
-                subw = sample["subword_level_features"]["subword_list"][subw_id]
-                subw = re.sub("##", "", subw)
-                subw_extr = sample["text"][char_sp[0]:char_sp[1]]
-                assert subw_extr == subw or subw == "[UNK]"
-
-            # entities, relations
-            fin_ent_list, fin_rel_list = [], []
-            if "entity_list" in sample:
-                fin_ent_list.extend(sample["entity_list"])
-                default_ent_list = copy.deepcopy(sample["entity_list"])
-                # add default tag to entities
-                for ent in default_ent_list:
-                    ent["type"] = "EXT:DEFAULT"
-                fin_ent_list.extend(default_ent_list)
-
-            if "ee" in task:
-                for event in sample["event_list"]:
-                    fin_ent_list.append({
-                        "text": event["trigger"],
-                        "type": "EE:{}{}{}".format("Trigger", separator, event["trigger_type"]),  # EE: event extraction
-                        "char_span": event["trigger_char_span"],
-                    })
-                    # add default tag to entities
-                    fin_ent_list.append({
-                        "text": event["trigger"],
-                        "type": "EXT:DEFAULT",
-                        "char_span": event["trigger_char_span"],
-                    })
-                    for arg in event["argument_list"]:
-                        fin_ent_list.append({
-                            "text": arg["text"],
-                            "type": "EE:{}{}{}".format("Argument", separator, arg["type"]),
-                            "char_span": arg["char_span"],
-                        })
-                        # add default tag to entities
-                        fin_ent_list.append({
-                            "text": arg["text"],
-                            "type": "EXT:DEFAULT",
-                            "char_span": arg["char_span"],
-                        })
-
-                        fin_rel_list.append({
-                            "subject": arg["text"],
-                            "subj_char_span": arg["char_span"],
-                            "object": event["trigger"],
-                            "obj_char_span": event["trigger_char_span"],
-                            "predicate": "EE:{}{}{}".format(arg["type"], separator, event["trigger_type"]),
-                        })
-
-            if "re" in task:
-                # add default tag to entities
-                for rel in sample["relation_list"]:
-                    fin_ent_list.append({
-                        "text": rel["subject"],
-                        "type": "EXT:DEFAULT",
-                        "char_span": rel["subj_char_span"],
-                    })
-                    fin_ent_list.append({
-                        "text": rel["object"],
-                        "type": "EXT:DEFAULT",
-                        "char_span": rel["obj_char_span"],
-                    })
-                fin_rel_list.extend(sample["relation_list"])
-
-            sample["entity_list"] = fin_ent_list
-            sample["relation_list"] = fin_rel_list
-
-        # if default if the only entity type, count it in the final scoring
-        # entity type with EXT (extra) will be ignored at the scoring stage.
-        ent_set = set()
-        for sample in data:
-            ent_set |= {ent["type"] for ent in sample["entity_list"]}
-        if len(ent_set) == 1 and ent_set.pop() == "EXT:DEFAULT":
-            for sample in data:
-                for ent in sample["entity_list"]:
-                    ent["type"] = "DEFAULT"
-
-        # add token spans (word level and subword level)
-        self.add_tok_span(data)
-
         return data
 
     def generate_supporting_data(self, data, max_word_dict_size, min_word_freq):
@@ -1085,7 +1048,8 @@ class Preprocessor:
                     del rel["obj_subwd_span"]
             if "event_list" in sample:
                 for event in sample["event_list"]:
-                    event["trigger_tok_span"] = event["trigger_subwd_span"] if token_level == "subword" else event["trigger_wd_span"]
+                    event["trigger_tok_span"] = event["trigger_subwd_span"] if token_level == "subword" else event[
+                        "trigger_wd_span"]
                     del event["trigger_subwd_span"]
                     del event["trigger_wd_span"]
                     for arg in event["argument_list"]:
@@ -1313,11 +1277,13 @@ class Preprocessor:
             token_offset = len(combined_sample["features"]["tok2char_span"])
             char_offset = 0
             if token_offset > 0:
-                char_offset = combined_sample["features"]["tok2char_span"][-1][1] + 1 # +1: whitespace
-            new_tok2char_span = [[char_sp[0] + char_offset, char_sp[1] + char_offset] for char_sp in sample["features"]["tok2char_span"]]
+                char_offset = combined_sample["features"]["tok2char_span"][-1][1] + 1  # +1: whitespace
+            new_tok2char_span = [[char_sp[0] + char_offset, char_sp[1] + char_offset] for char_sp in
+                                 sample["features"]["tok2char_span"]]
             combined_sample["features"]["tok2char_span"].extend(new_tok2char_span)
 
-            new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in sample["features"]["dependency_list"]]
+            new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in
+                                   sample["features"]["dependency_list"]]
             combined_sample["features"]["dependency_list"].extend(new_dependency_list)
             # record split offsets
             combined_sample["splits"].append({

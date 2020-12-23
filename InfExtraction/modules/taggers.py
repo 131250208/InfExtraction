@@ -75,32 +75,20 @@ class HandshakingTagger4TPLPlus(Tagger):
             fin_ent_list = sample["entity_list"] if "entity_list" in sample else []
             fin_rel_list = sample["relation_list"] if "relation_list" in sample else []
 
-            all_entities = []
-            for ent in fin_ent_list:
-                all_entities.append({
-                    "text": ent["text"],
-                    "char_span": ent["char_span"],
-                    "tok_span": ent["tok_span"],
-                })
-            for rel in fin_rel_list:
-                all_entities.append({
-                    "text": rel["subject"],
-                    "char_span": rel["subj_char_span"],
-                    "tok_span": rel["subj_tok_span"],
-                })
-                all_entities.append({
-                    "text": rel["object"],
-                    "char_span": rel["obj_char_span"],
-                    "tok_span": rel["obj_tok_span"],
-                })
-            all_entities = Preprocessor.unique_list(all_entities)
+            # all_entities = []
+            # for ent in fin_ent_list:
+            #     all_entities.append({
+            #         "text": ent["text"],
+            #         "char_span": [*ent["char_span"]],
+            #         "tok_span": [*ent["tok_span"]],
+            #     })
 
             # add default entity type
             add_default_entity_type = kwargs["add_default_entity_type"]
             if len(fin_ent_list) == 0:  # entity list is empty, generate default entities by the relation list.
                 add_default_entity_type = True
             if add_default_entity_type is True:
-                for ent in all_entities:
+                for ent in fin_ent_list:
                     fin_ent_list.append({
                         "text": ent["text"],
                         "type": "EXT:DEFAULT",
@@ -125,9 +113,11 @@ class HandshakingTagger4TPLPlus(Tagger):
                                 "subject": ent_i["text"],
                                 "subj_char_span": [*ent_i["char_span"]],
                                 "subj_tok_span": [*ent_i["tok_span"]],
+                                # "subj_type": ent_i["type"],
                                 "object": ent_j["text"],
                                 "obj_char_span": [*ent_j["char_span"]],
                                 "obj_tok_span": [*ent_j["tok_span"]],
+                                # "obj_type": ent_j["type"],
                                 "predicate": "EXT:NESTED_IN",
                             })
 
@@ -138,16 +128,18 @@ class HandshakingTagger4TPLPlus(Tagger):
                                 "subject": ent_i["text"],
                                 "subj_char_span": [*ent_i["char_span"]],
                                 "subj_tok_span": [*ent_i["tok_span"]],
+                                # "subj_type": ent_i["type"],
                                 "object": ent_j["text"],
                                 "obj_char_span": [*ent_j["char_span"]],
                                 "obj_tok_span": [*ent_j["tok_span"]],
+                                # "obj_type": ent_j["type"],
                                 "predicate": "EXT:SAME_TYPE",
                             })
 
             classify_entities_by_relation = kwargs["classify_entities_by_relation"]
             if classify_entities_by_relation:
                 for rel in fin_rel_list:
-                    # add additional types to entities
+                    # add rel types to entities
                     fin_ent_list.append({
                         "text": rel["subject"],
                         "type": "REL:{}".format(rel["predicate"]),
@@ -350,6 +342,8 @@ class HandshakingTagger4TPLPlus(Tagger):
                     rel_list.append({
                         "subject": subj["text"],
                         "object": obj["text"],
+                        # "subj_type": subj["type"],
+                        # "obj_type": obj["type"],
                         "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
                         "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
                         "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
@@ -368,7 +362,6 @@ class HandshakingTagger4TPLPlus(Tagger):
 
 
 class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
-
     def __init__(self, data, **kwargs):
         '''
         :param data: all data, used to generate entity type and relation type dicts
@@ -544,6 +537,8 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
                     rel_list.append({
                         "subject": subj["text"],
                         "object": obj["text"],
+                        # "subj_type": subj["type"],
+                        # "obj_type": obj["type"],
                         "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
                         "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
                         "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
@@ -727,6 +722,8 @@ class Tagger4TPL3(HandshakingTagger4TPLPlus):
                     rel_list.append({
                         "subject": subj["text"],
                         "object": obj["text"],
+                        # "subj_type": subj["type"],
+                        # "obj_type": obj["type"],
                         "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
                         "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
                         "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
@@ -787,9 +784,11 @@ def create_rebased_ee_tagger(base_class):
                             "subject": arg["text"],
                             "subj_char_span": arg["char_span"],
                             "subj_tok_span": arg["tok_span"],
+                            # "subj_type": "EE:{}{}{}".format("Argument", separator, arg["type"]),
                             "object": event["trigger"],
                             "obj_char_span": event["trigger_char_span"],
                             "obj_tok_span": event["trigger_tok_span"],
+                            # "obj_type": "EE:{}{}{}".format("Trigger", separator, event["trigger_type"]),
                             "predicate": "EE:{}{}{}".format(arg["type"], separator, event["trigger_type"]),
                         })
                 sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
@@ -940,29 +939,29 @@ def create_rebased_ee_tagger(base_class):
     return REBasedEETagger
 
 
-def create_rebased_ner_tagger(base_class):
-    class REBasedNERTagger(base_class):
-        def decode(self, sample, pred_outs):
-            pred_sample = super(REBasedNERTagger, self).decode(sample, pred_outs)
-            pred_sample["entity_list"] = self._trans2ner(pred_sample["relation_list"], pred_sample["entity_list"])
-            return pred_sample
-
-        def _trans2ner(self, rel_list, ent_list):
-            fin_ent_list = [ent for ent in ent_list if ent["type"] != "NER:Ontology"]
-            ner_fr_re = []
-            for rel in rel_list:
-                assert rel["predicate"] == "isA"
-                ent = {
-                    "text": rel["subject"],
-                    "type": rel["object"],
-                    "char_span": rel["subj_char_span"],
-                    "tok_span": rel["subj_tok_span"],
-                }
-                ner_fr_re.append(ent)
-            fin_ent_list.extend(ner_fr_re)
-            return fin_ent_list
-
-    return REBasedNERTagger
+# def create_rebased_ner_tagger(base_class):
+#     class REBasedNERTagger(base_class):
+#         def decode(self, sample, pred_outs):
+#             pred_sample = super(REBasedNERTagger, self).decode(sample, pred_outs)
+#             pred_sample["entity_list"] = self._trans2ner(pred_sample["relation_list"], pred_sample["entity_list"])
+#             return pred_sample
+#
+#         def _trans2ner(self, rel_list, ent_list):
+#             fin_ent_list = [ent for ent in ent_list if ent["type"] != "NER:Ontology"]
+#             ner_fr_re = []
+#             for rel in rel_list:
+#                 assert rel["predicate"] == "isA"
+#                 ent = {
+#                     "text": rel["subject"],
+#                     "type": rel["object"],
+#                     "char_span": rel["subj_char_span"],
+#                     "tok_span": rel["subj_tok_span"],
+#                 }
+#                 ner_fr_re.append(ent)
+#             fin_ent_list.extend(ner_fr_re)
+#             return fin_ent_list
+#
+#     return REBasedNERTagger
 
 
 class MatrixTaggerEE(Tagger):
