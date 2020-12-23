@@ -72,8 +72,9 @@ class HandshakingTagger4TPLPlus(Tagger):
 
         new_data = copy.deepcopy(data)
         for sample in new_data:
-            fin_ent_list = sample["entity_list"] if "entity_list" in sample else []
-            fin_rel_list = sample["relation_list"] if "relation_list" in sample else []
+            assert "entity_list" in sample and "relation_list" in sample
+            fin_ent_list = copy.deepcopy(sample["entity_list"])
+            fin_rel_list = copy.deepcopy(sample["relation_list"])
 
             # all_entities = []
             # for ent in fin_ent_list:
@@ -85,10 +86,10 @@ class HandshakingTagger4TPLPlus(Tagger):
 
             # add default entity type
             add_default_entity_type = kwargs["add_default_entity_type"]
-            if len(fin_ent_list) == 0:  # entity list is empty, generate default entities by the relation list.
-                add_default_entity_type = True
+            # if len(fin_ent_list) == 0:  # entity list is empty, generate default entities by the relation list.
+            #     add_default_entity_type = True
             if add_default_entity_type is True:
-                for ent in fin_ent_list:
+                for ent in sample["entity_list"]:
                     fin_ent_list.append({
                         "text": ent["text"],
                         "type": "EXT:DEFAULT",

@@ -235,8 +235,8 @@ if __name__ == "__main__":
     tagger_class_name = getattr(taggers, tagger_name)
     if task_type == "re+ee":
         tagger_class_name = taggers.create_rebased_ee_tagger(tagger_class_name)
-    elif task_type == "re+ner":
-        tagger_class_name = taggers.create_rebased_ner_tagger(tagger_class_name)
+    # elif task_type == "re+ner":
+    #     tagger_class_name = taggers.create_rebased_ner_tagger(tagger_class_name)
 
     # additional preprocessing
     def additional_preprocess(data, data_type):

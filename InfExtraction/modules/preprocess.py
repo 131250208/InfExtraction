@@ -500,18 +500,18 @@ class Preprocessor:
                 for rel in rel_list:
                     normal_rel_list.append({
                         "subject": rel[subj_key],
-                        # "subj_type": "EXT:DEFAULT",
+                        # "subj_type": "DEFAULT",
                         "predicate": rel[pred_key],
                         "object": rel[obj_key],
-                        # "obj_type": "EXT:DEFAULT",
+                        # "obj_type": "DEFAULT",
                     })
                     normal_ent_list.append({
                         "text": rel[subj_key],
-                        "type": "EXT:DEFAULT",
+                        "type": "DEFAULT",
                     })
                     normal_ent_list.append({
                         "text": rel[obj_key],
-                        "type": "EXT:DEFAULT",
+                        "type": "DEFAULT",
                     })
             else:
                 # ent2type = {}
@@ -533,19 +533,23 @@ class Preprocessor:
             normal_sample["entity_list"] = normal_ent_list
             normal_sample_list.append(normal_sample)
 
-        # def clean_text(text):
-        #     text = re.sub("�", "", text)
-        #     #             text = re.sub("([A-Za-z]+)", r" \1 ", text)
-        #     #             text = re.sub("(\d+)", r" \1 ", text)
-        #     #             text = re.sub("\s+", " ", text).strip()
-        #     return text
-        #
-        # for sample in tqdm(normal_sample_list, desc="Clean"):
-        #     sample["text"] = clean_text(sample["text"])
-        #
-        #     for rel in sample["relation_list"]:
-        #         rel["subject"] = clean_text(rel["subject"])
-        #         rel["object"] = clean_text(rel["object"])
+        def clean_text(text):
+            text = re.sub("�", "", text)
+            text = re.sub("([,;.?!]+)", r" \1 ", text)
+            #             text = re.sub("([A-Za-z]+)", r" \1 ", text)
+            #             text = re.sub("(\d+)", r" \1 ", text)
+            text = re.sub("\s+", " ", text).strip()
+            return text
+
+        if ori_format in {"casrel", "etl_span", "raw_nyt"}:
+            for sample in normal_sample_list:
+                sample["text"] = clean_text(sample["text"])
+                for ent in sample["entity_list"]:
+                    ent["text"] = clean_text(ent["text"])
+
+                for rel in sample["relation_list"]:
+                    rel["subject"] = clean_text(rel["subject"])
+                    rel["object"] = clean_text(rel["object"])
 
         return normal_sample_list
 
@@ -603,11 +607,12 @@ class Preprocessor:
                 entities_fr_event = Preprocessor.unique_list(entities_fr_event)
                 check_ent_span(entities_fr_event)
 
-                entities_mem = {str({"text": ent["text"], "char_span": ent["char_span"]})
-                                for ent in sample["entity_list"]}
-                for ent in entities_fr_event:
-                    if str(ent) not in entities_mem:
-                        raise Exception("entity list misses some entities in relation list")
+                # # comment because arguments and triggers can not in the entity list
+                # entities_mem = {str({"text": ent["text"], "char_span": ent["char_span"]})
+                #                 for ent in sample["entity_list"]}
+                # for ent in entities_fr_event:
+                #     if str(ent) not in entities_mem:
+                #         raise Exception("entity list misses some entities in event list")
 
     def add_char_span(self, dataset, ignore_subword_match=True):
         '''
@@ -655,7 +660,10 @@ class Preprocessor:
                             "type": ent["type"],
                             "char_span": char_sp,
                         })
-                assert len(new_ent_list) >= sample["entity_list"]
+                try:
+                    assert len(new_ent_list) >= len(sample["entity_list"])
+                except Exception as e:
+                    print("!")
                 sample["entity_list"] = new_ent_list
 
             if "event_list" in sample:
@@ -918,7 +926,12 @@ class Preprocessor:
         word2num = dict()
         word_set = set()
         char_set = set()
+        rel_type_set = set()
+        ent_type_set = set()
+        event_type_set = set()
+        argument_type_set = set()
         max_word_seq_length, max_subword_seq_length = 0, 0
+        ent_exist, rel_exist, event_exist = False, False, False
 
         for sample in tqdm(data, desc="generating supporting data"):
             # POS tag
@@ -930,6 +943,23 @@ class Preprocessor:
             # dependency relations
             if "word_dependency_list" in sample["features"]:
                 deprel_type_set |= {deprel[-1] for deprel in sample["features"]["word_dependency_list"]}
+            # entity
+            if "entity_list" in sample:
+                ent_exist = True
+                for ent in sample["entity_list"]:
+                    ent_type_set.add(ent["type"])
+            # relation
+            if "relation_list" in sample:
+                rel_exist = True
+                for rel in sample["relation_list"]:
+                    rel_type_set.add(rel["predicate"])
+            # event
+            if "event_list" in sample:
+                event_exist = True
+                for event in sample["event_list"]:
+                    event_type_set.add(event["trigger_type"])
+                    for arg in event["argument_list"]:
+                        argument_type_set.add(arg["type"])
 
             # character
             char_set |= set(sample["text"])
@@ -962,6 +992,21 @@ class Preprocessor:
             "max_word_seq_length": max_word_seq_length,
             "max_subword_seq_length": max_subword_seq_length,
         }
+        if ent_exist:
+            data_statistics["ent_type_num"] = len(ent_type_set)
+        if rel_exist:
+            data_statistics["rel_type_num"] = len(rel_type_set)
+        if event_exist:
+            data_statistics["event_type_num"] = len(event_type_set)
+            data_statistics["arg_type_num"] = len(argument_type_set)
+
+        if ent_exist:
+            data_statistics["ent_types"] = list(ent_type_set)
+        if rel_exist:
+            data_statistics["rel_types"] = list(rel_type_set)
+        if event_exist:
+            data_statistics["event_types"] = list(event_type_set)
+            data_statistics["arg_types"] = list(argument_type_set)
 
         dicts = {
             "char2id": char2id,
