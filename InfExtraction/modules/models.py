@@ -396,19 +396,18 @@ class TPLinkerPP(IEModel):
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  rel_dim=None,
-                 conv_config=None,
-                 inter_kernel_config=None,
                  use_attns4rel=None,
+                 emb_ent_info2rel=False,
+                 golden_ent_cla_guide=False,
+                 loss_weight_recover_steps=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
 
         self.ent_tag_size, self.rel_tag_size = tagger.get_tag_size()
-
+        self.loss_weight_recover_steps = loss_weight_recover_steps
         self.metrics_cal = metrics_cal
 
-        # self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim) if self.cat_hidden_size != ent_dim else None
-        # self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim) if self.cat_hidden_size != rel_dim else None
         self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
         self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
 
@@ -416,15 +415,6 @@ class TPLinkerPP(IEModel):
         ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
         rel_shaking_type = handshaking_kernel_config["rel_shaking_type"]
 
-        # self.ent_handshaking_kernel = HandshakingKernel(ent_dim,
-        #                                                 ent_dim,
-        #                                                 ent_shaking_type,
-        #                                                 )
-        # self.rel_handshaking_kernel = HandshakingKernel(rel_dim,
-        #                                                 rel_dim,
-        #                                                 rel_shaking_type,
-        #                                                 only_look_after=False,
-        #                                                 )
         self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
                                                                     ent_shaking_type,
                                                                     )
@@ -432,57 +422,51 @@ class TPLinkerPP(IEModel):
                                                                     rel_shaking_type,
                                                                     only_look_after=False,
                                                                     )
-        # self.handshaking_kernel = HandshakingKernelDora(fin_hidden_size)
 
         self.use_attns4rel = use_attns4rel
         if use_attns4rel is not None:
             self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
                                       rel_dim,
-                                      # fin_hidden_size
                                       )
 
-        # learn local info
-        self.conv_config = conv_config
-        if conv_config is not None:
-            self.ent_convs = nn.ModuleList()
-            self.rel_convs = nn.ModuleList()
-            ent_conv_layers = conv_config["ent_conv_layers"]
-            rel_conv_layers = conv_config["rel_conv_layers"]
-            ent_conv_kernel_size = conv_config["ent_conv_kernel_size"]
-            ent_conv_padding = (ent_conv_kernel_size - 1) // 2
-            rel_conv_kernel_size = conv_config["rel_conv_kernel_size"]
-            rel_conv_padding = (rel_conv_kernel_size - 1) // 2
-            for _ in range(ent_conv_layers):
-                self.ent_convs.append(nn.Conv1d(ent_dim,
-                                                ent_dim,
-                                                ent_conv_kernel_size,
-                                                padding=ent_conv_padding))
-            for _ in range(rel_conv_layers):
-                self.rel_convs.append(nn.Conv2d(rel_dim,
-                                                rel_dim,
-                                                rel_conv_kernel_size,
-                                                padding=rel_conv_padding))
-            # for _ in range(ent_conv_layers):
-            #     self.ent_convs.append(nn.Conv1d(fin_hidden_size,
-            #                                     fin_hidden_size,
-            #                                     ent_conv_kernel_size,
-            #                                     padding=ent_conv_padding))
-            # for _ in range(rel_conv_layers):
-            #     self.rel_convs.append(nn.Conv2d(fin_hidden_size,
-            #                                     fin_hidden_size,
-            #                                     rel_conv_kernel_size,
-            #                                     padding=rel_conv_padding))
-
-        self.inter_kernel_config = inter_kernel_config
-        if self.inter_kernel_config is not None:
-            cross_enc_config = inter_kernel_config[
-                "cross_enc_config"] if "cross_enc_config" in inter_kernel_config else None
-            cross_enc_type = inter_kernel_config["cross_enc_type"]
-            self.inter_kernel = InteractionKernel(ent_dim, rel_dim, cross_enc_type, cross_enc_config)
+        # # learn local info
+        # self.conv_config = conv_config
+        # if conv_config is not None:
+        #     self.ent_convs = nn.ModuleList()
+        #     self.rel_convs = nn.ModuleList()
+        #     ent_conv_layers = conv_config["ent_conv_layers"]
+        #     rel_conv_layers = conv_config["rel_conv_layers"]
+        #     ent_conv_kernel_size = conv_config["ent_conv_kernel_size"]
+        #     ent_conv_padding = (ent_conv_kernel_size - 1) // 2
+        #     rel_conv_kernel_size = conv_config["rel_conv_kernel_size"]
+        #     rel_conv_padding = (rel_conv_kernel_size - 1) // 2
+        #     for _ in range(ent_conv_layers):
+        #         self.ent_convs.append(nn.Conv1d(ent_dim,
+        #                                         ent_dim,
+        #                                         ent_conv_kernel_size,
+        #                                         padding=ent_conv_padding))
+        #     for _ in range(rel_conv_layers):
+        #         self.rel_convs.append(nn.Conv2d(rel_dim,
+        #                                         rel_dim,
+        #                                         rel_conv_kernel_size,
+        #                                         padding=rel_conv_padding))
+        #
+        #
+        # self.inter_kernel_config = inter_kernel_config
+        # if self.inter_kernel_config is not None:
+        #     cross_enc_config = inter_kernel_config[
+        #         "cross_enc_config"] if "cross_enc_config" in inter_kernel_config else None
+        #     cross_enc_type = inter_kernel_config["cross_enc_type"]
+        #     self.inter_kernel = InteractionKernel(ent_dim, rel_dim, cross_enc_type, cross_enc_config)
 
         # decoding fc
         self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
         self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
+
+        self.emb_ent_info2rel = emb_ent_info2rel
+        self.golden_ent_cla_guide = golden_ent_cla_guide
+        if emb_ent_info2rel:
+            self.cln4rel_guide = LayerNorm(rel_dim, 2 * (ent_dim + self.ent_tag_size), conditional=True)
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
@@ -499,25 +483,63 @@ class TPLinkerPP(IEModel):
                                                                             self.rel_tag_size,
                                                                             ),
                                      ]
+        batch_dict["golden_ent_class_guide"] = Indexer.points2shaking_seq_batch(batch_ent_points,
+                                                                                seq_length,
+                                                                                self.ent_tag_size,
+                                                                                )
         return batch_dict
+
+    def get_tok_pre(self, ent_hs_hiddens, ent_class_guide):
+        '''
+        :param ent_hs_hiddens: (batch_size, shaking_seq_len, ent_hidden_size)
+        :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
+        :return: tok_hiddens: (batch_size, seq_len, ent_type_size + ent_hidden_size)
+        '''
+        ent_class_guide = ent_class_guide.float()
+        # ent_class_matrix: (batch_size, seq_len, seq_len, ent_type_size)
+        ent_class_matrix = MyMatrix.mirror(ent_class_guide)
+        # ent_hiddens_matrix: (batch_size, seq_len, seq_len, ent_hidden_size)
+        ent_hiddens_matrix = MyMatrix.mirror(ent_hs_hiddens)
+
+        # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
+        ent_type_num_at_this_span = torch.sum(ent_class_matrix, dim=-1)[:, :, :, None]
+        weight_at_this_span = ent_type_num_at_this_span * 100 + 1
+
+        # weight4rel: (batch_size, seq_len, seq_len, 1)
+        weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-2)[:, :, None, :]
+
+        # boundary_tok_pre: (batch_size, seq_len, ent_hidden_size + ent_type_size)
+        boundary_tok_pre = torch.sum(torch.cat([ent_hiddens_matrix, ent_class_matrix], dim=-1) * weight4rel, dim=-2)
+
+        return boundary_tok_pre
+
+    def get_rel_guide(self, ent_hs_hiddens, ent_class_guide):
+        '''
+        :param ent_hs_hiddens: (batch_size, shaking_seq_len, ent_hidden_size)
+        :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
+        :return: ent_guide4rel: (batch_size, seq_len, seq_len, 2 * (ent_type_size + ent_hidden_size))
+        '''
+        tok_pre = self.get_tok_pre(ent_hs_hiddens, ent_class_guide)
+        seq_len = tok_pre.size()[1]
+        boundary_tok_pre_repeat = tok_pre[:, :, None, :].repeat(1, 1, seq_len, 1)
+        boundary_tok_inter_pre = torch.cat([boundary_tok_pre_repeat, boundary_tok_pre_repeat.permute(0, 2, 1, 3)],
+                                           dim=-1)
+        return boundary_tok_inter_pre
 
     def forward(self, **kwargs):
         super(TPLinkerPP, self).forward()
-
+        ent_class_guide = kwargs["golden_ent_class_guide"]
+        del kwargs["golden_ent_class_guide"]
         cat_hiddens = self._cat_features(**kwargs)
 
         # aggr_hiddens = self.aggr_fc(cat_hiddens)
         ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
         rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
 
-        # ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens) if self.aggr_fc4ent_hsk is not None else cat_hiddens
-        # rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens) if self.aggr_fc4rel_hsk is not None else cat_hiddens
-
         # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # rel_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
         ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens)
         rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens)
-        # ent_hs_hiddens, rel_hs_hiddens = self.handshaking_kernel(aggr_hiddens)
 
         # attentions: (batch_size, layers * heads, seg_len, seq_len)
         if self.use_attns4rel:
@@ -525,18 +547,26 @@ class TPLinkerPP(IEModel):
             attns = self.attns_fc(attns)
             rel_hs_hiddens += attns
 
-        if self.conv_config is not None:
-            for conv in self.ent_convs:
-                ent_hs_hiddens = conv(ent_hs_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
-            for conv in self.rel_convs:
-                rel_hs_hiddens = conv(rel_hs_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-
-        if self.inter_kernel_config is not None:
-            self.inter_kernel(ent_hs_hiddens, rel_hs_hiddens)
+        # if self.conv_config is not None:
+        #     for conv in self.ent_convs:
+        #         ent_hs_hiddens = conv(ent_hs_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
+        #     for conv in self.rel_convs:
+        #         rel_hs_hiddens = conv(rel_hs_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        #
+        # if self.inter_kernel_config is not None:
+        #     self.inter_kernel(ent_hs_hiddens, rel_hs_hiddens)
 
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
-        pred_rel_output = self.rel_fc(rel_hs_hiddens)
 
+        # embed entity info into relation hiddens
+        if self.emb_ent_info2rel:
+            # ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
+            if not self.training or not self.golden_ent_cla_guide:
+                ent_class_guide = (pred_ent_output > 0.).long()
+            boundary_tok_inter_pre = self.get_rel_guide(ent_hs_hiddens, ent_class_guide)
+            rel_hs_hiddens = self.cln4rel_guide(rel_hs_hiddens, boundary_tok_inter_pre)
+
+        pred_rel_output = self.rel_fc(rel_hs_hiddens)
         return pred_ent_output, pred_rel_output
 
     def pred_output2pred_tag(self, pred_output):
@@ -548,12 +578,18 @@ class TPLinkerPP(IEModel):
         ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
         rel_pred_tag = self.pred_output2pred_tag(rel_pred_out)
 
-        loss = self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
-                                                                    ent_gold_tag,
-                                                                    self.bp_steps) + \
-               self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out,
-                                                                    rel_gold_tag,
-                                                                    self.bp_steps)
+        total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
+        current_step = self.bp_steps
+        ori_w_ent, ori_w_rel = 1 / 2, 1 / 2
+        w_ent = max(1 - ori_w_ent * current_step / total_steps, ori_w_ent)
+        w_rel = min(ori_w_rel * current_step / total_steps, ori_w_rel)
+
+        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
+                                                                            ent_gold_tag,
+                                                                            self.bp_steps) + \
+               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out,
+                                                                            rel_gold_tag,
+                                                                            self.bp_steps)
 
         return {
             "loss": loss,
