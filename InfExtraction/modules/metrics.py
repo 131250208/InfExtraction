@@ -347,10 +347,10 @@ class MetricsCalculator:
             gold_sample = golden_sample_list[idx]
             pred_event_list = pred_sample["event_list"]
             gold_event_list = gold_sample["event_list"]
-            try:
-                self._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
-            except Exception as e:
-                print("!")
+            # try:
+            self._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
+            # except Exception as e:
+            #     print("!")
         return ee_cpg_dict
 
     def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list):
