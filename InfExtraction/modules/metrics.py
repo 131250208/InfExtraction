@@ -1,5 +1,6 @@
 import torch
 import re
+import copy
 
 
 class MetricsCalculator:
@@ -142,8 +143,8 @@ class MetricsCalculator:
                                                                                                argument_role))
 
             # cal trigger-free metrics
-            arg_list = event["argument_list"]
-            if "trigger" in event:
+            arg_list = copy.deepcopy(event["argument_list"])
+            if "trigger" in event and event["trigger"] != "":
                 # take trigger as an ordinary argument
                 arg_list.append({
                     "text": event["trigger"],
@@ -248,16 +249,25 @@ class MetricsCalculator:
         '''
         cpg is a list: [correct_num, pred_num, gold_num]
         '''
+        # for mark_str in pred_set:
+        #     if mark_str in gold_set:
+        #         cpg[0] += 1
+        #     else:
+        #         raise Exception("debug")
+
+        correct_num = 0
         for mark_str in pred_set:
             if mark_str in gold_set:
-                cpg[0] += 1
-            # else:
-            #     raise Exception("debug")
+                correct_num += 1
+            else:
+                raise Exception("debug")
 
+        cpg[0] += correct_num
         cpg[1] += len(pred_set)
         cpg[2] += len(gold_set)
-        # if len(pred_set) != len(gold_set):
-        #     raise Exception("debug")
+
+        if len(pred_set) != len(gold_set):
+            raise Exception("debug")
 
     def _cal_rel_cpg(self, pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict):
         '''
@@ -337,10 +347,10 @@ class MetricsCalculator:
             gold_sample = golden_sample_list[idx]
             pred_event_list = pred_sample["event_list"]
             gold_event_list = gold_sample["event_list"]
-            # try:
-            self._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
-            # except Exception as e:
-            #     print("!")
+            try:
+                self._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
+            except Exception as e:
+                print("!")
         return ee_cpg_dict
 
     def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list):

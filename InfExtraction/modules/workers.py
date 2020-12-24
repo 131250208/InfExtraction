@@ -193,6 +193,9 @@ class Evaluator:
 
         # alignment by id (in order)
         pred_data = []
+        # 如果train set在split的时候扔了负样本，merged_pred_samples里会缺失一些id（最终版可扔可不扔，影响应该不大）
+        # 在训练前的伪解码阶段会将valid set当作train set来进行预处理split，所以解码的时候会遇到id缺失，这里用伪样本填补位置。
+        # 注意：测试集的负样本没有进行丢弃，所以不影响对比
         pseudo_pred_sample = {"relation_list": [], "entity_list": [], "event_list": [], "id": -1, "text": ""}
         for sample in golden_data:
             id_ = sample["id"]
