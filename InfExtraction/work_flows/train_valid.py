@@ -182,15 +182,14 @@ if __name__ == "__main__":
     model_dir_for_test = settings.model_dir_for_test
     target_run_ids = settings.target_run_ids
     top_k_models = settings.top_k_models
+    metric4testing = settings.metric4testing
     cal_scores = settings.cal_scores
 
     # # match_pattern, only for relation extraction
     # match_pattern = settings.match_pattern if "re" in task_type else None
 
     # save model
-    score_threshold = settings.score_threshold
     model_bag_size = settings.model_bag_size
-    fin_score_key = settings.final_score_key
 
     # model settings
     model_settings = settings.model_settings
@@ -235,13 +234,16 @@ if __name__ == "__main__":
     tagger_class_name = getattr(taggers, tagger_name)
     if task_type == "re+ee":
         tagger_class_name = taggers.create_rebased_ee_tagger(tagger_class_name)
+
+
     # elif task_type == "re+ner":
     #     tagger_class_name = taggers.create_rebased_ner_tagger(tagger_class_name)
 
     # additional preprocessing
     def additional_preprocess(data, data_type):
         return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
-    
+
+
     all_data4gen_tag_dict = []
     train_data = additional_preprocess(ori_train_data, "train")
     all_data4gen_tag_dict.extend(train_data)
@@ -373,8 +375,8 @@ if __name__ == "__main__":
         optimizer = optimizer_class_name(model.parameters(), lr=float(lr), **optimizer_config["parameters"])
 
         trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
+
         # train and valid
-        best_val_score = 0.
         for ep in range(epochs):
             # train
             trainer.train(ep, epochs)
@@ -385,7 +387,35 @@ if __name__ == "__main__":
             dataset2score_dict = {
                 "valid_data.json": score_dict,
             }
-            current_val_fin_score = score_dict["{}_{}".format("val", fin_score_key)]
+
+            score_dict4comparing = {}
+            for metric_key, current_val_score in score_dict.items():
+                best_val_score = 0.
+                if current_val_score > 0.:
+                    dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)
+                    if not os.path.exists(dir_to_save_model_this_key):
+                        os.makedirs(dir_to_save_model_this_key)
+
+                    # save model state
+                    torch.save(model.state_dict(),
+                               os.path.join(dir_to_save_model_this_key,
+                                            "model_state_dict_{}_{:.5}.pt".format(ep, current_val_score * 100)))
+
+                    # all state paths
+                    model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model_this_key))
+                    # sorted by scores
+                    sorted_model_state_path_list = sorted(model_state_path_list,
+                                                          key=get_score_fr_path)
+                    # best score in the bag
+                    model_path_max_score = sorted_model_state_path_list[-1]
+                    best_val_score = get_score_fr_path(model_path_max_score)
+                    # only save <model_bag_size> model states
+                    if len(sorted_model_state_path_list) > model_bag_size:
+                        os.remove(sorted_model_state_path_list[0])  # remove the state dict with the minimum score
+                score_dict4comparing[metric_key] = {
+                    "current": round(current_val_score, 5),
+                    "best": round(best_val_score, 5),
+                }
 
             # test
             for filename, test_data_loader in filename2test_data_loader.items():
@@ -396,35 +426,22 @@ if __name__ == "__main__":
                 dataset2score_dict[filename] = score_dict
 
             pprint(dataset2score_dict)
-
-            if current_val_fin_score > score_threshold:
-                # save model state
-                torch.save(model.state_dict(),
-                           os.path.join(dir_to_save_model,
-                                        "model_state_dict_{}_{:.5}.pt".format(ep, current_val_fin_score * 100)))
-
-                # all state paths
-                model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model))
-                # sorted by scores
-                sorted_model_state_path_list = sorted(model_state_path_list,
-                                                      key=get_score_fr_path)
-                # best score in the bag
-                model_path_max_score = sorted_model_state_path_list[-1]
-                best_val_score = get_score_fr_path(model_path_max_score)
-                # only save <model_bag_size> model states
-                if len(sorted_model_state_path_list) > model_bag_size:
-                    os.remove(sorted_model_state_path_list[0])  # drop the state with minimum score
-            print("Current val score: {:.5}, Best val score: {:.5}".format(current_val_fin_score * 100, best_val_score))
+            pprint(score_dict4comparing)
 
     elif stage == "inference":
         # get model state paths
         target_run_ids = set(target_run_ids)
-        assert model_dir_for_test is not None and model_dir_for_test.strip() != ""
+        assert model_dir_for_test is not None and model_dir_for_test.strip() != "" "Please set model state directory!"
+
         run_id2model_state_paths = {}
         for root, dirs, files in os.walk(model_dir_for_test):
             for file_name in files:
-                run_id = root[-8:]
-                if re.match(".*model_state.*\.pt", file_name) and run_id in target_run_ids:
+                path_se = re.search("run-\d{8}_\d{6}-(\w{8})/(.*)/", root)
+                run_id = path_se.group(1)
+                metric = path_se.group(2)
+                if metric == metric4testing \
+                        and run_id in target_run_ids \
+                        and re.match(".*model_state.*\.pt", file_name):
                     if run_id not in run_id2model_state_paths:
                         run_id2model_state_paths[run_id] = []
                     model_state_path = os.path.join(root, file_name)
@@ -433,7 +450,6 @@ if __name__ == "__main__":
         # predicting
         run_id2scores = {}
         for run_id, model_path_list in run_id2model_state_paths.items():
-
             # only top k models
             model_path_list = get_last_k_paths(model_path_list, top_k_models)
             for path in model_path_list:

@@ -33,9 +33,6 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                  dep_config=None
                  ):
         super().__init__()
-        '''
-        :parameters: see model settings in settings_default.py
-        '''
         self.tagger = tagger
         self.metrics_cal = metrics_cal
         self.cat_hidden_size = 0
