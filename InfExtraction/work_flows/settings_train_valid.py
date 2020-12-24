@@ -99,7 +99,7 @@ for key, val in dicts.items():
 
 # additional preprocessing
 addtional_preprocessing_config = {
-    "add_default_entity_type": True,
+    "add_default_entity_type": False,
     "classify_entities_by_relation": False,  # ee, re
     "add_nested_relation": False,  # ner
     "add_same_type_relation": False,  # ner

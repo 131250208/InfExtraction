@@ -307,17 +307,17 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
         words_by_stanza = [word.text for sent in self.get_stanza_nlp()(text).sentences for word in sent.words]
         return self.tokenize_fr_words(words_by_stanza, max_length=max_length, *args, **kwargs)
 
-    def encode_plus(self, text, *args, **kwargs):
-        words_by_stanza = []
-        word2char_span = []
-        for sent in self.get_stanza_nlp()(text).sentences:
-            for word in sent.words:
-                words_by_stanza.append(word.text)
-                start_char, end_char = word.misc.split("|")
-                start_char, end_char = int(start_char.split("=")[1]), int(end_char.split("=")[1])
-                word2char_span.append([start_char, end_char])
-
-        return self.encode_plus_fr_words(words_by_stanza, word2char_span, *args, **kwargs)
+    # def encode_plus(self, text, *args, **kwargs):
+    #     words_by_stanza = []
+    #     word2char_span = []
+    #     for sent in self.get_stanza_nlp()(text).sentences:
+    #         for word in sent.words:
+    #             words_by_stanza.append(word.text)
+    #             start_char, end_char = word.misc.split("|")
+    #             start_char, end_char = int(start_char.split("=")[1]), int(end_char.split("=")[1])
+    #             word2char_span.append([start_char, end_char])
+    #
+    #     return self.encode_plus_fr_words(words_by_stanza, word2char_span, *args, **kwargs)
 
     def encode_plus_fr_words(self, words, word2char_span, *args, **kwargs):
         text = " ".join(words)
