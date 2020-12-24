@@ -259,15 +259,15 @@ class MetricsCalculator:
         for mark_str in pred_set:
             if mark_str in gold_set:
                 correct_num += 1
-            else:
-                raise Exception("debug")
+            # else:
+            #     raise Exception("debug")
 
         cpg[0] += correct_num
         cpg[1] += len(pred_set)
         cpg[2] += len(gold_set)
 
-        if len(pred_set) != len(gold_set):
-            raise Exception("debug")
+        # if len(pred_set) != len(gold_set):
+        #     raise Exception("debug")
 
     def _cal_rel_cpg(self, pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict):
         '''
