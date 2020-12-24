@@ -362,12 +362,12 @@ class HandshakingTagger4TPLPlus(Tagger):
         return pred_sample
 
 
-class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
+class Tagger4RAIN(HandshakingTagger4TPLPlus):
     def __init__(self, data, **kwargs):
         '''
         :param data: all data, used to generate entity type and relation type dicts
         '''
-        super(HandshakingTagger4TPLPP, self).__init__(data, **kwargs)
+        super(Tagger4RAIN, self).__init__(data, **kwargs)
         #
         # # generate entity type and relation type dicts
         # rel_type_set = set()

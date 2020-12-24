@@ -386,7 +386,7 @@ class TPLinkerPlus(IEModel):
         }
 
 
-class TPLinkerPP(IEModel):
+class RAIN(IEModel):
     def __init__(self,
                  tagger,
                  metrics_cal,
@@ -467,7 +467,7 @@ class TPLinkerPP(IEModel):
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
-        batch_dict = super(TPLinkerPP, self).generate_batch(batch_data)
+        batch_dict = super(RAIN, self).generate_batch(batch_data)
         # tags
         batch_ent_points = [sample["ent_points"] for sample in batch_data]
         batch_rel_points = [sample["rel_points"] for sample in batch_data]
@@ -524,7 +524,7 @@ class TPLinkerPP(IEModel):
         return boundary_tok_inter_pre
 
     def forward(self, **kwargs):
-        super(TPLinkerPP, self).forward()
+        super(RAIN, self).forward()
         ent_class_guide = kwargs["golden_ent_class_guide"]
         del kwargs["golden_ent_class_guide"]
         cat_hiddens = self._cat_features(**kwargs)

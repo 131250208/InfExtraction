@@ -47,11 +47,11 @@ from glob import glob
 # match_pattern = "whole_span"
 
 # Frequent changes
-exp_name = "webnlg"
+exp_name = "webnlg_star"
 stage = "train"  # inference
 task_type = "re"  # re, re+ee
-model_name = "TPLinkerPP"
-tagger_name = "HandshakingTagger4TPLPP"
+model_name = "RAIN"
+tagger_name = "Tagger4RAIN"
 pretrained_model_name = "bert-base-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
 device_num = 1
