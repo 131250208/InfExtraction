@@ -212,7 +212,7 @@ char_encoder_config = {
 word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
-    "word_emb_file_path": "../../data/pretrained_emb/PubMed-shuffle-win-30.bin",
+    "word_emb_file_path": "../../data/pretrained_emb/{}".format(pretrained_emb_name),
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
     "bilstm_hidden_size": [300, 600],
@@ -221,7 +221,7 @@ word_encoder_config = {
 } if word_encoder else None
 
 subwd_encoder_config = {
-    "pretrained_model_path": "../../data/pretrained_models/bert-base-cased",
+    "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
     "use_last_k_layers": 1,
     "wordpieces_prefix": "##",
