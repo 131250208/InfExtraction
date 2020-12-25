@@ -32,26 +32,13 @@ import copy
 import re
 from glob import glob
 
-# if task_type == "re":
-#     final_score_key = "rel_f1"
-# elif task_type == "re+ee":
-#     final_score_key = "trigger_class_f1"
-# elif task_type == "re+ner":
-#     final_score_key = "ent_f1"
-
-# match_pattern: for joint entity and relation extraction
-# only_head_text (nyt_star, webnlg_star),
-# whole_text (nyt, webnlg),
-# only_head_index,
-# whole_span
-# match_pattern = "whole_span"
-
 # Frequent changes
 exp_name = "webnlg_star"
 stage = "train"  # inference
 task_type = "re"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
+run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-base-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
 device_num = 1
@@ -59,6 +46,14 @@ use_wandb = False
 note = ""
 epochs = 100
 lr = 5e-5  # 5e-5, 1e-4
+check_tagging_n_decoding = True
+split_early_stop = True
+drop_neg_samples = True
+combine = False  # combine splits
+scheduler = "CAWR"
+use_ghm = False
+model_bag_size = 25
+
 batch_size_train = 6
 batch_size_valid = 6
 batch_size_test = 6
@@ -110,18 +105,6 @@ tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "link_all_related_tokens": False,
 }
-
-# train, valid, test settings
-run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-check_tagging_n_decoding = True
-
-split_early_stop = True
-combine = False
-
-scheduler = "CAWR"
-use_ghm = False
-
-model_bag_size = 25
 
 # optimizers and schedulers
 optimizer_config = {
