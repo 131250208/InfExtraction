@@ -480,7 +480,7 @@ class RAIN(IEModel):
         if self.span_type_matrix is None or \
                 self.span_type_matrix.size()[0] != batch_size or \
                 self.span_type_matrix.size()[1] != seq_len:
-            self.span_type_matrix = torch.ones([seq_len, seq_len]).triu()[None, :, :].repeat(batch_size, 1, 1)
+            self.span_type_matrix = torch.ones([seq_len, seq_len]).triu().long()[None, :, :].repeat(batch_size, 1, 1)
         span_type_emb = self.span_type_emb(self.span_type_matrix)
 
         # span len
@@ -488,7 +488,7 @@ class RAIN(IEModel):
                 self.span_len_matrix.size()[0] != batch_size or \
                 self.span_len_matrix.size()[1] != seq_len:
             t = torch.range(0, seq_len - 1)[:, None].repeat(1, seq_len)
-            self.span_len_matrix = torch.abs(t - t.permute(1, 0))[None, :, :].repeat(batch_size, 1, 1)
+            self.span_len_matrix = torch.abs(t - t.permute(1, 0)).long()[None, :, :].repeat(batch_size, 1, 1)
         span_len_emb = self.span_len_emb(self.span_len_matrix)
 
         # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
