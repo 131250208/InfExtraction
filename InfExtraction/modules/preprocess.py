@@ -1158,7 +1158,7 @@ class Preprocessor:
 
     @staticmethod
     def split_into_short_samples(data, max_seq_len, sliding_len, data_type,
-                                 token_level, task_type, wordpieces_prefix="##", early_stop=True):
+                                 token_level, task_type, wordpieces_prefix="##", early_stop=True, drop_neg_samples=False):
         '''
         split samples with long text into samples with short subtexts
         :param data: original data
@@ -1270,12 +1270,13 @@ class Preprocessor:
                     new_sample["event_list"] = sub_event_list
 
                     # do not introduce excessive negative samples
-                    if "re" in task_type and len(new_sample["relation_list"]) == 0:
-                        continue
-                    if "ner" in task_type and len(new_sample["entity_list"]) == 0:
-                        continue
-                    if ("ee" in task_type or "ed" in task_type) and len(new_sample["event_list"]) == 0:
-                        continue
+                    if drop_neg_samples:
+                        if "re" in task_type and len(new_sample["relation_list"]) == 0:
+                            continue
+                        if "ner" in task_type and len(new_sample["entity_list"]) == 0:
+                            continue
+                        if ("ee" in task_type or "ed" in task_type) and len(new_sample["event_list"]) == 0:
+                            continue
 
                     # offset
                     new_sample = Preprocessor.span_offset(new_sample, - tok_level_offset, - char_level_offset)

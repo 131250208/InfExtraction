@@ -426,36 +426,6 @@ class RAIN(IEModel):
                                       rel_dim,
                                       )
 
-        # # learn local info
-        # self.conv_config = conv_config
-        # if conv_config is not None:
-        #     self.ent_convs = nn.ModuleList()
-        #     self.rel_convs = nn.ModuleList()
-        #     ent_conv_layers = conv_config["ent_conv_layers"]
-        #     rel_conv_layers = conv_config["rel_conv_layers"]
-        #     ent_conv_kernel_size = conv_config["ent_conv_kernel_size"]
-        #     ent_conv_padding = (ent_conv_kernel_size - 1) // 2
-        #     rel_conv_kernel_size = conv_config["rel_conv_kernel_size"]
-        #     rel_conv_padding = (rel_conv_kernel_size - 1) // 2
-        #     for _ in range(ent_conv_layers):
-        #         self.ent_convs.append(nn.Conv1d(ent_dim,
-        #                                         ent_dim,
-        #                                         ent_conv_kernel_size,
-        #                                         padding=ent_conv_padding))
-        #     for _ in range(rel_conv_layers):
-        #         self.rel_convs.append(nn.Conv2d(rel_dim,
-        #                                         rel_dim,
-        #                                         rel_conv_kernel_size,
-        #                                         padding=rel_conv_padding))
-        #
-        #
-        # self.inter_kernel_config = inter_kernel_config
-        # if self.inter_kernel_config is not None:
-        #     cross_enc_config = inter_kernel_config[
-        #         "cross_enc_config"] if "cross_enc_config" in inter_kernel_config else None
-        #     cross_enc_type = inter_kernel_config["cross_enc_type"]
-        #     self.inter_kernel = InteractionKernel(ent_dim, rel_dim, cross_enc_type, cross_enc_config)
-
         # decoding fc
         self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
         self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
@@ -463,7 +433,14 @@ class RAIN(IEModel):
         self.emb_ent_info2rel = emb_ent_info2rel
         self.golden_ent_cla_guide = golden_ent_cla_guide
         if emb_ent_info2rel:
-            self.cln4rel_guide = LayerNorm(rel_dim, 2 * (ent_dim + self.ent_tag_size), conditional=True)
+            span_len_emb_dim = 64
+            span_type_emb_dim = 32
+            self.span_len_emb = nn.Embedding(512, span_len_emb_dim)
+            self.span_type_emb = nn.Embedding(2, span_type_emb_dim)
+            self.span_type_matrix = None
+            self.span_len_matrix = None
+            tp_dim = 2 * (ent_dim + self.ent_tag_size + span_len_emb_dim + span_type_emb_dim)
+            self.cln4rel_guide = LayerNorm(rel_dim, tp_dim, conditional=True)
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
@@ -498,6 +475,22 @@ class RAIN(IEModel):
         # ent_hiddens_matrix: (batch_size, seq_len, seq_len, ent_hidden_size)
         ent_hiddens_matrix = MyMatrix.mirror(ent_hs_hiddens)
 
+        batch_size, seq_len, _, _ = ent_hiddens_matrix.size()
+        # span type
+        if self.span_type_matrix is None or \
+                self.span_type_matrix.size()[0] != batch_size or \
+                self.span_type_matrix.size()[1] != seq_len:
+            self.span_type_matrix = torch.ones([seq_len, seq_len]).triu()[None, :, :].repeat(batch_size, 1, 1)
+        span_type_emb = self.span_type_emb(self.span_type_matrix)
+
+        # span len
+        if self.span_len_matrix is None or \
+                self.span_len_matrix.size()[0] != batch_size or \
+                self.span_len_matrix.size()[1] != seq_len:
+            t = torch.range(0, seq_len - 1)[:, None].repeat(1, seq_len)
+            self.span_len_matrix = torch.abs(t - t.permute(1, 0))[None, :, :].repeat(batch_size, 1, 1)
+        span_len_emb = self.span_len_emb(self.span_len_matrix)
+
         # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
         ent_type_num_at_this_span = torch.sum(ent_class_matrix, dim=-1)[:, :, :, None]
         weight_at_this_span = ent_type_num_at_this_span * 100 + 1
@@ -506,7 +499,12 @@ class RAIN(IEModel):
         weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-2)[:, :, None, :]
 
         # boundary_tok_pre: (batch_size, seq_len, ent_hidden_size + ent_type_size)
-        boundary_tok_pre = torch.sum(torch.cat([ent_hiddens_matrix, ent_class_matrix], dim=-1) * weight4rel, dim=-2)
+        span_pre = torch.cat([ent_hiddens_matrix,
+                              ent_class_matrix,
+                              span_len_emb,
+                              span_type_emb],
+                             dim=-1)
+        boundary_tok_pre = torch.sum(span_pre * weight4rel, dim=-2)
 
         return boundary_tok_pre
 
@@ -519,7 +517,8 @@ class RAIN(IEModel):
         tok_pre = self.get_tok_pre(ent_hs_hiddens, ent_class_guide)
         seq_len = tok_pre.size()[1]
         boundary_tok_pre_repeat = tok_pre[:, :, None, :].repeat(1, 1, seq_len, 1)
-        boundary_tok_inter_pre = torch.cat([boundary_tok_pre_repeat, boundary_tok_pre_repeat.permute(0, 2, 1, 3)],
+        boundary_tok_inter_pre = torch.cat([boundary_tok_pre_repeat,
+                                            boundary_tok_pre_repeat.permute(0, 2, 1, 3)],
                                            dim=-1)
         return boundary_tok_inter_pre
 
