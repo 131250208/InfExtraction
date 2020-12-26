@@ -19,6 +19,7 @@ from gensim.models import KeyedVectors
 import logging
 from IPython.core.debugger import set_trace
 import time
+import torch.nn.functional as F
 
 
 class IEModel(nn.Module, metaclass=ABCMeta):
@@ -394,6 +395,7 @@ class RAIN(IEModel):
                  ent_dim=None,
                  rel_dim=None,
                  use_attns4rel=None,
+                 do_span_len_emb=False,
                  emb_ent_info2rel=False,
                  golden_ent_cla_guide=False,
                  loss_weight_recover_steps=None,
@@ -426,21 +428,30 @@ class RAIN(IEModel):
                                       rel_dim,
                                       )
 
-        # decoding fc
-        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
-        self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
+        self.do_span_len_emb = do_span_len_emb
+        if do_span_len_emb:
+            span_len_emb_dim = 64
+            self.span_len_emb = nn.Embedding(512, span_len_emb_dim)
+            ent_dim += span_len_emb_dim
+            self.span_len_seq = None  # for cache
 
         self.emb_ent_info2rel = emb_ent_info2rel
         self.golden_ent_cla_guide = golden_ent_cla_guide
         if emb_ent_info2rel:
-            span_len_emb_dim = 64
+            # span type: 0, 1 (spans end with this token, or spans start with this token)
             span_type_emb_dim = 32
-            self.span_len_emb = nn.Embedding(512, span_len_emb_dim)
             self.span_type_emb = nn.Embedding(2, span_type_emb_dim)
             self.span_type_matrix = None
-            self.span_len_matrix = None
-            tp_dim = 2 * (ent_dim + self.ent_tag_size + span_len_emb_dim + span_type_emb_dim)
+
+            # ent_tag_emb
+            ent_tag_emb_dim = 32
+            self.ent_tag_emb = nn.Linear(self.ent_tag_size, ent_tag_emb_dim)
+            tp_dim = 2 * (ent_dim + ent_tag_emb_dim + span_type_emb_dim)
             self.cln4rel_guide = LayerNorm(rel_dim, tp_dim, conditional=True)
+
+        # decoding fc
+        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
+        self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
@@ -476,32 +487,25 @@ class RAIN(IEModel):
         ent_hiddens_matrix = MyMatrix.mirror(ent_hs_hiddens)
 
         batch_size, seq_len, _, _ = ent_hiddens_matrix.size()
-        # span type
+
+        # span type: 0 or 1 (spans end with this token, or spans start with this token)
         if self.span_type_matrix is None or \
                 self.span_type_matrix.size()[0] != batch_size or \
                 self.span_type_matrix.size()[1] != seq_len:
             self.span_type_matrix = torch.ones([seq_len, seq_len]).to(ent_hs_hiddens.device).triu().long()[None, :, :].repeat(batch_size, 1, 1)
         span_type_emb = self.span_type_emb(self.span_type_matrix)
 
-        # span len
-        if self.span_len_matrix is None or \
-                self.span_len_matrix.size()[0] != batch_size or \
-                self.span_len_matrix.size()[1] != seq_len:
-            t = torch.arange(0, seq_len).to(ent_hs_hiddens.device)[:, None].repeat(1, seq_len)
-            self.span_len_matrix = torch.abs(t - t.permute(1, 0)).long()[None, :, :].repeat(batch_size, 1, 1)
-        span_len_emb = self.span_len_emb(self.span_len_matrix)
-
         # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
         ent_type_num_at_this_span = torch.sum(ent_class_matrix, dim=-1)[:, :, :, None]
-        weight_at_this_span = ent_type_num_at_this_span * 100 + 1
 
         # weight4rel: (batch_size, seq_len, seq_len, 1)
-        weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-2)[:, :, None, :]
+        # weight_at_this_span = ent_type_num_at_this_span * 100 + 1
+        # weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-2)[:, :, None, :]
+        weight4rel = F.softmax(ent_type_num_at_this_span, dim=-2)
 
-        # boundary_tok_pre: (batch_size, seq_len, ent_hidden_size + ent_type_size)
+        # boundary_tok_pre: (batch_size, seq_len, ent_hidden_size + ent_type_size + span_type_emb_dim)
         span_pre = torch.cat([ent_hiddens_matrix,
-                              ent_class_matrix,
-                              span_len_emb,
+                              self.ent_tag_emb(ent_class_matrix),
                               span_type_emb],
                              dim=-1)
         boundary_tok_pre = torch.sum(span_pre * weight4rel, dim=-2)
@@ -528,7 +532,8 @@ class RAIN(IEModel):
         del kwargs["golden_ent_class_guide"]
         cat_hiddens = self._cat_features(**kwargs)
 
-        # aggr_hiddens = self.aggr_fc(cat_hiddens)
+        batch_size, seq_len, _ = cat_hiddens.size()
+
         ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
         rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
 
@@ -543,15 +548,16 @@ class RAIN(IEModel):
             attns = self.attns_fc(attns)
             rel_hs_hiddens += attns
 
-        # if self.conv_config is not None:
-        #     for conv in self.ent_convs:
-        #         ent_hs_hiddens = conv(ent_hs_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
-        #     for conv in self.rel_convs:
-        #         rel_hs_hiddens = conv(rel_hs_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-        #
-        # if self.inter_kernel_config is not None:
-        #     self.inter_kernel(ent_hs_hiddens, rel_hs_hiddens)
+        # span len
+        if self.span_len_matrix is None or \
+                self.span_len_matrix.size()[0] != batch_size or \
+                self.span_len_matrix.size()[1] != seq_len:
+            t = torch.arange(0, seq_len).to(ent_hs_hiddens.device)[:, None].repeat(1, seq_len)
+            span_len_matrix = torch.abs(t - t.permute(1, 0)).long()[None, :, :].repeat(batch_size, 1, 1)
+            self.span_len_seq = MyMatrix.upper_reg2seq(span_len_matrix[:, :, :, None]).view(batch_size, seq_len, seq_len)
+        span_len_emb = self.span_len_emb(self.span_len_seq)
 
+        ent_hs_hiddens = torch.cat([ent_hs_hiddens, span_len_emb], dim=-1)
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
 
         # embed entity info into relation hiddens
