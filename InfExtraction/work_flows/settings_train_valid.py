@@ -236,6 +236,7 @@ model_settings = {
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
     "rel_dim": 768,
+    "do_span_len_emb": True,
     "emb_ent_info2rel": True,
     "golden_ent_cla_guide": True,
     "loss_weight_recover_steps": 6000,

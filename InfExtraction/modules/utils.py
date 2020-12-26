@@ -5,6 +5,27 @@ import json
 from torch.utils.data import Dataset
 import torch.nn.functional as F
 from pprint import pprint
+from tqdm import tqdm
+
+
+def load_data(path):
+    filename = path.split("/")[-1]
+    try:
+        print("loading data: {}".format(filename))
+        data = json.load(open(path, "r", encoding="utf-8"))
+        print("done!")
+    except json.decoder.JSONDecodeError:
+        with open(path, "r", encoding="utf-8") as file_in:
+            data = [json.loads(line) for line in tqdm(file_in, desc="loading data {}".format(filename))]
+    return data
+
+
+def save_as_json_lines(data, path):
+    with open(path, "w", encoding="utf-8") as out_file:
+        filename = path.split("/")[-1]
+        for sample in tqdm(data, desc="saving data {}".format(filename)):
+            line = json.dumps(sample, ensure_ascii=False)
+            out_file.write("{}\n".format(line))
 
 
 class MyDataset(Dataset):

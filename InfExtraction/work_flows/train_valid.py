@@ -14,7 +14,7 @@ from InfExtraction.modules import taggers
 from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.modules.utils import DefaultLogger, MyDataset
+from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data
 
 import os
 import sys, getopt
@@ -43,7 +43,8 @@ def get_dataloader(data,
                    task_type,
                    wdp_prefix=None,
                    max_char_num_in_tok=None,
-                   split_early_stop=True
+                   split_early_stop=True,
+                   drop_neg_samples=False,
                    ):
     # split test data
     data = Preprocessor.split_into_short_samples(data,
@@ -53,7 +54,8 @@ def get_dataloader(data,
                                                  token_level,
                                                  task_type,
                                                  wordpieces_prefix=wdp_prefix,
-                                                 early_stop=split_early_stop)
+                                                 early_stop=split_early_stop,
+                                                 drop_neg_samples=drop_neg_samples)
 
     if combine:
         data = Preprocessor.combine(data, max_seq_len)
@@ -169,6 +171,7 @@ if __name__ == "__main__":
 
     combine = settings.combine
     split_early_stop = settings.split_early_stop
+    drop_neg_samples = settings.drop_neg_samples
 
     trainer_config = settings.trainer_config
     use_ghm = settings.use_ghm
@@ -210,15 +213,13 @@ if __name__ == "__main__":
     # ...
 
     # load data
-    print("load data...")
-    ori_train_data = json.load(open(train_data_path, "r", encoding="utf-8"))
-    ori_valid_data = json.load(open(valid_data_path, "r", encoding="utf-8"))
+    ori_train_data = load_data(train_data_path)
+    ori_valid_data = load_data(valid_data_path)
     filename2ori_test_data = {}
     for test_data_path in settings.test_data_list:
         filename = test_data_path.split("/")[-1]
-        ori_test_data = json.load(open(test_data_path, "r", encoding="utf-8"))
+        ori_test_data = load_data(test_data_path)
         filename2ori_test_data[filename] = ori_test_data
-    print("done!")
 
     # choose features and spans by token level
     ori_train_data = Preprocessor.choose_features_by_token_level(ori_train_data, token_level)
@@ -308,7 +309,8 @@ if __name__ == "__main__":
                                          task_type,
                                          wdp_prefix,
                                          max_char_num_in_tok,
-                                         split_early_stop
+                                         split_early_stop,
+                                         drop_neg_samples
                                          )
         filename2test_data_loader[filename] = test_dataloader
 
@@ -326,7 +328,8 @@ if __name__ == "__main__":
                                           task_type,
                                           wdp_prefix,
                                           max_char_num_in_tok,
-                                          split_early_stop
+                                          split_early_stop,
+                                          drop_neg_samples
                                           )
         valid_dataloader = get_dataloader(valid_data,
                                           "valid",
@@ -341,7 +344,8 @@ if __name__ == "__main__":
                                           task_type,
                                           wdp_prefix,
                                           max_char_num_in_tok,
-                                          split_early_stop
+                                          split_early_stop,
+                                          drop_neg_samples
                                           )
         # debug: checking tagging and decoding
         if check_tagging_n_decoding:
@@ -361,7 +365,8 @@ if __name__ == "__main__":
                                                        task_type,
                                                        wdp_prefix,
                                                        max_char_num_in_tok,
-                                                       split_early_stop
+                                                       split_early_stop,
+                                                       drop_neg_samples
                                                        )
             pprint(evaluator.check_tagging_n_decoding(valid_dataloader4checking, ori_valid_data))
 

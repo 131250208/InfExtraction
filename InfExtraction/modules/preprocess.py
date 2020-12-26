@@ -7,6 +7,8 @@ import logging
 import time
 from IPython.core.debugger import set_trace
 import torch
+import jieba
+from pprint import pprint
 
 
 class Indexer:
@@ -174,7 +176,7 @@ class Indexer:
         return points
 
 
-class WordTokenizer:
+class StanzaWordTokenizer:
     '''
     word level tokenizer,
     for word level encoders (LSTM, GRU, etc.)
@@ -199,7 +201,7 @@ class WordTokenizer:
     # def text2word_indices(self, text):
     #     # if not self.word2idx:
     #     #     raise ValueError(
-    #     #         "if you invoke function text2word_indices, self.word2idx should be set when initialize WordTokenizer")
+    #     #         "if you invoke function text2word_indices, self.word2idx should be set when initialize StanzaWordTokenizer")
     #     words = self.tokenize(text)
     #     return self.word_indexer.get_indices(words)
 
@@ -268,6 +270,51 @@ class WhiteWordTokenizer:
         res = {
             "word_list": word_list,
             "word2char_span": WhiteWordTokenizer.get_tok2char_span_map(word_list),
+        }
+        return res
+
+
+class ChineseWordTokenizer:
+    @staticmethod
+    def tokenize(text, ent_list=None):
+        if ent_list is not None and len(ent_list) > 0:
+            boundary_ids = set()
+            for ent in ent_list:
+                for m in re.finditer(re.escape(ent), text):
+                    boundary_ids.add(m.span()[0])
+                    boundary_ids.add(m.span()[1])
+
+            split_ids = [0] + sorted(list(boundary_ids)) + [len(text)]
+            segs = []
+            for idx, split_id in enumerate(split_ids):
+                if idx == len(split_ids) - 1:
+                    break
+                segs.append(text[split_id:split_ids[idx + 1]])
+        else:
+            segs = [text]
+
+        word_pattern = "[0-9]+|[\[\]a-zA-Z]+|[^0-9a-zA-Z]"
+        word_list = []
+        for seg in segs:
+            word_list.extend(re.findall(word_pattern, seg))
+        return word_list
+
+    @staticmethod
+    def get_tok2char_span_map(word_list):
+        text_fr_word_list = ""
+        word2char_span = []
+        for word in word_list:
+            char_span = [len(text_fr_word_list), len(text_fr_word_list) + len(word)]
+            text_fr_word_list += word
+            word2char_span.append(char_span)
+        return word2char_span
+
+    @staticmethod
+    def tokenize_plus(text, ent_list=None):
+        word_list = ChineseWordTokenizer.tokenize(text, ent_list)
+        res = {
+            "word_list": word_list,
+            "word2char_span": ChineseWordTokenizer.get_tok2char_span_map(word_list),
         }
         return res
 
@@ -355,10 +402,6 @@ class Preprocessor:
         self.pretrained_model_path = pretrained_model_path
 
     @staticmethod
-    def get_tok2char_span_map(tokens):
-        return WhiteWordTokenizer.get_tok2char_span_map(tokens)
-
-    @staticmethod
     def unique_list(inp_list):
         out_list = []
         memory = set()
@@ -387,9 +430,11 @@ class Preprocessor:
         if self.word_tokenizer is None:
             if type == "stanza":
                 stanza_nlp = stanza.Pipeline(self.language)
-                self.word_tokenizer = WordTokenizer(stanza_nlp)
+                self.word_tokenizer = StanzaWordTokenizer(stanza_nlp)
             elif type == "white":
                 self.word_tokenizer = WhiteWordTokenizer()
+            elif type == "normal_chinese":
+                self.word_tokenizer = ChineseWordTokenizer()
         return self.word_tokenizer
 
     def get_subword_tokenizer(self):
@@ -398,7 +443,7 @@ class Preprocessor:
                                                                                     add_special_tokens=False,
                                                                                     do_lower_case=False,
                                                                                     stanza_language=self.language)
-            print("tokenizer loaded: {}".format(self.pretrained_model_path))
+            # print("tokenizer loaded: {}".format(self.pretrained_model_path))
         return self.subword_tokenizer
 
     def _get_char2tok_span(self, tok2char_span):
@@ -448,32 +493,130 @@ class Preprocessor:
         for ent in entities:
             spans = []
             target_ent = " {} ".format(ent) if ignore_subword_match else ent
+            # if not in, try lower
+            if target_ent not in text_cp:
+                target_ent = target_ent.lower()
+                text_cp = text_cp.lower()
             for m in re.finditer(re.escape(target_ent), text_cp):
                 # if consider subword, avoid matching an incomplete number, "76567" -> "65", or it will introduce too many errors.
-                if not ignore_subword_match and re.match("\d+", target_ent):
+                if not ignore_subword_match and re.match("^\d+$", target_ent):
                     if (m.span()[0] - 1 >= 0 and re.match("\d", text_cp[m.span()[0] - 1])) or (
                             m.span()[1] < len(text_cp) and re.match("\d", text_cp[m.span()[1]])):
                         continue
                 # if ignore_subword_match, we use " {original entity} " to match. So, we need to recover the correct span
-                span = [m.span()[0], m.span()[1] - 2] if ignore_subword_match else m.span()
+                span = [m.span()[0], m.span()[1] - 2] if ignore_subword_match else [*m.span()]
                 spans.append(span)
             ent2char_spans[ent] = spans
         return ent2char_spans
 
     @staticmethod
+    def trans_duee(data, dataset_type, add_id):
+        normal_data = []
+        for ind, sample in tqdm(enumerate(data), desc="transform duee"):
+            text = sample["text"]
+            normal_sample = {
+                "text": text,
+            }
+            # add id
+            if add_id:
+                normal_sample["id"] = "{}_{}".format(dataset_type, ind)
+            else:
+                assert "id" in sample, "miss id in data!"
+                normal_sample["id"] = sample["id"]
+
+            # event list
+            if "event_list" in sample:  # train or valid data
+                normal_event_list = []
+                for event in sample["event_list"]:
+                    normal_event = copy.deepcopy(event)
+                    normal_event["trigger_type"] = normal_event["event_type"]
+                    del normal_event["event_type"]
+                    normal_event["trigger_char_span"] = [normal_event["trigger_start_index"],
+                                                         normal_event["trigger_start_index"] + len(normal_event["trigger"])]
+                    char_span = normal_event["trigger_char_span"]
+                    assert text[char_span[0]:char_span[1]] == normal_event["trigger"]
+                    del normal_event["trigger_start_index"]
+
+                    normal_arg_list = []
+                    for arg in normal_event["arguments"]:
+                        char_span = [arg["argument_start_index"],
+                                     arg["argument_start_index"] + len(arg["argument"])]
+                        assert text[char_span[0]:char_span[1]] == arg["argument"]
+                        normal_arg_list.append({
+                            "text": arg["argument"],
+                            "type": arg["role"],
+                            "char_span": char_span,
+                            "event_type": normal_event["trigger_type"],
+                        })
+                    normal_event["argument_list"] = normal_arg_list
+                    del normal_event["arguments"]
+                    normal_event_list.append(normal_event)
+                normal_sample["event_list"] = normal_event_list
+
+            normal_data.append(normal_sample)
+        return normal_data
+
+    @staticmethod
+    def trans_duie(data, dataset_type, add_id=True):
+        normal_data = []
+        for ind, sample in tqdm(enumerate(data), desc="transform data"):
+            text = sample["text"]
+
+            word2char_span = []
+            rel_list, ent_list = [], []
+
+            for spo in sample["spo_list"]:
+                rel_list.append({
+                    "subject": spo["subject"],
+                    "object": spo["object"],
+                    "predicate": spo["predicate"],
+                })
+                ent_list.append({
+                    "text": spo["subject"],
+                    "type": spo["subject_type"],
+                })
+                ent_list.append({
+                    "text": spo["object"],
+                    "type": spo["object_type"],
+                })
+
+            normal_sample = {
+                "text": text,
+                # **ChineseWordTokenizer.tokenize_plus(text, ent_list),
+            }
+            # add id
+            if add_id:
+                normal_sample["id"] = "{}_{}".format(dataset_type, ind)
+            else:
+                assert "id" in sample, "miss id in data!"
+                normal_sample["id"] = sample["id"]
+
+            normal_sample["entity_list"] = Preprocessor.unique_list(ent_list)
+            normal_sample["relation_list"] = Preprocessor.unique_list(rel_list)
+            normal_data.append(normal_sample)
+        return normal_data
+
+    @staticmethod
     def transform_data(data, ori_format, dataset_type, add_id=True):
         '''
-        This function is for transforming data published by previous work on [joint extraction].
-        If you want to feed new dataset to the model, just define your own function to transform data.
+        This function is for transforming data published by previous works.
         data: original data
-        ori_format: "casrel", "etl_span", "raw_nyt", "tplinker"
+        ori_format: "casrel", "etl_span", "raw_nyt", "tplinker", etc.
         dataset_type: "train", "valid", "test"; only for generate id for the data
         '''
+        if ori_format == "duie_1":
+            return Preprocessor.trans_duie(data, dataset_type, add_id)
+        if ori_format == "duee_1":
+            return Preprocessor.trans_duee(data, dataset_type, add_id)
+
         normal_sample_list = []
         for ind, sample in tqdm(enumerate(data), desc="transforming data format"):
             normal_sample = {}
             if add_id:
                 normal_sample["id"] = "{}_{}".format(dataset_type, ind)
+            else:
+                assert "id" in normal_sample, "miss id in data!"
+                normal_sample["id"] = sample["id"]
 
             if ori_format == "tplinker":
                 normal_sample_list.append({**normal_sample, **sample})
@@ -590,6 +733,7 @@ class Preprocessor:
                                 for ent in sample["entity_list"]}
                 for ent in entities_fr_rel:
                     if str(ent) not in entities_mem:
+                        # print("entity list misses some entities in relation list")
                         raise Exception("entity list misses some entities in relation list")
 
             if "event_list" in sample:
@@ -628,6 +772,7 @@ class Preprocessor:
                 entities.extend([rel["object"] for rel in sample["relation_list"]])
             if "entity_list" in sample:
                 entities.extend([ent["text"] for ent in sample["entity_list"]])
+            entities = Preprocessor.unique_list(entities)
             # if "event_list" in sample:
             #     for event in sample["event_list"]:
             #         entities.append(event["trigger"])
@@ -647,8 +792,14 @@ class Preprocessor:
                             rel_cp["subj_char_span"] = subj_sp
                             rel_cp["obj_char_span"] = obj_sp
                             relation_list.append(rel_cp)
-
-                assert len(sample["relation_list"]) <= len(relation_list)
+                try:
+                    assert len(sample["relation_list"]) <= len(relation_list)
+                except Exception as e:
+                    print("miss relations")
+                    print(ent2char_spans)
+                    print(sample["text"])
+                    pprint(sample["relation_list"])
+                    print("==========================")
                 sample["relation_list"] = relation_list
 
             if "entity_list" in sample:
@@ -663,7 +814,7 @@ class Preprocessor:
                 try:
                     assert len(new_ent_list) >= len(sample["entity_list"])
                 except Exception as e:
-                    print("!")
+                    print("miss entities")
                 sample["entity_list"] = new_ent_list
 
             if "event_list" in sample:
@@ -745,8 +896,10 @@ class Preprocessor:
                     word_span = ent["wd_span"]
                     subword_span = ent["subwd_span"]
                     ent_wd = Preprocessor._extract_ent(word_span, word2char_span, text)
-                    ent_subwd = Preprocessor._extract_ent(subword_span, subword2char_span, text)
-
+                    try:
+                        ent_subwd = Preprocessor._extract_ent(subword_span, subword2char_span, text)
+                    except Exception:
+                        print("!")
                     if not (ent_wd == ent_subwd == ent["text"]):
                         bad_ent = copy.deepcopy(ent)
                         bad_ent["extr_ent_wd"] = ent_wd
@@ -797,7 +950,9 @@ class Preprocessor:
                         arg_wd_span = arg["wd_span"]
                         arg_subwd_span = arg["subwd_span"]
                         arg_wd = Preprocessor._extract_ent(arg_wd_span, word2char_span, text)
+
                         arg_subwd = Preprocessor._extract_ent(arg_subwd_span, subword2char_span, text)
+
                         if not (arg_wd == arg_subwd == arg["text"]):
                             bad = True
                             arg["extr_arg_wd"] = arg_wd
@@ -811,44 +966,43 @@ class Preprocessor:
                 del sample_id2mismatched_ents[sample["id"]]
         return sample_id2mismatched_ents
 
+    @staticmethod
+    def get_all_possible_entities(sample):
+        ent_list = []
+        if "entity_list" in sample:
+            ent_list.extend([ent["text"] for ent in sample["entity_list"]])
+        if "relation_list" in sample:
+            ent_list.extend([spo["subject"] for spo in sample["relation_list"]])
+            ent_list.extend([spo["object"] for spo in sample["relation_list"]])
+        if "event_list" in sample:
+            for event in sample["event_list"]:
+                ent_list.append(event["trigger"])
+                for arg in event["argument_list"]:
+                    ent_list.append(arg["text"])
+        return set(ent_list)
+
     def create_features(self, data, word_tokenizer_type="white"):
         # create features
         for sample in tqdm(data, desc="create features"):
             text = sample["text"]
             # word level
             word_level_feature_keys = {"ner_tag_list", "word_list", "pos_tag_list", "dependency_list", "word2char_span"}
-            # ## to guarantee the lengths are equal, if one key does not exist, generate features from scratch
-            # generate = False
-            # for key in word_level_feature_keys:
-            #     if key not in sample:
-            #         generate = True
-
             word_features = {}
-            if "word_list" not in sample:
+            if "word_list" not in sample or "word2char_span" not in sample:
                 # generate word level features
-                word_features = self.get_word_tokenizer(word_tokenizer_type).tokenize_plus(text)
+                word_tokenizer = self.get_word_tokenizer(word_tokenizer_type)
+                word_features = word_tokenizer.tokenize_plus(text, Preprocessor.get_all_possible_entities(sample)) \
+                    if word_tokenizer_type == "normal_chinese" else word_tokenizer.tokenize_plus(text)
             else:
                 for key in word_level_feature_keys:
                     if key in sample:
                         word_features[key] = sample[key]
                         del sample[key]
-                if "word_list" in word_features and "word2char_span" not in word_features:
-                    if self.language == "en":
-                        word_features["word2char_span"] = Preprocessor.get_tok2char_span_map(word_features["word_list"])
-                    else:
-                        raise Exception("miss word2char_span!")
-                # word_features = {
-                #     "word_list": sample["word_list"],
-                #     "word2char_span": sample["word2char_span"],
-                #     "pos_tag_list": sample["pos_tag_list"],
-                #     "ner_tag_list": sample["ner_tag_list"],
-                #     "dependency_list": sample["dependency_list"],
-                # }
-                # del sample["word_list"]
-                # del sample["word2char_span"]
-                # del sample["dependency_list"]
-                # del sample["pos_tag_list"]
-                # del sample["ner_tag_list"]
+                # if "word_list" in word_features and "word2char_span" not in word_features:
+                #     if self.language == "en":
+                #         word_features["word2char_span"] = Preprocessor.get_tok2char_span_map(word_features["word_list"])
+                #     else:
+                #         raise Exception("miss word2char_span!")
 
             sample["features"] = word_features
 
@@ -864,7 +1018,11 @@ class Preprocessor:
             }
 
             ## generate subword2word_id
-            char2word_span = self._get_char2tok_span(sample["features"]["word2char_span"])
+            try:
+                char2word_span = self._get_char2tok_span(sample["features"]["word2char_span"])
+            except Exception as e:
+                print("char num is None")
+
             subword2word_id = []
             for subw_id, char_sp in enumerate(subword_features["subword2char_span"]):
                 wd_sps = char2word_span[char_sp[0]:char_sp[1]]
@@ -916,7 +1074,10 @@ class Preprocessor:
                 subw = sample["features"]["subword_list"][subw_id]
                 subw = re.sub("##", "", subw)
                 subw_extr = sample["text"][char_sp[0]:char_sp[1]]
-                assert subw_extr == subw or subw == "[UNK]"
+                try:
+                    assert subw_extr == subw or subw == "[UNK]"
+                except Exception:
+                    print("subw_extr != subw")
         return data
 
     def generate_supporting_data(self, data, max_word_dict_size, min_word_freq):
