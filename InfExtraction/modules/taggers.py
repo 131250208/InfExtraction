@@ -753,8 +753,8 @@ class Tagger4TPL3(HandshakingTagger4TPLPlus):
 
 def create_rebased_ee_tagger(base_class):
     class REBasedEETagger(base_class):
-        def __init__(self, data):
-            super(REBasedEETagger, self).__init__(data)
+        def __init__(self, data, *args, **kwargs):
+            super(REBasedEETagger, self).__init__(data, *args, **kwargs)
             self.event_type2arg_rols = {}
             for sample in data:
                 for event in sample["event_list"]:
