@@ -372,7 +372,10 @@ class MetricsCalculator:
             gold_rel_list = gold_sample["relation_list"]
             pred_ent_list = pred_sample["entity_list"]
             gold_ent_list = gold_sample["entity_list"]
+            # try:
             self._cal_rel_cpg(pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict)
+            # except Exception:
+            #     pass
         return ere_cpg_dict
 
     def get_prf_scores(self, correct_num, pred_num, gold_num):

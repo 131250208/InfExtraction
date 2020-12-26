@@ -1446,11 +1446,15 @@ class Preprocessor:
 
                     # do not introduce excessive negative samples
                     if drop_neg_samples:
-                        if "re" in task_type and len(new_sample["relation_list"]) == 0:
-                            continue
-                        if "ner" in task_type and len(new_sample["entity_list"]) == 0:
-                            continue
-                        if ("ee" in task_type or "ed" in task_type) and len(new_sample["event_list"]) == 0:
+                        # if task_type == "re" and len(new_sample["relation_list"]) == 0:
+                        #     continue
+                        # if "ner" in task_type and len(new_sample["entity_list"]) == 0:
+                        #     continue
+                        # if ("ee" in task_type or "ed" in task_type) and len(new_sample["event_list"]) == 0:
+                        #     continue
+                        if len(new_sample["relation_list"]) == 0 \
+                                and len(new_sample["entity_list"]) == 0 \
+                                and len(new_sample["event_list"]) == 0:
                             continue
 
                     # offset
