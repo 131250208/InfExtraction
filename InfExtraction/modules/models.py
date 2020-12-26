@@ -549,9 +549,9 @@ class RAIN(IEModel):
             rel_hs_hiddens += attns
 
         # span len
-        if self.span_len_matrix is None or \
-                self.span_len_matrix.size()[0] != batch_size or \
-                self.span_len_matrix.size()[1] != seq_len:
+        if self.span_len_seq is None or \
+                self.span_len_seq.size()[0] != batch_size or \
+                self.span_len_seq.size()[1] != seq_len:
             t = torch.arange(0, seq_len).to(ent_hs_hiddens.device)[:, None].repeat(1, seq_len)
             span_len_matrix = torch.abs(t - t.permute(1, 0)).long()[None, :, :].repeat(batch_size, 1, 1)
             self.span_len_seq = MyMatrix.upper_reg2seq(span_len_matrix[:, :, :, None]).view(batch_size, seq_len, seq_len)
