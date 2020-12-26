@@ -395,6 +395,8 @@ if __name__ == "__main__":
 
             score_dict4comparing = {}
             for metric_key, current_val_score in score_dict.items():
+                if "f1" not in metric_key:
+                    continue
                 best_val_score = 0.
                 if current_val_score > 0.:
                     dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)

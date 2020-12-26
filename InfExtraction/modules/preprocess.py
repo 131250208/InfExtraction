@@ -529,6 +529,12 @@ class Preprocessor:
                 normal_event_list = []
                 for event in sample["event_list"]:
                     normal_event = copy.deepcopy(event)
+
+                    # rm whitespaces
+                    clean_tri = normal_event["trigger"].lstrip()
+                    normal_event["trigger_start_index"] += len(normal_event["trigger"]) - len(clean_tri)
+                    normal_event["trigger"] = clean_tri.rstrip()
+
                     normal_event["trigger_type"] = normal_event["event_type"]
                     del normal_event["event_type"]
                     normal_event["trigger_char_span"] = [normal_event["trigger_start_index"],
@@ -539,6 +545,12 @@ class Preprocessor:
 
                     normal_arg_list = []
                     for arg in normal_event["arguments"]:
+
+                        # clean whitespaces
+                        clean_arg = arg["argument"].lstrip()
+                        arg["argument_start_index"] += len(arg["argument"]) - len(clean_arg)
+                        arg["argument"] = clean_arg.rstrip()
+
                         char_span = [arg["argument_start_index"],
                                      arg["argument_start_index"] + len(arg["argument"])]
                         assert text[char_span[0]:char_span[1]] == arg["argument"]
@@ -951,8 +963,10 @@ class Preprocessor:
                         arg_subwd_span = arg["subwd_span"]
                         arg_wd = Preprocessor._extract_ent(arg_wd_span, word2char_span, text)
 
-                        arg_subwd = Preprocessor._extract_ent(arg_subwd_span, subword2char_span, text)
-
+                        try:
+                            arg_subwd = Preprocessor._extract_ent(arg_subwd_span, subword2char_span, text)
+                        except Exception:
+                            print("!")
                         if not (arg_wd == arg_subwd == arg["text"]):
                             bad = True
                             arg["extr_arg_wd"] = arg_wd
