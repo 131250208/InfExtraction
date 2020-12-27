@@ -4,6 +4,28 @@ import os
 import json
 from torch.utils.data import Dataset
 import torch.nn.functional as F
+from pprint import pprint
+from tqdm import tqdm
+
+
+def load_data(path):
+    filename = path.split("/")[-1]
+    try:
+        print("loading data: {}".format(filename))
+        data = json.load(open(path, "r", encoding="utf-8"))
+        print("done!")
+    except json.decoder.JSONDecodeError:
+        with open(path, "r", encoding="utf-8") as file_in:
+            data = [json.loads(line) for line in tqdm(file_in, desc="loading data {}".format(filename))]
+    return data
+
+
+def save_as_json_lines(data, path):
+    with open(path, "w", encoding="utf-8") as out_file:
+        filename = path.split("/")[-1]
+        for sample in tqdm(data, desc="saving data {}".format(filename)):
+            line = json.dumps(sample, ensure_ascii=False)
+            out_file.write("{}\n".format(line))
 
 
 class MyDataset(Dataset):
@@ -24,15 +46,18 @@ class DefaultLogger:
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         self.run_id = run_id
-        self.log("============================================================================")
+        self.line = "============================================================================"
         self.log("project: {}, run_name: {}, run_id: {}\n".format(project, run_name, run_id))
-        hyperparameters_format = "--------------hypter_parameters------------------- \n{}\n-----------------------------------------"
-        self.log(hyperparameters_format.format(json.dumps(config2log, indent = 4)))
+        self.log({
+            "config": config2log,
+        })
 
-    def log(self, text):
-        text = "run_id: {}, {}".format(self.run_id, text)
-        print(text)
-        open(self.log_path, "a", encoding="utf-8").write("{}\n".format(text))
+    def log(self, content):
+        log_dict = {
+            "run_id": self.run_id,
+            "log_text": content,
+        }
+        open(self.log_path, "a", encoding="utf-8").write("{}\n{}".format(self.line, json.dumps(log_dict, indent=4)))
 
 
 class MyMaths:

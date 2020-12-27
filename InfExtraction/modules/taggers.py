@@ -3,6 +3,7 @@ import re
 from abc import ABCMeta, abstractmethod
 from tqdm import tqdm
 from InfExtraction.modules.preprocess import Indexer, Preprocessor
+import numpy as np
 
 
 class Tagger(metaclass=ABCMeta):
@@ -187,7 +188,8 @@ class HandshakingTagger4TPLPlus(Tagger):
                                # "O2S"  # won't be used in decoding
                                }
 
-        self.link_all_related_tokens = kwargs["link_all_related_tokens"] if "link_all_related_tokens" in kwargs else None
+        self.link_all_related_tokens = kwargs[
+            "link_all_related_tokens"] if "link_all_related_tokens" in kwargs else None
         if self.link_all_related_tokens:
             self.rel_link_types.add("S2O")
             self.rel_link_types.add("O2S")
@@ -311,13 +313,15 @@ class HandshakingTagger4TPLPlus(Tagger):
             rel, link_type = tag.split(self.separator)
 
             if link_type == "SH2OH":
-                if self.classify_entities_by_relation:  
-                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(sp[0])), "REL:{},{}".format(rel, str(sp[1]))
+                if self.classify_entities_by_relation:
+                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(sp[0])), "REL:{},{}".format(rel,
+                                                                                                          str(sp[1]))
                 else:
                     subj_head_key, obj_head_key = str(sp[0]), str(sp[1])
             elif link_type == "OH2SH":
                 if self.classify_entities_by_relation:
-                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(sp[1])), "REL:{},{}".format(rel, str(sp[0]))
+                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(sp[1])), "REL:{},{}".format(rel,
+                                                                                                          str(sp[0]))
                 else:
                     subj_head_key, obj_head_key = str(sp[1]), str(sp[0])
             else:
@@ -362,12 +366,12 @@ class HandshakingTagger4TPLPlus(Tagger):
         return pred_sample
 
 
-class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
+class Tagger4RAIN(HandshakingTagger4TPLPlus):
     def __init__(self, data, **kwargs):
         '''
         :param data: all data, used to generate entity type and relation type dicts
         '''
-        super(HandshakingTagger4TPLPP, self).__init__(data, **kwargs)
+        super(Tagger4RAIN, self).__init__(data, **kwargs)
         #
         # # generate entity type and relation type dicts
         # rel_type_set = set()
@@ -506,13 +510,15 @@ class HandshakingTagger4TPLPP(HandshakingTagger4TPLPlus):
             rel, link_type = tag.split(self.separator)
 
             if link_type == "SH2OH":
-                if self.classify_entities_by_relation:  
-                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[0])), "REL:{},{}".format(rel, str(pt[1]))
+                if self.classify_entities_by_relation:
+                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[0])), "REL:{},{}".format(rel,
+                                                                                                          str(pt[1]))
                 else:
                     subj_head_key, obj_head_key = str(pt[0]), str(pt[1])
             elif link_type == "OH2SH":
                 if self.classify_entities_by_relation:
-                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[1])), "REL:{},{}".format(rel, str(pt[0]))
+                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[1])), "REL:{},{}".format(rel,
+                                                                                                          str(pt[0]))
                 else:
                     subj_head_key, obj_head_key = str(pt[1]), str(pt[0])
             else:
@@ -622,9 +628,11 @@ class Tagger4TPL3(HandshakingTagger4TPLPlus):
                 head_rel_matrix_points.append(
                     (obj_tok_span[0], subj_tok_span[0], self.head_rel_tag2id[self.separator.join([rel, "OH2SH"])]))
                 tail_rel_matrix_points.append(
-                    (subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.tail_rel_tag2id[self.separator.join([rel, "ST2OT"])]))
+                    (subj_tok_span[1] - 1, obj_tok_span[1] - 1,
+                     self.tail_rel_tag2id[self.separator.join([rel, "ST2OT"])]))
                 tail_rel_matrix_points.append(
-                    (obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.tail_rel_tag2id[self.separator.join([rel, "OT2ST"])]))
+                    (obj_tok_span[1] - 1, subj_tok_span[1] - 1,
+                     self.tail_rel_tag2id[self.separator.join([rel, "OT2ST"])]))
 
         return Preprocessor.unique_list(ent_matrix_points), \
                Preprocessor.unique_list(head_rel_matrix_points), \
@@ -745,8 +753,8 @@ class Tagger4TPL3(HandshakingTagger4TPLPlus):
 
 def create_rebased_ee_tagger(base_class):
     class REBasedEETagger(base_class):
-        def __init__(self, data):
-            super(REBasedEETagger, self).__init__(data)
+        def __init__(self, data, *args, **kwargs):
+            super(REBasedEETagger, self).__init__(data, *args, **kwargs)
             self.event_type2arg_rols = {}
             for sample in data:
                 for event in sample["event_list"]:
@@ -805,7 +813,8 @@ def create_rebased_ee_tagger(base_class):
             pred_sample["event_list"] = self._trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
             # filter extra entities and relations
             pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
-            pred_sample["relation_list"] = [rel for rel in pred_sample["relation_list"] if "EE:" not in rel["predicate"]]
+            pred_sample["relation_list"] = [rel for rel in pred_sample["relation_list"] if
+                                            "EE:" not in rel["predicate"]]
             return pred_sample
 
         def _trans2ee(self, rel_list, ent_list):
@@ -965,7 +974,7 @@ def create_rebased_ee_tagger(base_class):
 #     return REBasedNERTagger
 
 
-class MatrixTaggerEE(Tagger):
+class TaggerSelfAtEE(Tagger):
     def __init__(self, data):
         '''
         :param data: all data, used to generate entity type and relation type dicts
@@ -1283,4 +1292,98 @@ class MatrixTaggerEE(Tagger):
         return pred_sample
 
 
+class TaggerSelfAtEEWYC(TaggerSelfAtEE):
+    def decode(self, sample, pred_tags):
+        predicted_matrix_tag = pred_tags[0]
+        matrix_points = Indexer.matrix2points(predicted_matrix_tag)
+        triplets = [[p[0], p[1], self.id2tag[p[2]]] for p in matrix_points]
+        sample_idx, text = sample["id"], sample["text"]
+        tok2char_span = sample["features"]["tok2char_span"]
+        token_num = len(tok2char_span)
+        empty_matrix = [["O" for i in range(token_num)] for j in range(token_num)]
+        empty_cooccur_num_rec = [0 for i in range(token_num)]
 
+        event2triplets = {}
+        for tri in triplets:
+            tag = tri[2]
+            event_type, arg_role, bio_tag = tag.split(self.separator)
+            if event_type not in event2triplets:
+                event2triplets[event_type] = []
+            event2triplets[event_type].append([tri[0], tri[1], self.separator.join([arg_role, bio_tag])])
+
+        def decode_args(event_type, triplets):
+            tok_mask = set()
+            event_list_same = []
+            while True:
+                tok2line = copy.deepcopy(empty_matrix)
+                tok2cooccur_num = {}
+                for tri in triplets:
+                    tok_i, tok_j, tag = tri
+                    # if tok_i in tok_mask or tok_j in tok_mask:
+                    if tok_i in tok_mask:
+                        continue
+                    tok2cooccur_num[tok_i] = tok2cooccur_num.get(tok_i, 0) + 1
+                    tok2line[tok_i][tok_j] = tag
+                if len(tok2cooccur_num) == 0:
+                    break
+                cand_tok_list = sorted(tok2cooccur_num.items(), key=lambda x: x[1])
+                cand_tok_idx = cand_tok_list[0][0]
+
+                # decode an event
+                cand_tag_line = tok2line[cand_tok_idx]
+                arg_role_list, bio_tag_list = [], []
+                event_template = {
+                    "trigger": "",
+                    "trigger_type": event_type,
+                    "trigger_char_span": [0, 0],
+                    "trigger_tok_span": [0, 0],
+                    "argument_list": [],
+                }
+                for tag in cand_tag_line:
+                    tag_split = tag.split(self.separator)
+                    arg_role, bio_tag = tag_split[0], tag_split[-1]
+                    arg_role_list.append(arg_role)
+                    bio_tag_list.append(bio_tag)
+                for m in re.finditer("BI*", "".join(bio_tag_list)):
+                    tok_span = [*m.span()]
+                    char_span_list = tok2char_span[tok_span[0]:tok_span[1]]
+                    char_span = [char_span_list[0][0], char_span_list[-1][1]]
+                    arg_text = text[char_span[0]:char_span[1]]
+                    arg_role = arg_role_list[tok_span[0]]
+
+                    # debug
+                    for tok_idx in range(tok_span[0], tok_span[1]):
+                        assert arg_role_list[tok_idx] == arg_role
+                    if arg_role == "Trigger":
+                        event_template["trigger"] = arg_text
+                        event_template["trigger_tok_span"] = tok_span
+                        event_template["trigger_char_span"] = char_span
+                    else:
+                        event_template["argument_list"].append({
+                            "text": arg_text,
+                            "char_span": char_span,
+                            "tok_span": tok_span,
+                            "event_type": event_type,
+                            "type": arg_role,
+                        })
+                event_list_same.append(event_template)
+                # mask toks
+                # for tok_idx, tag_line in enumerate(tok2line):
+                #     if " ".join(tag_line) == " ".join(cand_tag_line):
+                #         tok_mask.add(tok_idx)
+                for tok_idx, bio_tag in enumerate(cand_tag_line):
+                    if bio_tag != "O":
+                        tok_mask.add(tok_idx)
+            return event_list_same
+
+        # if sample_idx == "AGGRESSIVEVOICEDAILY_20041116.1347_10" or "he did nothing wrong" in text:
+        #     print("!!!")
+        event_list = []
+        for event_type, triplets in event2triplets.items():
+            event_list_same = decode_args(event_type, triplets)
+            event_list.extend(event_list_same)
+
+        pred_sample = copy.deepcopy(sample)
+        pred_sample["event_list"] = event_list
+
+        return pred_sample

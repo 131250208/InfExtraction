@@ -4,6 +4,7 @@ Prepare data for training
 
 from InfExtraction.modules.preprocess import Preprocessor
 from InfExtraction.work_flows import settings_preprocess as settings
+from InfExtraction.modules.utils import load_data, save_as_json_lines
 import os
 import json
 import re
@@ -18,6 +19,7 @@ word_tokenizer_type = settings.word_tokenizer_type
 language = settings.language
 pretrained_model_tokenizer_path = settings.pretrained_model_tokenizer_path
 ori_data_format = settings.ori_data_format
+add_id = settings.add_id
 add_char_span = settings.add_char_span
 ignore_subword_match = settings.ignore_subword_match
 max_word_dict_size = settings.max_word_dict_size
@@ -31,7 +33,7 @@ for path, folds, files in os.walk(data_in_dir):
     for file_name in files:
         file_path = os.path.join(path, file_name)
         file_name = re.match("(.*?)\.json", file_name).group(1)
-        file_name2data[file_name] = json.load(open(file_path, "r", encoding="utf-8"))
+        file_name2data[file_name] = load_data(file_path)
 
 # preprocessor
 preprocessor = Preprocessor(language, pretrained_model_tokenizer_path)
@@ -46,7 +48,6 @@ for file_name, data in file_name2data.items():
     if "test" in file_name:
         data_type = "test"
 
-    add_id = True if "id" not in data[0] else False
     data = preprocessor.transform_data(data, ori_format=ori_data_format, dataset_type=data_type, add_id=add_id)
     file_name2data[file_name] = data
 
@@ -80,9 +81,7 @@ for data in file_name2data.values():
 # check word level and subword level spans
 sample_id2mismatch = preprocessor.check_tok_span(all_data)
 if len(sample_id2mismatch) > 0:
-    error_info = "Some spans do not match the text! " \
-                 "It might because that you set ignore_subword_match to false and " \
-                 "the tokenizer of BERT can not handle some tokens. e.g. tokens: [ab, ##cde], text: abcd."
+    error_info = "spans error!"
     logging.warning(error_info)
     pprint(sample_id2mismatch)
 
@@ -95,7 +94,7 @@ for filename, data in file_name2data.items():
 # save main data
 for filename, data in file_name2data.items():
     data_path = os.path.join(data_out_dir, "{}.json".format(filename))
-    json.dump(data, open(data_path, "w", encoding="utf-8"), ensure_ascii=False)
+    save_as_json_lines(data, data_path)
 
 # save supporting data
 dicts_path = os.path.join(data_out_dir, "dicts.json")

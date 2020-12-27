@@ -1,5 +1,6 @@
 import torch
 import re
+import copy
 
 
 class MetricsCalculator:
@@ -142,8 +143,8 @@ class MetricsCalculator:
                                                                                                argument_role))
 
             # cal trigger-free metrics
-            arg_list = event["argument_list"]
-            if "trigger" in event:
+            arg_list = copy.deepcopy(event["argument_list"])
+            if "trigger" in event and event["trigger"] != "":
                 # take trigger as an ordinary argument
                 arg_list.append({
                     "text": event["trigger"],
@@ -248,14 +249,23 @@ class MetricsCalculator:
         '''
         cpg is a list: [correct_num, pred_num, gold_num]
         '''
+        # for mark_str in pred_set:
+        #     if mark_str in gold_set:
+        #         cpg[0] += 1
+        #     else:
+        #         raise Exception("debug")
+
+        correct_num = 0
         for mark_str in pred_set:
             if mark_str in gold_set:
-                cpg[0] += 1
+                correct_num += 1
             # else:
             #     raise Exception("debug")
 
+        cpg[0] += correct_num
         cpg[1] += len(pred_set)
         cpg[2] += len(gold_set)
+
         # if len(pred_set) != len(gold_set):
         #     raise Exception("debug")
 
@@ -362,7 +372,10 @@ class MetricsCalculator:
             gold_rel_list = gold_sample["relation_list"]
             pred_ent_list = pred_sample["entity_list"]
             gold_ent_list = gold_sample["entity_list"]
+            # try:
             self._cal_rel_cpg(pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict)
+            # except Exception:
+            #     pass
         return ere_cpg_dict
 
     def get_prf_scores(self, correct_num, pred_num, gold_num):
