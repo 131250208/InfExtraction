@@ -350,7 +350,7 @@ if __name__ == "__main__":
                                           )
         # debug: checking tagging and decoding
         if check_tagging_n_decoding:
-            # for checking, take valid data as train data, do additional preprocessing
+            # for checking, take valid data as train data, do additional preprocessing to get tags
             # but take original valid data as golden dataset to evaluate
             valid_data4checking = additional_preprocess(ori_valid_data, "train")
             valid_dataloader4checking = get_dataloader(valid_data4checking,
@@ -468,7 +468,7 @@ if __name__ == "__main__":
                 print("model state loaded: {}".format("/".join(path.split("/")[-2:])))
                 model.eval()
                 model_name = re.sub("\.pt", "", path.split("/")[-1])
-                save_dir = os.path.join(data_out_dir, task_type, run_id, model_name)
+                save_dir = os.path.join(data_out_dir, exp_name, run_name, run_id, model_name)
                 if not os.path.exists(save_dir):
                     os.makedirs(save_dir)
 
