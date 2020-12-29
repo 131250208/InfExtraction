@@ -372,28 +372,6 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         :param data: all data, used to generate entity type and relation type dicts
         '''
         super(Tagger4RAIN, self).__init__(data, **kwargs)
-        #
-        # # generate entity type and relation type dicts
-        # rel_type_set = set()
-        # ent_type_set = set()
-        # for sample in data:
-        #     # entity type
-        #     ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
-        #     # relation type
-        #     rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
-        # rel_type_set = sorted(rel_type_set)
-        # ent_type_set = sorted(ent_type_set)
-        # self.rel2id = {rel: ind for ind, rel in enumerate(rel_type_set)}
-        # self.ent2id = {ent: ind for ind, ent in enumerate(ent_type_set)}
-        #
-        # self.separator = "\u2E80"
-        # self.rel_link_types = {"SH2OH",  # subject head to object head
-        #                        "OH2SH",  # object head to subject head
-        #                        "ST2OT",  # subject tail to object tail
-        #                        "OT2ST",  # object tail to subject tail
-        #                        "S2O",  # won't be used in decoding
-        #                        "O2S"  # won't be used in decoding
-        #                        }
 
         self.rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
         self.ent_tags = {self.separator.join([ent, "EH2ET"]) for ent in self.ent2id.keys()}

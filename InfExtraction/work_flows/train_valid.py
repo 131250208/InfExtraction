@@ -439,7 +439,7 @@ if __name__ == "__main__":
     elif stage == "inference":
         # get model state paths
         target_run_ids = set(target_run_ids)
-        assert model_dir_for_test is not None and model_dir_for_test.strip() != "" "Please set model state directory!"
+        assert model_dir_for_test is not None and model_dir_for_test.strip() != "", "Please set model state directory!"
 
         run_id2model_state_paths = {}
         for root, dirs, files in os.walk(model_dir_for_test):
@@ -449,7 +449,7 @@ if __name__ == "__main__":
                     continue
                 run_id = path_se.group(1)
                 metric = path_se.group(2)
-                if metric == metric4testing \
+                if metric == "val_{}".format(metric4testing) \
                         and run_id in target_run_ids \
                         and re.match(".*model_state.*\.pt", file_name):
                     if run_id not in run_id2model_state_paths:
