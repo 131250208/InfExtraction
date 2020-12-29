@@ -443,7 +443,7 @@ if __name__ == "__main__":
         run_id2model_state_paths = {}
         for root, dirs, files in os.walk(model_dir_for_test):
             for file_name in files:
-                path_se = re.search("run-\d{8}_\d{6}-(\w{8})/(.*)/", root)
+                path_se = re.search("run-\d{8}_\d{6}-(\w{8})/(.*)", root)
                 run_id = path_se.group(1)
                 metric = path_se.group(2)
                 if metric == metric4testing \
