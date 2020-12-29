@@ -479,7 +479,9 @@ if __name__ == "__main__":
                     pred_samples = evaluator.predict(test_data_loader, gold_test_data)
 
                     # save results
-                    json.dump(pred_samples, open(os.path.join(save_dir, filename), "w", encoding="utf-8"))
+                    json.dump(pred_samples,
+                              open(os.path.join(save_dir, filename), "w", encoding="utf-8"),
+                              ensure_ascii=False)
 
                     # score
                     if cal_scores:
