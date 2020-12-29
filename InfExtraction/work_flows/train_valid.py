@@ -445,6 +445,8 @@ if __name__ == "__main__":
         for root, dirs, files in os.walk(model_dir_for_test):
             for file_name in files:
                 path_se = re.search("run-\d{8}_\d{6}-(\w{8})/(.*)", root)
+                if path_se is None:
+                    continue
                 run_id = path_se.group(1)
                 metric = path_se.group(2)
                 if metric == metric4testing \
