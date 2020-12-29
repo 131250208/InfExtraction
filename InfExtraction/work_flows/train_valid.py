@@ -245,15 +245,16 @@ if __name__ == "__main__":
         return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
 
 
-    all_data4gen_tag_dict = []
     train_data = additional_preprocess(ori_train_data, "train")
-    all_data4gen_tag_dict.extend(train_data)
     valid_data = additional_preprocess(ori_valid_data, "valid")
-    all_data4gen_tag_dict.extend(additional_preprocess(ori_valid_data, "train"))
     filename2test_data = {}
     for filename, ori_test_data in filename2ori_test_data.items():
         filename2test_data[filename] = additional_preprocess(ori_test_data, "test")
-        all_data4gen_tag_dict.extend(additional_preprocess(ori_test_data, "train"))
+
+    all_data4gen_tag_dict = []
+    all_data4gen_tag_dict.extend(train_data)
+    all_data4gen_tag_dict.extend(additional_preprocess(ori_valid_data, "train"))
+    # all_data4gen_tag_dict.extend(additional_preprocess(ori_test_data, "train"))
 
     # tagger
     tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
