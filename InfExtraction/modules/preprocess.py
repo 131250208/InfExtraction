@@ -1512,8 +1512,10 @@ class Preprocessor:
             combined_sample["text"] += sample["text"]
             combined_sample["features"]["word_list"].extend(sample["features"]["word_list"])
             combined_sample["features"]["subword_list"].extend(sample["features"]["subword_list"])
-            combined_sample["features"]["pos_tag_list"].extend(sample["features"]["pos_tag_list"])
-            combined_sample["features"]["ner_tag_list"].extend(sample["features"]["ner_tag_list"])
+            if "pos_tag_list" in sample["features"]:
+                combined_sample["features"]["pos_tag_list"].extend(sample["features"]["pos_tag_list"])
+            if "ner_tag_list" in sample["features"]:
+                combined_sample["features"]["ner_tag_list"].extend(sample["features"]["ner_tag_list"])
             token_offset = len(combined_sample["features"]["tok2char_span"])
             char_offset = 0
             if token_offset > 0:
@@ -1522,10 +1524,12 @@ class Preprocessor:
                                  sample["features"]["tok2char_span"]]
             combined_sample["features"]["tok2char_span"].extend(new_tok2char_span)
 
-            new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in
-                                   sample["features"]["dependency_list"]]
-            combined_sample["features"]["dependency_list"].extend(new_dependency_list)
-            # record split offsets
+            if "dependency_list" in sample["features"]:
+                new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in
+                                       sample["features"]["dependency_list"]]
+                combined_sample["features"]["dependency_list"].extend(new_dependency_list)
+
+            # split offsets
             combined_sample["splits"].append({
                 "id": sample["id"],
                 "offset_in_this_seg": [token_offset, token_offset + len(sample["features"]["tok2char_span"])],
