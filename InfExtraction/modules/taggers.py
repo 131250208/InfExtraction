@@ -73,9 +73,9 @@ class HandshakingTagger4TPLPlus(Tagger):
 
         new_data = copy.deepcopy(data)
         for sample in new_data:
-            assert "entity_list" in sample and "relation_list" in sample
+            assert "entity_list" in sample
             fin_ent_list = copy.deepcopy(sample["entity_list"])
-            fin_rel_list = copy.deepcopy(sample["relation_list"])
+            fin_rel_list = copy.deepcopy(sample["relation_list"]) if "relation_list" in sample else []
 
             # all_entities = []
             # for ent in fin_ent_list:
@@ -374,7 +374,14 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         super(Tagger4RAIN, self).__init__(data, **kwargs)
 
         self.rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
-        self.ent_tags = {self.separator.join([ent, "EH2ET"]) for ent in self.ent2id.keys()}
+        ent_link_types = {"EH2ET"}
+        # self.discon = False
+        # if "discontinuous_ner" in kwargs and kwargs["discontinuous_ner"] is True:
+        #     ent_link_types.add("GLUE")
+        #     self.discon = True
+        #     self.glue_sep = " " if kwargs["language"] == "en" else ""
+
+        self.ent_tags = {self.separator.join([ent, lt]) for ent in self.ent2id.keys() for lt in ent_link_types}
 
         self.rel_tag2id = {t: idx for idx, t in enumerate(sorted(self.rel_tags))}
         self.id2rel_tag = {idx: t for t, idx in self.rel_tag2id.items()}
@@ -400,9 +407,19 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
 
         if "entity_list" in sample:
             for ent in sample["entity_list"]:
-                point = (ent["tok_span"][0], ent["tok_span"][1] - 1,
+                point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
                          self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
                 ent_matrix_points.append(point)
+
+                # # for discontinuous ner, add glue points
+                # if self.discon and len(ent["tok_span"]) > 2:
+                #     assert len(ent["tok_span"]) % 2 == 0
+                #
+                #     glue_pt_ids = [pos - 1 if idx % 2 != 0 else pos for idx, pos in enumerate(ent["tok_span"])][1:-1]
+                #     for idx in range(0, len(glue_pt_ids), 2):
+                #         gpt = [glue_pt_ids[idx], glue_pt_ids[idx + 1]]
+                #         point = (*gpt, self.ent_tag2id[self.separator.join([ent["type"], "GLUE"])])
+                #         ent_matrix_points.append(point)
 
         if "relation_list" in sample:
             for rel in sample["relation_list"]:
@@ -443,6 +460,20 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         sample_idx, text = sample["id"], sample["text"]
         tok2char_span = sample["features"]["tok2char_span"]
 
+        # # for discontinuous ner
+        # ent_type2glue_pts = None
+        # if self.discon:
+        #     ent_type2glue_pts = {}
+        #     for pt in ent_points:
+        #         ent_tag = self.id2ent_tag[pt[2]]
+        #         ent_type, link_type = ent_tag.split(self.separator)
+        #         if link_type == "GLUE":
+        #             # glue_pt = [tok2char_span[pt[0]][1], tok2char_span[pt[1]][0]]
+        #             glue_pt = pt
+        #             if ent_type not in ent_type2glue_pts:
+        #                 ent_type2glue_pts[ent_type] = []
+        #             ent_type2glue_pts[ent_type].append(glue_pt)
+
         # entity
         head_ind2entities = {}
         for pt in ent_points:
@@ -450,22 +481,64 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
             ent_type, link_type = ent_tag.split(self.separator)
             # for an entity, the start position can not be larger than the end pos.
             assert link_type == "EH2ET" and pt[0] <= pt[1]
+            if link_type == "EH2ET":
+                tok_sp = [pt[0], pt[1] + 1]
+                char_span_list = tok2char_span[tok_sp[0]:tok_sp[1]]
+                char_sp = [char_span_list[0][0], char_span_list[-1][1]]
+                ent_text = text[char_sp[0]:char_sp[1]]
 
-            char_span_list = tok2char_span[pt[0]:pt[1] + 1]
-            char_sp = [char_span_list[0][0], char_span_list[-1][1]]
-            ent_text = text[char_sp[0]:char_sp[1]]
-            entity = {
-                "type": ent_type,
-                "text": ent_text,
-                "tok_span": [pt[0], pt[1] + 1],
-                "char_span": char_sp,
-            }
-            ent_list.append(entity)
+                # # for discontinuous ner
+                # if self.discon:
+                #     ch_glue_sps_in = []
+                #     tok_glue_sps_in = []
+                #     for gpt in ent_type2glue_pts.get(ent_type, []):
+                #         if gpt[0] >= tok_sp[0] and gpt[1] <= tok_sp[1] - 1:
+                #             tok_glue_sps_in.append([gpt[0] + 1, gpt[1]])  # end pos
+                #
+                #             ch_gpt = [tok2char_span[gpt[0]][1], tok2char_span[gpt[1]][0]]
+                #             ch_glue_sps_in.append(ch_gpt)  # debug: no need to add 1,
+                #                                            # cause spans in tok2char_span
+                #                                            # have already added 1 for end positions
+                #
+                #     def rm_overlap_sps(spans):
+                #         spans = sorted(spans, key=lambda sp: (sp[0], sp[0] - sp[1]))
+                #         new_spans = []
+                #         for idx, sp in enumerate(spans):
+                #             if idx != 0 and sp[0] >= spans[idx - 1][0] and sp[1] <= spans[idx - 1][1]:
+                #                 continue
+                #             new_spans.append(sp)
+                #         return new_spans
+                #
+                #     tok_glue_sps_in = rm_overlap_sps(tok_glue_sps_in)
+                #     ch_glue_sps_in = rm_overlap_sps(ch_glue_sps_in)
+                #     ch_glue_pts_in, tok_glue_pts_in = [], []
+                #     for sp in tok_glue_sps_in:
+                #         tok_glue_pts_in.extend(sp)
+                #     for sp in ch_glue_sps_in:
+                #         ch_glue_pts_in.extend(sp)
+                #
+                #     ch_pos_list = char_sp[:1] + ch_glue_pts_in + char_sp[-1:]
+                #     tok_pos_list = tok_sp[:1] + tok_glue_pts_in + tok_sp[-1:]
+                #     segs = []
+                #     for idx in range(0, len(ch_pos_list), 2):
+                #         seg_ch_sp = [ch_pos_list[idx], ch_pos_list[idx + 1]]
+                #         segs.append(text[seg_ch_sp[0]:seg_ch_sp[1]])
+                #     ent_text = self.glue_sep.join(segs)
+                #     char_sp = ch_pos_list
+                #     tok_sp = tok_pos_list
 
-            head_key = "{},{}".format(ent_type, str(pt[0])) if self.classify_entities_by_relation else str(pt[0])
-            if head_key not in head_ind2entities:
-                head_ind2entities[head_key] = []
-            head_ind2entities[head_key].append(entity)
+                entity = {
+                    "type": ent_type,
+                    "text": ent_text,
+                    "tok_span": tok_sp,
+                    "char_span": char_sp,
+                }
+                ent_list.append(entity)
+
+                head_key = "{},{}".format(ent_type, str(pt[0])) if self.classify_entities_by_relation else str(pt[0])
+                if head_key not in head_ind2entities:
+                    head_ind2entities[head_key] = []
+                head_ind2entities[head_key].append(entity)
 
         # tail link
         tail_link_memory_set = set()

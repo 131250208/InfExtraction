@@ -14,7 +14,7 @@ from InfExtraction.modules import taggers
 from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data
+from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data, save_as_json_lines
 
 import os
 import sys, getopt
@@ -31,6 +31,7 @@ import importlib
 
 
 def get_dataloader(data,
+                   language,
                    data_type,
                    token_level,
                    max_seq_len,
@@ -61,7 +62,7 @@ def get_dataloader(data,
         data = Preprocessor.combine(data, max_seq_len)
 
     # check spans
-    sample_id2mismatched = Preprocessor.check_spans(data)
+    sample_id2mismatched = Preprocessor.check_spans(data, language)
     if len(sample_id2mismatched) > 0:
         logging.warning("mismatch errors in {}".format(data_type))
         pprint(sample_id2mismatched)
@@ -122,6 +123,7 @@ if __name__ == "__main__":
     model_name = settings.model_name
     tagger_name = settings.tagger_name
     stage = settings.stage
+    language = settings.language
 
     # data
     data_in_dir = settings.data_in_dir
@@ -298,6 +300,7 @@ if __name__ == "__main__":
     filename2test_data_loader = {}
     for filename, test_data in filename2test_data.items():
         test_dataloader = get_dataloader(test_data,
+                                         language,
                                          "test",
                                          token_level,
                                          max_seq_len_test,
@@ -317,6 +320,7 @@ if __name__ == "__main__":
 
     if stage == "train":
         train_dataloader = get_dataloader(train_data,
+                                          language,
                                           "train",
                                           token_level,
                                           max_seq_len_train,
@@ -333,6 +337,7 @@ if __name__ == "__main__":
                                           drop_neg_samples
                                           )
         valid_dataloader = get_dataloader(valid_data,
+                                          language,
                                           "valid",
                                           token_level,
                                           max_seq_len_valid,
@@ -354,6 +359,7 @@ if __name__ == "__main__":
             # but take original valid data as golden dataset to evaluate
             valid_data4checking = additional_preprocess(ori_valid_data, "train")
             valid_dataloader4checking = get_dataloader(valid_data4checking,
+                                                       language,
                                                        "train",  # only train data will be set a tag sequence
                                                        token_level,
                                                        max_seq_len_valid,
@@ -479,9 +485,7 @@ if __name__ == "__main__":
                     pred_samples = evaluator.predict(test_data_loader, gold_test_data)
 
                     # save results
-                    json.dump(pred_samples,
-                              open(os.path.join(save_dir, filename), "w", encoding="utf-8"),
-                              ensure_ascii=False)
+                    save_as_json_lines(pred_samples, os.path.join(save_dir, filename))
 
                     # score
                     if cal_scores:

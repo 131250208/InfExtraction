@@ -115,32 +115,20 @@ class MetricsCalculator:
             if "trigger" in event:
                 event_type = event["trigger_type"]
                 trigger_offset = event["trigger_tok_span"]
-                trigger_iden_set.add("{}\u2E80{}".format(*trigger_offset))
-                trigger_class_set.add("{}\u2E80{}\u2E80{}".format(event_type, *trigger_offset))
+                trigger_iden_set.add(str(trigger_offset))
+                trigger_class_set.add(str([event_type] + trigger_offset))
 
             for arg in event["argument_list"]:
                 argument_offset = arg["tok_span"]
                 argument_role = arg["type"]
                 event_type = arg["event_type"]
 
-                arg_soft_iden_set.add(
-                    "{}\u2E80{}\u2E80{}".format(event_type, *argument_offset))
-
-                arg_soft_class_set.add("{}\u2E80{}\u2E80{}\u2E80{}".format(event_type,
-                                                                           *argument_offset,
-                                                                           argument_role))
+                arg_soft_iden_set.add(str([event_type] + argument_offset))
+                arg_soft_class_set.add(str([event_type] + argument_offset + [argument_role]))
                 if "trigger" in event:
                     assert trigger_offset is not None
-                    arg_hard_iden_set.add(
-                        "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(event_type,
-                                                                    *argument_offset,
-                                                                    *trigger_offset,
-                                                                    ))
-
-                    arg_hard_class_set.add("{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(event_type,
-                                                                                               *argument_offset,
-                                                                                               *trigger_offset,
-                                                                                               argument_role))
+                    arg_hard_iden_set.add(str([event_type] + argument_offset + trigger_offset))
+                    arg_hard_class_set.add(str([event_type] + argument_offset + trigger_offset + [argument_role]))
 
             # trigger-free metrics
             arg_list = copy.deepcopy(event["argument_list"])
@@ -164,17 +152,10 @@ class MetricsCalculator:
                     arg_j_offset = arg_j["tok_span"]
                     arg_j_role = arg_j["type"]
 
-                    link_iden_mark = "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(arg_i_event_type,
-                                                                                         arg_j_event_type,
-                                                                                         *arg_i_offset,
-                                                                                         *arg_j_offset)
-                    link_class_mark = "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(
-                        arg_i_event_type,
-                        arg_j_event_type,
-                        *arg_i_offset,
-                        *arg_j_offset,
-                        arg_i_role,
-                        arg_j_role)
+                    link_iden_mark = str([arg_i_event_type] + [arg_j_event_type] + arg_i_offset + arg_j_offset)
+                    link_class_mark = str([arg_i_event_type] + [arg_j_event_type] +
+                                          arg_i_offset + arg_j_offset +
+                                          [arg_i_role] + [arg_j_role])
                     arg_link_iden_set.add(link_iden_mark)
                     arg_link_class_set.add(link_class_mark)
 
@@ -196,11 +177,10 @@ class MetricsCalculator:
         ent_exact_offset_set = set(), set(), set(), set()
 
         for ent in ent_list:
-            ent_partial_text_set.add("{}\u2E80{}".format(ent["text"].split(" ")[0], ent["type"]))
-            ent_partial_offset_set.add("{}\u2E80{}".format(ent["tok_span"][0], ent["type"]))
-
-            ent_exact_text_set.add("{}\u2E80{}".format(ent["text"], ent["type"]))
-            ent_exact_offset_set.add("{}\u2E80{}\u2E80{}".format(ent["type"], *ent["tok_span"]))
+            ent_partial_text_set.add(str([ent["text"].split(" ")[0], ent["type"]]))
+            ent_partial_offset_set.add(str([ent["tok_span"][0], ent["type"]]))
+            ent_exact_text_set.add(str([ent["text"], ent["type"]]))
+            ent_exact_offset_set.add(str([ent["type"]] + ent["tok_span"]))
 
         return {
             "ent_partial_text": ent_partial_text_set,
@@ -216,16 +196,10 @@ class MetricsCalculator:
         rel_exact_offset_set = set(), set(), set(), set()
 
         for rel in rel_list:
-            rel_partial_text_set.add("{}\u2E80{}\u2E80{}".format(rel["subject"].split(" ")[0],
-                                                                 rel["predicate"],
-                                                                 rel["object"].split(" ")[0]))
-            rel_exact_text_set.add("{}\u2E80{}\u2E80{}".format(rel["subject"], rel["predicate"], rel["object"]))
-
-            rel_partial_offset_set.add(
-                "{}\u2E80{}\u2E80{}".format(rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]))
-            rel_exact_offset_set.add("{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(*rel["subj_tok_span"],
-                                                                                 rel["predicate"],
-                                                                                 *rel["obj_tok_span"]))
+            rel_partial_text_set.add(str([rel["subject"].split(" ")[0], rel["predicate"], rel["object"].split(" ")[0]]))
+            rel_exact_text_set.add(str([rel["subject"], rel["predicate"], rel["object"]]))
+            rel_partial_offset_set.add(str([rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]]))
+            rel_exact_offset_set.add(str(rel["subj_tok_span"] + [rel["predicate"]] + rel["obj_tok_span"]))
         return {
             "rel_partial_text": rel_partial_text_set,
             "rel_partial_offset": rel_partial_offset_set,
@@ -247,15 +221,15 @@ class MetricsCalculator:
         for mark_str in pred_set:
             if mark_str in gold_set:
                 correct_num += 1
-            # else:
-            #     raise Exception("debug")
+            else:
+                raise Exception("debug")
 
         cpg[0] += correct_num
         cpg[1] += len(pred_set)
         cpg[2] += len(gold_set)
 
-        # if len(pred_set) != len(gold_set):
-        #     raise Exception("debug")
+        if len(pred_set) != len(gold_set):
+            raise Exception("debug")
 
     def _cal_ent_cpg(self, pred_ent_list, gold_ent_list, ent_cpg_dict):
         '''
@@ -270,7 +244,10 @@ class MetricsCalculator:
         gold_set_dict = self._get_mark_sets_ent(gold_ent_list)
         for key in ent_cpg_dict.keys():
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
-            self._cal_cpg(pred_set, gold_set, ent_cpg_dict[key])
+            try:
+                self._cal_cpg(pred_set, gold_set, ent_cpg_dict[key])
+            except Exception:
+                print("1")
 
     def _cal_rel_cpg(self, pred_rel_list, gold_rel_list, re_cpg_dict):
         '''

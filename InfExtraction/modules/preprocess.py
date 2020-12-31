@@ -709,11 +709,15 @@ class Preprocessor:
         return normal_sample_list
 
     @staticmethod
-    def pre_check_data_annotation(data):
+    def pre_check_data_annotation(data, language=" "):
         def check_ent_span(entity_list):
             for ent in entity_list:
-                ent_char_span = ent["char_span"]
-                ent_ext_fr_span = text[ent_char_span[0]:ent_char_span[1]]
+                # segs = []
+                # for idx in range(0, len(ent_char_span), 2):
+                #     ch_sp = [ent_char_span[idx], ent_char_span[idx + 1]]
+                #     segs.append(text[ch_sp[0]:ch_sp[1]])
+                # sep = " " if language == "en" else ""
+                ent_ext_fr_span = Preprocessor._extract_ent_by_char_sp(ent["char_span"], text, language)
                 if ent["text"] != ent_ext_fr_span:
                     raise Exception("char span error: ent_text: {} != ent_ext_fr_span: {}".format(ent["text"],
                                                                                                   ent_ext_fr_span))
@@ -848,8 +852,11 @@ class Preprocessor:
         '''
 
         def char_span2tok_span(char_span, char2tok_span):
-            tok_span_list = char2tok_span[char_span[0]:char_span[1]]
-            tok_span = [tok_span_list[0][0], tok_span_list[-1][1]]
+            tok_span = []
+            for idx in range(0, len(char_span), 2):  # len(char_span) > 2 if discontinuous entity
+                ch_sp = [char_span[idx], char_span[idx + 1]]
+                tok_span_list = char2tok_span[ch_sp[0]:ch_sp[1]]
+                tok_span.extend([tok_span_list[0][0], tok_span_list[-1][1]])
             return tok_span
 
         for sample in tqdm(data, desc="adding word level and subword level spans"):
@@ -881,14 +888,25 @@ class Preprocessor:
         return data
 
     @staticmethod
-    def _extract_ent(tok_span, tok2char_span, text):
-        char_span_list = tok2char_span[tok_span[0]:tok_span[1]]
-        char_span = [char_span_list[0][0], char_span_list[-1][1]]
-        text_extr = text[char_span[0]:char_span[1]]
-        return text_extr
+    def _extract_ent_by_char_sp(char_span, text, language):
+        sep = " " if language == "en" else ""
+        segs = []
+        for idx in range(0, len(char_span), 2):
+            ch_sp = [char_span[idx], char_span[idx + 1]]
+            segs.append(text[ch_sp[0]:ch_sp[1]])
+        return sep.join(segs)
 
     @staticmethod
-    def check_tok_span(data):
+    def _extract_ent_by_tok_sp(tok_span, tok2char_span, text, language):
+        char_span = []
+        for idx in range(0, len(tok_span), 2):
+            tk_sp = [tok_span[idx], tok_span[idx + 1]]
+            char_span_list = tok2char_span[tk_sp[0]:tk_sp[1]]
+            char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
+        return Preprocessor._extract_ent_by_char_sp(char_span, text, language)
+
+    @staticmethod
+    def check_tok_span(data, language):
         '''
         check if text is equal to the one extracted by the annotated token level spans
         :param data: 
@@ -907,11 +925,9 @@ class Preprocessor:
                 for ent in sample["entity_list"]:
                     word_span = ent["wd_span"]
                     subword_span = ent["subwd_span"]
-                    ent_wd = Preprocessor._extract_ent(word_span, word2char_span, text)
-                    try:
-                        ent_subwd = Preprocessor._extract_ent(subword_span, subword2char_span, text)
-                    except Exception:
-                        print("!")
+                    ent_wd = Preprocessor._extract_ent_by_tok_sp(word_span, word2char_span, text, language)
+                    ent_subwd = Preprocessor._extract_ent_by_tok_sp(subword_span, subword2char_span, text, language)
+
                     if not (ent_wd == ent_subwd == ent["text"]):
                         bad_ent = copy.deepcopy(ent)
                         bad_ent["extr_ent_wd"] = ent_wd
@@ -928,10 +944,10 @@ class Preprocessor:
                     subj_subwd_span = rel["subj_subwd_span"]
                     obj_subwd_span = rel["obj_subwd_span"]
 
-                    subj_wd = Preprocessor._extract_ent(subj_wd_span, word2char_span, text)
-                    obj_wd = Preprocessor._extract_ent(obj_wd_span, word2char_span, text)
-                    subj_subwd = Preprocessor._extract_ent(subj_subwd_span, subword2char_span, text)
-                    obj_subwd = Preprocessor._extract_ent(obj_subwd_span, subword2char_span, text)
+                    subj_wd = Preprocessor._extract_ent_by_tok_sp(subj_wd_span, word2char_span, text, language)
+                    obj_wd = Preprocessor._extract_ent_by_tok_sp(obj_wd_span, word2char_span, text, language)
+                    subj_subwd = Preprocessor._extract_ent_by_tok_sp(subj_subwd_span, subword2char_span, text, language)
+                    obj_subwd = Preprocessor._extract_ent_by_tok_sp(obj_subwd_span, subword2char_span, text, language)
 
                     if not (subj_wd == rel["subject"] == subj_subwd and obj_wd == rel["object"] == obj_subwd):
                         bad_rel = copy.deepcopy(rel)
@@ -950,8 +966,8 @@ class Preprocessor:
                     bad = False
                     trigger_wd_span = event["trigger_wd_span"]
                     trigger_subwd_span = event["trigger_subwd_span"]
-                    trigger_wd = Preprocessor._extract_ent(trigger_wd_span, word2char_span, text)
-                    trigger_subwd = Preprocessor._extract_ent(trigger_subwd_span, subword2char_span, text)
+                    trigger_wd = Preprocessor._extract_ent_by_tok_sp(trigger_wd_span, word2char_span, text, language)
+                    trigger_subwd = Preprocessor._extract_ent_by_tok_sp(trigger_subwd_span, subword2char_span, text, language)
 
                     if not (trigger_wd == trigger_subwd == event["trigger"]):
                         bad = True
@@ -961,12 +977,9 @@ class Preprocessor:
                     for arg in event_cp["argument_list"]:
                         arg_wd_span = arg["wd_span"]
                         arg_subwd_span = arg["subwd_span"]
-                        arg_wd = Preprocessor._extract_ent(arg_wd_span, word2char_span, text)
+                        arg_wd = Preprocessor._extract_ent_by_tok_sp(arg_wd_span, word2char_span, text, language)
+                        arg_subwd = Preprocessor._extract_ent_by_tok_sp(arg_subwd_span, subword2char_span, text, language)
 
-                        try:
-                            arg_subwd = Preprocessor._extract_ent(arg_subwd_span, subword2char_span, text)
-                        except Exception:
-                            print("!")
                         if not (arg_wd == arg_subwd == arg["text"]):
                             bad = True
                             arg["extr_arg_wd"] = arg_wd
@@ -1409,8 +1422,8 @@ class Preprocessor:
                             subj_tok_span = rel["subj_tok_span"]
                             obj_tok_span = rel["obj_tok_span"]
                             # if subject and object are both in this subtext, add this spo to new sample
-                            if subj_tok_span[0] >= start_ind and subj_tok_span[1] <= end_ind \
-                                    and obj_tok_span[0] >= start_ind and obj_tok_span[1] <= end_ind:
+                            if subj_tok_span[0] >= start_ind and subj_tok_span[-1] <= end_ind \
+                                    and obj_tok_span[0] >= start_ind and obj_tok_span[-1] <= end_ind:
                                 rel_cp = copy.deepcopy(rel)
                                 sub_rel_list.append(rel_cp)
                     new_sample["relation_list"] = sub_rel_list
@@ -1421,7 +1434,7 @@ class Preprocessor:
                         for ent in sample["entity_list"]:
                             tok_span = ent["tok_span"]
                             # if entity in this subtext, add the entity to new sample
-                            if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
+                            if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
                                 ent_cp = copy.deepcopy(ent)
                                 sub_ent_list.append(ent_cp)
                     new_sample["entity_list"] = sub_ent_list
@@ -1431,13 +1444,13 @@ class Preprocessor:
                     if "event_list" in sample:
                         for event in sample["event_list"]:
                             trigger_tok_span = event["trigger_tok_span"]
-                            if trigger_tok_span[1] > end_ind or trigger_tok_span[0] < start_ind:
+                            if not (trigger_tok_span[0] >= start_ind and trigger_tok_span[-1] <= end_ind):
                                 continue
                             event_cp = copy.deepcopy(event)
                             new_arg_list = []
                             for arg in event_cp["argument_list"]:
                                 tok_span = arg["tok_span"]
-                                if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
+                                if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
                                     arg_cp = copy.deepcopy(arg)
                                     new_arg_list.append(arg_cp)
                             event_cp["argument_list"] = new_arg_list
@@ -1576,38 +1589,35 @@ class Preprocessor:
 
     @staticmethod
     def span_offset(sample, tok_level_offset, char_level_offset):
+        def list_add(ori_list, add_num):
+            return [e + add_num for e in ori_list]
         if "relation_list" in sample:
             for rel in sample["relation_list"]:
-                rel["subj_tok_span"][0] += tok_level_offset
-                rel["subj_tok_span"][1] += tok_level_offset
-                rel["obj_tok_span"][0] += tok_level_offset
-                rel["obj_tok_span"][1] += tok_level_offset
-                rel["subj_char_span"][0] += char_level_offset
-                rel["subj_char_span"][1] += char_level_offset
-                rel["obj_char_span"][0] += char_level_offset
-                rel["obj_char_span"][1] += char_level_offset
+                rel["subj_tok_span"] = list_add(rel["subj_tok_span"], tok_level_offset)
+                rel["obj_tok_span"] = list_add(rel["obj_tok_span"], tok_level_offset)
+                rel["subj_char_span"] = list_add(rel["subj_char_span"], char_level_offset)
+                rel["obj_char_span"] = list_add(rel["obj_char_span"], char_level_offset)
         if "entity_list" in sample:
             for ent in sample["entity_list"]:
-                ent["tok_span"][0] += tok_level_offset
-                ent["tok_span"][1] += tok_level_offset
-                ent["char_span"][0] += char_level_offset
-                ent["char_span"][1] += char_level_offset
+                ent["tok_span"] = list_add(ent["tok_span"], tok_level_offset)
+                ent["char_span"] = list_add(ent["char_span"], char_level_offset)
+
         if "event_list" in sample:
             for event in sample["event_list"]:
                 if "trigger" in event:
-                    event["trigger_tok_span"][0] += tok_level_offset
-                    event["trigger_tok_span"][1] += tok_level_offset
-                    event["trigger_char_span"][0] += char_level_offset
-                    event["trigger_char_span"][1] += char_level_offset
+                    # event["trigger_tok_span"][0] += tok_level_offset
+                    # event["trigger_tok_span"][1] += tok_level_offset
+                    # event["trigger_char_span"][0] += char_level_offset
+                    # event["trigger_char_span"][1] += char_level_offset
+                    event["trigger_tok_span"] = list_add(event["trigger_tok_span"], tok_level_offset)
+                    event["trigger_char_span"] = list_add(event["trigger_char_span"], char_level_offset)
                 for arg in event["argument_list"]:
-                    arg["tok_span"][0] += tok_level_offset
-                    arg["tok_span"][1] += tok_level_offset
-                    arg["char_span"][0] += char_level_offset
-                    arg["char_span"][1] += char_level_offset
+                    arg["tok_span"] = list_add(arg["tok_span"], tok_level_offset)
+                    arg["char_span"] = list_add(arg["char_span"], char_level_offset)
         return sample
 
     @staticmethod
-    def check_spans(data):
+    def check_spans(data, language):
         sample_id2mismatched_ents = {}
         for sample in tqdm(data, desc="checking splits"):
             text = sample["text"]
@@ -1618,9 +1628,8 @@ class Preprocessor:
             bad_events = []
             if "entity_list" in sample:
                 for ent in sample["entity_list"]:
-                    tok_span = ent["tok_span"]
-                    extr_ent = Preprocessor._extract_ent(tok_span, tok2char_span, text)
-                    extr_ent_c = text[ent["char_span"][0]:ent["char_span"][1]]
+                    extr_ent = Preprocessor._extract_ent_by_tok_sp(ent["tok_span"], tok2char_span, text, language)
+                    extr_ent_c = Preprocessor._extract_ent_by_char_sp(ent["char_span"], text, language)
 
                     if not (extr_ent == ent["text"] == extr_ent_c):
                         bad_ent = copy.deepcopy(ent)
@@ -1633,13 +1642,10 @@ class Preprocessor:
 
             if "relation_list" in sample:
                 for rel in sample["relation_list"]:
-                    subj_tok_span = rel["subj_tok_span"]
-                    obj_tok_span = rel["obj_tok_span"]
-
-                    extr_subj = Preprocessor._extract_ent(subj_tok_span, tok2char_span, text)
-                    extr_obj = Preprocessor._extract_ent(obj_tok_span, tok2char_span, text)
-                    extr_subj_c = text[rel["subj_char_span"][0]:rel["subj_char_span"][1]]
-                    extr_obj_c = text[rel["obj_char_span"][0]:rel["obj_char_span"][1]]
+                    extr_subj = Preprocessor._extract_ent_by_tok_sp(rel["subj_tok_span"], tok2char_span, text, language)
+                    extr_obj = Preprocessor._extract_ent_by_tok_sp(rel["obj_tok_span"], tok2char_span, text, language)
+                    extr_subj_c = Preprocessor._extract_ent_by_char_sp(rel["subj_char_span"], text, language)
+                    extr_obj_c = Preprocessor._extract_ent_by_char_sp(rel["obj_char_span"], text, language)
 
                     if not (extr_subj == rel["subject"] == extr_subj_c and extr_obj == rel["object"] == extr_obj_c):
                         bad_rel = copy.deepcopy(rel)
@@ -1655,8 +1661,8 @@ class Preprocessor:
                     bad_event = copy.deepcopy(event)
                     bad = False
                     trigger_tok_span = event["trigger_tok_span"]
-                    extr_trigger = Preprocessor._extract_ent(trigger_tok_span, tok2char_span, text)
-                    extr_trigger_c = text[event["trigger_char_span"][0]:event["trigger_char_span"][1]]
+                    extr_trigger = Preprocessor._extract_ent_by_tok_sp(trigger_tok_span, tok2char_span, text, language)
+                    extr_trigger_c = Preprocessor._extract_ent_by_char_sp(event["trigger_char_span"], text, language)
                     if not (extr_trigger == event["trigger"] == extr_trigger_c):
                         bad = True
                         bad_event["extr_trigger"] = extr_trigger
@@ -1664,8 +1670,8 @@ class Preprocessor:
 
                     for arg in event["argument_list"]:
                         arg_span = arg["tok_span"]
-                        extr_arg = Preprocessor._extract_ent(arg_span, tok2char_span, text)
-                        extr_arg_c = text[arg["char_span"][0]:arg["char_span"][1]]
+                        extr_arg = Preprocessor._extract_ent_by_tok_sp(arg_span, tok2char_span, text, language)
+                        extr_arg_c = Preprocessor._extract_ent_by_char_sp(arg["char_span"], text, language)
                         if not (extr_arg == arg["text"] == extr_arg_c):
                             bad = True
                             bad_event["extr_arg"] = extr_arg
