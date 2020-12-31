@@ -274,6 +274,7 @@ config_to_log = {
     "addtional_preprocessing_config": addtional_preprocessing_config,
     "tagger_config": tagger_config,
     "split_early_stop": split_early_stop,
+    "drop_neg_samples": drop_neg_samples,
     "combine_split": combine,
     "use_ghm": use_ghm,
 }
