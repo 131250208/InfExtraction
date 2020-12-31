@@ -34,6 +34,7 @@ from glob import glob
 
 # Frequent changes
 exp_name = "webnlg_star"
+language = "en"
 stage = "train"  # inference
 task_type = "re"  # re, re+ee
 model_name = "RAIN"
@@ -52,7 +53,7 @@ drop_neg_samples = True
 combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 25
+model_bag_size = 5  # if no saving, set to 0
 
 batch_size_train = 6
 batch_size_valid = 6
@@ -130,7 +131,9 @@ scheduler_dict = {
 # logger
 log_interval = 10
 # for default logger
+random.seed(time.time())
 default_run_id = ''.join(random.sample(string.ascii_letters + string.digits, 8))
+random.seed(seed)
 default_log_path = "./default_log_dir/default.log"
 default_dir_to_save_model = "./default_log_dir/run-{}_{}-{}".format(date.today().strftime("%Y%m%d"),
                                                                     str(time.time())[:6],
