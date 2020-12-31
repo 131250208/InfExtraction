@@ -404,8 +404,17 @@ if __name__ == "__main__":
             for metric_key, current_val_score in score_dict.items():
                 if "f1" not in metric_key:
                     continue
-                best_val_score = 0.
-                if current_val_score > 0.:
+
+                if metric_key not in score_dict4comparing:
+                    score_dict4comparing[metric_key] = {
+                        "current": 0.0,
+                        "best": 0.0,
+                    }
+                score_dict4comparing[metric_key]["current"] = current_val_score
+                score_dict4comparing[metric_key]["best"] = max(current_val_score, score_dict4comparing[metric_key]["best"])
+
+                # save models
+                if current_val_score > 0. and model_bag_size > 0:
                     dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)
                     if not os.path.exists(dir_to_save_model_this_key):
                         os.makedirs(dir_to_save_model_this_key)
@@ -420,16 +429,9 @@ if __name__ == "__main__":
                     # sorted by scores
                     sorted_model_state_path_list = sorted(model_state_path_list,
                                                           key=get_score_fr_path)
-                    # best score in the bag
-                    model_path_max_score = sorted_model_state_path_list[-1]
-                    best_val_score = get_score_fr_path(model_path_max_score)
                     # only save <model_bag_size> model states
                     if len(sorted_model_state_path_list) > model_bag_size:
                         os.remove(sorted_model_state_path_list[0])  # remove the state dict with the minimum score
-                score_dict4comparing[metric_key] = {
-                    "current": round(current_val_score, 5),
-                    "best": round(best_val_score, 5),
-                }
 
             # test
             for filename, test_data_loader in filename2test_data_loader.items():
