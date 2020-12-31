@@ -298,7 +298,7 @@ class MetricsCalculator:
             # try:
             self._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
             # except Exception as e:
-            #     print("!")
+            #     print("event error!")
         return ee_cpg_dict
 
     def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list):
@@ -332,7 +332,7 @@ class MetricsCalculator:
             # try:
             self._cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict)
             # except Exception:
-            #     pass
+            #     print("ent error")
         return ent_cpg_dict
 
     def get_prf_scores(self, correct_num, pred_num, gold_num):
