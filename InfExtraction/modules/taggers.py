@@ -380,13 +380,18 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         '''
         super(Tagger4RAIN, self).__init__(data, **kwargs)
 
+        self.add_h2t_n_t2h_links = False
+        if "add_h2t_n_t2h_links" in kwargs and kwargs["add_h2t_n_t2h_links"] is True:
+            self.rel_link_types = self.rel_link_types.union({
+                "SH2OT",  # subject head to object tail
+                "OT2SH",  # object tail to subject head
+                "ST2OH",  # subject tail to object head
+                "OH2ST",  # object head to subject tail
+            })
+            self.add_h2t_n_t2h_links = True
+
         self.rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
         ent_link_types = {"EH2ET"}
-        # self.discon = False
-        # if "discontinuous_ner" in kwargs and kwargs["discontinuous_ner"] is True:
-        #     ent_link_types.add("GLUE")
-        #     self.discon = True
-        #     self.glue_sep = " " if kwargs["language"] == "en" else ""
 
         self.ent_tags = {self.separator.join([ent, lt]) for ent in self.ent2id.keys() for lt in ent_link_types}
 
@@ -418,29 +423,11 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                          self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
                 ent_matrix_points.append(point)
 
-                # # for discontinuous ner, add glue points
-                # if self.discon and len(ent["tok_span"]) > 2:
-                #     assert len(ent["tok_span"]) % 2 == 0
-                #
-                #     glue_pt_ids = [pos - 1 if idx % 2 != 0 else pos for idx, pos in enumerate(ent["tok_span"])][1:-1]
-                #     for idx in range(0, len(glue_pt_ids), 2):
-                #         gpt = [glue_pt_ids[idx], glue_pt_ids[idx + 1]]
-                #         point = (*gpt, self.ent_tag2id[self.separator.join([ent["type"], "GLUE"])])
-                #         ent_matrix_points.append(point)
-
         if "relation_list" in sample:
             for rel in sample["relation_list"]:
                 subj_tok_span = rel["subj_tok_span"]
                 obj_tok_span = rel["obj_tok_span"]
                 rel = rel["predicate"]
-
-                # if self.filter_by_cliques:
-                #     for i in range(*subj_tok_span):
-                #         for j in range(*obj_tok_span):
-                #             point = (i, j, self.rel_tag2id[self.separator.join([rel, "S2O"])])
-                #             rel_matrix_points.append(point)
-                #             point = (j, i, self.rel_tag2id[self.separator.join([rel, "O2S"])])
-                #             rel_matrix_points.append(point)
 
                 if self.filter_by_cliques:
                     clique = list(range(*subj_tok_span)) + list(range(*obj_tok_span))
@@ -463,6 +450,16 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 rel_matrix_points.append(
                     (obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OT2ST"])]))
 
+                if self.add_h2t_n_t2h_links:
+                    rel_matrix_points.append(
+                        (subj_tok_span[0], obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "SH2OT"])]))
+                    rel_matrix_points.append(
+                        (obj_tok_span[1] - 1, subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OT2SH"])]))
+                    rel_matrix_points.append(
+                        (subj_tok_span[1] - 1, obj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "ST2OH"])]))
+                    rel_matrix_points.append(
+                        (obj_tok_span[0], subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OH2ST"])]))
+
         return Preprocessor.unique_list(ent_matrix_points), Preprocessor.unique_list(rel_matrix_points)
 
     def decode(self, sample, pred_tags):
@@ -478,20 +475,6 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         sample_idx, text = sample["id"], sample["text"]
         tok2char_span = sample["features"]["tok2char_span"]
 
-        # # for discontinuous ner
-        # ent_type2glue_pts = None
-        # if self.discon:
-        #     ent_type2glue_pts = {}
-        #     for pt in ent_points:
-        #         ent_tag = self.id2ent_tag[pt[2]]
-        #         ent_type, link_type = ent_tag.split(self.separator)
-        #         if link_type == "GLUE":
-        #             # glue_pt = [tok2char_span[pt[0]][1], tok2char_span[pt[1]][0]]
-        #             glue_pt = pt
-        #             if ent_type not in ent_type2glue_pts:
-        #                 ent_type2glue_pts[ent_type] = []
-        #             ent_type2glue_pts[ent_type].append(glue_pt)
-
         # entity
         head_ind2entities = {}
         for pt in ent_points:
@@ -504,46 +487,6 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 char_span_list = tok2char_span[tok_sp[0]:tok_sp[1]]
                 char_sp = [char_span_list[0][0], char_span_list[-1][1]]
                 ent_text = text[char_sp[0]:char_sp[1]]
-
-                # # for discontinuous ner
-                # if self.discon:
-                #     ch_glue_sps_in = []
-                #     tok_glue_sps_in = []
-                #     for gpt in ent_type2glue_pts.get(ent_type, []):
-                #         if gpt[0] >= tok_sp[0] and gpt[1] <= tok_sp[1] - 1:
-                #             tok_glue_sps_in.append([gpt[0] + 1, gpt[1]])  # end pos
-                #
-                #             ch_gpt = [tok2char_span[gpt[0]][1], tok2char_span[gpt[1]][0]]
-                #             ch_glue_sps_in.append(ch_gpt)  # debug: no need to add 1,
-                #                                            # cause spans in tok2char_span
-                #                                            # have already added 1 for end positions
-                #
-                #     def rm_overlap_sps(spans):
-                #         spans = sorted(spans, key=lambda sp: (sp[0], sp[0] - sp[1]))
-                #         new_spans = []
-                #         for idx, sp in enumerate(spans):
-                #             if idx != 0 and sp[0] >= spans[idx - 1][0] and sp[1] <= spans[idx - 1][1]:
-                #                 continue
-                #             new_spans.append(sp)
-                #         return new_spans
-                #
-                #     tok_glue_sps_in = rm_overlap_sps(tok_glue_sps_in)
-                #     ch_glue_sps_in = rm_overlap_sps(ch_glue_sps_in)
-                #     ch_glue_pts_in, tok_glue_pts_in = [], []
-                #     for sp in tok_glue_sps_in:
-                #         tok_glue_pts_in.extend(sp)
-                #     for sp in ch_glue_sps_in:
-                #         ch_glue_pts_in.extend(sp)
-                #
-                #     ch_pos_list = char_sp[:1] + ch_glue_pts_in + char_sp[-1:]
-                #     tok_pos_list = tok_sp[:1] + tok_glue_pts_in + tok_sp[-1:]
-                #     segs = []
-                #     for idx in range(0, len(ch_pos_list), 2):
-                #         seg_ch_sp = [ch_pos_list[idx], ch_pos_list[idx + 1]]
-                #         segs.append(text[seg_ch_sp[0]:seg_ch_sp[1]])
-                #     ent_text = self.glue_sep.join(segs)
-                #     char_sp = ch_pos_list
-                #     tok_sp = tok_pos_list
 
                 entity = {
                     "type": ent_type,
@@ -622,35 +565,32 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                         "predicate": rel,
                     })
 
-        # filter wrong relations by clique
-        if self.filter_by_cliques:
-            rel_type2graph = {}
+        if self.add_h2t_n_t2h_links:
+            # fitler wrong relations by Head 2 Tail and Tail to Head tags
+            head2tail_link_set = set()
+            tail2head_link_set = set()
             for pt in rel_points:
                 tag = self.id2rel_tag[pt[2]]
                 rel, link_type = tag.split(self.separator)
-                if link_type == "CLI":
-                    if rel not in rel_type2graph:
-                        rel_type2graph[rel] = nx.Graph()
-                    rel_type2graph[rel].add_edge(pt[0], pt[1])
-
-            rel_type2cliques = {}
-            for rel, graph in rel_type2graph.items():
-                cliques = set()
-                for cli in nx.find_cliques(graph):
-                    cli_str = ",".join([str(idx) for idx in sorted(list(cli))])
-                    cliques.add(cli_str)
-                rel_type2cliques[rel] = cliques
-
+                if link_type == "SH2OT":
+                    head2tail_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
+                elif link_type == "OT2SH":
+                    head2tail_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
+                if link_type == "ST2OH":
+                    tail2head_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
+                elif link_type == "OH2ST":
+                    tail2head_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
             filtered_rel_list = []
             for spo in rel_list:
-                ids_str_list = [str(idx) for idx in sorted(list(range(*spo["subj_tok_span"])) + list(range(*spo["obj_tok_span"])))]
-                cli_str = ",".join(ids_str_list)
-                if cli_str in rel_type2cliques[spo["predicate"]]:
-                    filtered_rel_list.append(spo)
-                # else:
-                #     print("!")  # valid_468, 用极大团过滤会过滤掉存在嵌套实体的关系，即一个团可能是另一个团的子集这种情况
+                subj_tok_span = spo["subj_tok_span"]
+                obj_tok_span = spo["obj_tok_span"]
+                h2t = self.separator.join([spo["predicate"], str(subj_tok_span[0]), str(obj_tok_span[1] - 1)])
+                t2h = self.separator.join([spo["predicate"], str(subj_tok_span[1] - 1), str(obj_tok_span[0])])
+                if h2t not in head2tail_link_set or t2h not in tail2head_link_set:
+                    continue
+                filtered_rel_list.append(spo)
             rel_list = filtered_rel_list
-            
+
         pred_sample = copy.deepcopy(sample)
         # filter extra relations
         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
