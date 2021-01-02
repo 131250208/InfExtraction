@@ -70,6 +70,7 @@ def get_dataloader(data,
 
     # inexing
     indexed_data = Preprocessor.index_features(data,
+                                               language,
                                                key2dict,
                                                max_seq_len,
                                                max_char_num_in_tok)
@@ -390,6 +391,8 @@ if __name__ == "__main__":
         trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
 
         # train and valid
+        score_dict4comparing = {}
+
         for ep in range(epochs):
             # train
             trainer.train(ep, epochs)
@@ -401,7 +404,6 @@ if __name__ == "__main__":
                 "valid_data.json": score_dict,
             }
 
-            score_dict4comparing = {}
             for metric_key, current_val_score in score_dict.items():
                 if "f1" not in metric_key:
                     continue
