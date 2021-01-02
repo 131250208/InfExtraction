@@ -55,8 +55,10 @@ class Trainer:
         del batch_train_data["golden_tags"]
         for k, v in batch_train_data.items():
             if k == "padded_text_list":
-                continue
-            batch_train_data[k] = v.to(self.device)
+                for sent in v:
+                    sent.to(self.device)
+            else:
+                batch_train_data[k] = v.to(self.device)
 
         pred_outputs = self.model(**batch_train_data)
 

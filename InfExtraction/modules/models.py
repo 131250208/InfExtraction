@@ -293,7 +293,10 @@ class IEModel(nn.Module, metaclass=ABCMeta):
 
         batch_dict = {
             "sample_list": [sample for sample in batch_data],
-            "padded_text_list": [Sentence(sample["features"]["padded_text"], use_tokenizer=SpaceTokenizer()) for sample in batch_data]
+            "padded_text_list": [
+                Sentence(sample["features"]["padded_text"],
+                         use_tokenizer=SpaceTokenizer())
+                for sample in batch_data]
         }
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
 
