@@ -1,7 +1,10 @@
+import os
+device_num = 1
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
+os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
 import random
 import numpy as np
-import os
 from datetime import date
 import time
 
@@ -43,7 +46,6 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-base-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
-device_num = 1
 use_wandb = False
 note = ""
 epochs = 100

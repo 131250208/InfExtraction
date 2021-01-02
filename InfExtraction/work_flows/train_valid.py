@@ -208,8 +208,6 @@ if __name__ == "__main__":
         max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
 
     # env
-    os.environ["TOKENIZERS_PARALLELISM"] = "true"
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # reset settings from args
