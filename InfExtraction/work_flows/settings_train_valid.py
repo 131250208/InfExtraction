@@ -7,6 +7,7 @@ import random
 import numpy as np
 from datetime import date
 import time
+from InfExtraction.modules.utils import load_data
 
 seed = 2333
 enable_bm = True
@@ -73,10 +74,15 @@ sliding_len_test = 20
 # data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
-train_data = os.path.join(data_in_dir, exp_name, "train_data.json")
-valid_data = os.path.join(data_in_dir, exp_name, "valid_data.json")
-test_data_list = glob(
-    "{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))  # ["test_triples.json", ], ["test_data.json", ]
+train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
+valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
+test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+filename2ori_test_data = {}
+for test_data_path in test_data_list:
+    filename = test_data_path.split("/")[-1]
+    ori_test_data = load_data(test_data_path)
+    filename2ori_test_data[filename] = ori_test_data
+
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)
@@ -84,7 +90,7 @@ dicts_path = os.path.join(data_in_dir, exp_name, dicts)
 statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
-# for preprocessing
+# for index_features()
 key_map = {
     "char2id": "char_list",
     "word2id": "word_list",
