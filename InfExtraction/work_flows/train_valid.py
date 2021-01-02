@@ -256,7 +256,7 @@ if __name__ == "__main__":
 
     # metrics_calculator
     metrics_cal = MetricsCalculator(task_type,
-                                    # match_pattern,
+                                    language,
                                     use_ghm)
 
     # model
@@ -383,7 +383,6 @@ if __name__ == "__main__":
 
         # train and valid
         score_dict4comparing = {}
-
         for ep in range(epochs):
             # train
             trainer.train(ep, epochs)

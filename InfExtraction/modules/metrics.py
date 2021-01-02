@@ -6,13 +6,10 @@ import copy
 class MetricsCalculator:
     def __init__(self,
                  task_type,
-                 # match_pattern=None,
+                 language="en",
                  use_ghm=False):
         self.task_type = task_type  # for scoring
-
-        # self.match_pattern = match_pattern  # for scoring of relation extraction
-        # if task_type == "re":
-        #     assert self.match_pattern is not None
+        self.sep = " " if language == "en" else ""
 
         # for multilabel_categorical_crossentropy
         self.use_ghm = use_ghm
@@ -177,7 +174,7 @@ class MetricsCalculator:
         ent_exact_offset_set = set(), set(), set(), set()
 
         for ent in ent_list:
-            ent_partial_text_set.add(str([ent["text"].split(" ")[0], ent["type"]]))
+            ent_partial_text_set.add(str([ent["text"].split(self.sep)[0], ent["type"]]))
             ent_partial_offset_set.add(str([ent["tok_span"][0], ent["type"]]))
             ent_exact_text_set.add(str([ent["text"], ent["type"]]))
             ent_exact_offset_set.add(str([ent["type"]] + ent["tok_span"]))
@@ -196,7 +193,9 @@ class MetricsCalculator:
         rel_exact_offset_set = set(), set(), set(), set()
 
         for rel in rel_list:
-            rel_partial_text_set.add(str([rel["subject"].split(" ")[0], rel["predicate"], rel["object"].split(" ")[0]]))
+            rel_partial_text_set.add(str([rel["subject"].split(self.sep)[0],
+                                          rel["predicate"],
+                                          rel["object"].split(self.sep)[0]]))
             rel_exact_text_set.add(str([rel["subject"], rel["predicate"], rel["object"]]))
             rel_partial_offset_set.add(str([rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]]))
             rel_exact_offset_set.add(str(rel["subj_tok_span"] + [rel["predicate"]] + rel["obj_tok_span"]))
