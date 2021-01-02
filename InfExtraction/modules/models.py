@@ -159,11 +159,13 @@ class IEModel(nn.Module, metaclass=ABCMeta):
 
         self.flair_config = flair_config
         if flair_config is not None:
+            print("init flair embedding models...")
             embedding_model_configs = flair_config["embedding_models"]
             embedding_models = [getattr(flair_embeddings, config["model_name"])(*config["parameters"]) for config in embedding_model_configs]
             for model in embedding_models:
                 self.cat_hidden_size += model.embedding_length
             self.flair_emb = StackedEmbeddings(embedding_models)
+            print("done!")
 
         # subword_encoder
         self.subwd_encoder_config = subwd_encoder_config
@@ -293,12 +295,14 @@ class IEModel(nn.Module, metaclass=ABCMeta):
 
         batch_dict = {
             "sample_list": [sample for sample in batch_data],
-            "padded_text_list": [
+        }
+        seq_length = len(batch_data[0]["features"]["tok2char_span"])
+
+        if self.flair_config is not None:
+            batch_dict["padded_text_list"] = [
                 Sentence(sample["features"]["padded_text"],
                          use_tokenizer=SpaceTokenizer())
                 for sample in batch_data]
-        }
-        seq_length = len(batch_data[0]["features"]["tok2char_span"])
 
         if self.subwd_encoder_config is not None:
             subword_input_ids_list = []
