@@ -9,24 +9,40 @@ Train the model
 # Put the data into a Dataloaders
 # Set optimizer and trainer
 '''
-from InfExtraction.modules.preprocess import Preprocessor
-from InfExtraction.modules import taggers
-from InfExtraction.modules.workers import Trainer, Evaluator
-from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data, save_as_json_lines
+import sys, getopt
+import importlib
+
+# settings
+try:
+    opts, args = getopt.getopt(sys.argv[1:], "s:", ["settings="])
+except getopt.GetoptError:
+    print('test.py -s <settings_file> --settings <settings_file>')
+    sys.exit(2)
+
+settings_name = "settings_default"
+for opt, arg in opts:
+    if opt in ("-s", "--settings"):
+        settings_name = arg
+
+module_name = "InfExtraction.work_flows.{}".format(settings_name)
+settings = importlib.import_module(module_name)
 
 import os
-import sys, getopt
-import torch
 import wandb
-import json
 from pprint import pprint
-from torch.utils.data import DataLoader
 import logging
 import re
 from glob import glob
 import numpy as np
-import importlib
+
+import torch
+from torch.utils.data import DataLoader
+from InfExtraction.modules.preprocess import Preprocessor
+from InfExtraction.modules import taggers
+from InfExtraction.modules import models
+from InfExtraction.modules.workers import Trainer, Evaluator
+from InfExtraction.modules.metrics import MetricsCalculator
+from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data, save_as_json_lines
 
 
 def get_dataloader(data,
@@ -101,20 +117,6 @@ def get_last_k_paths(path_list, k):
 
 
 if __name__ == "__main__":
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], "s:", ["settings="])
-    except getopt.GetoptError:
-        print('test.py -s <settings_file> --settings <settings_file>')
-        sys.exit(2)
-
-    settings_name = "settings_default"
-    for opt, arg in opts:
-        if opt in ("-s", "--settings"):
-            settings_name = arg
-
-    module_name = "InfExtraction.work_flows.{}".format(settings_name)
-    settings = importlib.import_module(module_name)
-
     # task
     exp_name = settings.exp_name
     task_type = settings.task_type
@@ -266,7 +268,6 @@ if __name__ == "__main__":
 
     # model
     print("init model...")
-    from InfExtraction.modules import models
     model_class_name = getattr(models, model_name)
     model = model_class_name(tagger, metrics_cal, **model_settings)
     model = model.to(device)
