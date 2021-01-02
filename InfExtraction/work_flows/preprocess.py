@@ -65,7 +65,7 @@ for filename, data in file_name2data.items():
     if add_char_span:
         data = preprocessor.add_char_span(data, ignore_subword_match=ignore_subword_match)
     # check char span and list alignment
-    preprocessor.pre_check_data_annotation(data)
+    preprocessor.pre_check_data_annotation(data, language)
     # create features
     data = preprocessor.create_features(data, word_tokenizer_type)
     # add token level spans
@@ -79,7 +79,7 @@ for data in file_name2data.values():
     all_data.extend(data)
 
 # check word level and subword level spans
-sample_id2mismatch = preprocessor.check_tok_span(all_data)
+sample_id2mismatch = preprocessor.check_tok_span(all_data, language)
 if len(sample_id2mismatch) > 0:
     error_info = "spans error!"
     logging.warning(error_info)

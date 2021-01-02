@@ -9,28 +9,44 @@ Train the model
 # Put the data into a Dataloaders
 # Set optimizer and trainer
 '''
+import sys, getopt
+import importlib
+
+# settings
+try:
+    opts, args = getopt.getopt(sys.argv[1:], "s:", ["settings="])
+except getopt.GetoptError:
+    print('test.py -s <settings_file> --settings <settings_file>')
+    sys.exit(2)
+
+settings_name = "settings_default"
+for opt, arg in opts:
+    if opt in ("-s", "--settings"):
+        settings_name = arg
+
+module_name = "InfExtraction.work_flows.{}".format(settings_name)
+settings = importlib.import_module(module_name)
+
+import os
+import wandb
+from pprint import pprint
+import logging
+import re
+from glob import glob
+import numpy as np
+
+import torch
+from torch.utils.data import DataLoader
 from InfExtraction.modules.preprocess import Preprocessor
 from InfExtraction.modules import taggers
 from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data
-
-import os
-import sys, getopt
-import torch
-import wandb
-import json
-from pprint import pprint
-from torch.utils.data import DataLoader
-import logging
-import re
-from glob import glob
-import numpy as np
-import importlib
+from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data, save_as_json_lines
 
 
 def get_dataloader(data,
+                   language,
                    data_type,
                    token_level,
                    max_seq_len,
@@ -61,14 +77,14 @@ def get_dataloader(data,
         data = Preprocessor.combine(data, max_seq_len)
 
     # check spans
-    sample_id2mismatched = Preprocessor.check_spans(data)
+    sample_id2mismatched = Preprocessor.check_spans(data, language)
     if len(sample_id2mismatched) > 0:
         logging.warning("mismatch errors in {}".format(data_type))
         pprint(sample_id2mismatched)
-    # check decoding
 
     # inexing
     indexed_data = Preprocessor.index_features(data,
+                                               language,
                                                key2dict,
                                                max_seq_len,
                                                max_char_num_in_tok)
@@ -101,20 +117,6 @@ def get_last_k_paths(path_list, k):
 
 
 if __name__ == "__main__":
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], "s:", ["settings="])
-    except getopt.GetoptError:
-        print('test.py -s <settings_file> --settings <settings_file>')
-        sys.exit(2)
-
-    settings_name = "settings_default"
-    for opt, arg in opts:
-        if opt in ("-s", "--settings"):
-            settings_name = arg
-
-    module_name = "InfExtraction.work_flows.{}".format(settings_name)
-    settings = importlib.import_module(module_name)
-
     # task
     exp_name = settings.exp_name
     task_type = settings.task_type
@@ -122,6 +124,7 @@ if __name__ == "__main__":
     model_name = settings.model_name
     tagger_name = settings.tagger_name
     stage = settings.stage
+    language = settings.language
 
     # data
     data_in_dir = settings.data_in_dir
@@ -205,8 +208,6 @@ if __name__ == "__main__":
         max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
 
     # env
-    os.environ["TOKENIZERS_PARALLELISM"] = "true"
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # reset settings from args
@@ -235,7 +236,8 @@ if __name__ == "__main__":
     tagger_class_name = getattr(taggers, tagger_name)
     if task_type == "re+ee":
         tagger_class_name = taggers.create_rebased_ee_tagger(tagger_class_name)
-
+    elif task_type == "disc_ner":
+        tagger_class_name = taggers.create_rebased_discontinuous_ner_tagger(tagger_class_name)
 
     # elif task_type == "re+ner":
     #     tagger_class_name = taggers.create_rebased_ner_tagger(tagger_class_name)
@@ -245,15 +247,16 @@ if __name__ == "__main__":
         return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
 
 
-    all_data4gen_tag_dict = []
     train_data = additional_preprocess(ori_train_data, "train")
-    all_data4gen_tag_dict.extend(train_data)
     valid_data = additional_preprocess(ori_valid_data, "valid")
-    all_data4gen_tag_dict.extend(additional_preprocess(ori_valid_data, "train"))
     filename2test_data = {}
     for filename, ori_test_data in filename2ori_test_data.items():
         filename2test_data[filename] = additional_preprocess(ori_test_data, "test")
-        all_data4gen_tag_dict.extend(additional_preprocess(ori_test_data, "train"))
+
+    all_data4gen_tag_dict = []
+    all_data4gen_tag_dict.extend(train_data)
+    all_data4gen_tag_dict.extend(additional_preprocess(ori_valid_data, "train"))
+    # all_data4gen_tag_dict.extend(additional_preprocess(ori_test_data, "train"))
 
     # tagger
     tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
@@ -297,6 +300,7 @@ if __name__ == "__main__":
     filename2test_data_loader = {}
     for filename, test_data in filename2test_data.items():
         test_dataloader = get_dataloader(test_data,
+                                         language,
                                          "test",
                                          token_level,
                                          max_seq_len_test,
@@ -316,6 +320,7 @@ if __name__ == "__main__":
 
     if stage == "train":
         train_dataloader = get_dataloader(train_data,
+                                          language,
                                           "train",
                                           token_level,
                                           max_seq_len_train,
@@ -332,6 +337,7 @@ if __name__ == "__main__":
                                           drop_neg_samples
                                           )
         valid_dataloader = get_dataloader(valid_data,
+                                          language,
                                           "valid",
                                           token_level,
                                           max_seq_len_valid,
@@ -349,10 +355,11 @@ if __name__ == "__main__":
                                           )
         # debug: checking tagging and decoding
         if check_tagging_n_decoding:
-            # for checking, take valid data as train data, do additional preprocessing
+            # for checking, take valid data as train data, do additional preprocessing to get tags
             # but take original valid data as golden dataset to evaluate
             valid_data4checking = additional_preprocess(ori_valid_data, "train")
             valid_dataloader4checking = get_dataloader(valid_data4checking,
+                                                       language,
                                                        "train",  # only train data will be set a tag sequence
                                                        token_level,
                                                        max_seq_len_valid,
@@ -382,6 +389,8 @@ if __name__ == "__main__":
         trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
 
         # train and valid
+        score_dict4comparing = {}
+
         for ep in range(epochs):
             # train
             trainer.train(ep, epochs)
@@ -393,12 +402,20 @@ if __name__ == "__main__":
                 "valid_data.json": score_dict,
             }
 
-            score_dict4comparing = {}
             for metric_key, current_val_score in score_dict.items():
                 if "f1" not in metric_key:
                     continue
-                best_val_score = 0.
-                if current_val_score > 0.:
+
+                if metric_key not in score_dict4comparing:
+                    score_dict4comparing[metric_key] = {
+                        "current": 0.0,
+                        "best": 0.0,
+                    }
+                score_dict4comparing[metric_key]["current"] = current_val_score
+                score_dict4comparing[metric_key]["best"] = max(current_val_score, score_dict4comparing[metric_key]["best"])
+
+                # save models
+                if current_val_score > 0. and model_bag_size > 0:
                     dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)
                     if not os.path.exists(dir_to_save_model_this_key):
                         os.makedirs(dir_to_save_model_this_key)
@@ -413,16 +430,9 @@ if __name__ == "__main__":
                     # sorted by scores
                     sorted_model_state_path_list = sorted(model_state_path_list,
                                                           key=get_score_fr_path)
-                    # best score in the bag
-                    model_path_max_score = sorted_model_state_path_list[-1]
-                    best_val_score = get_score_fr_path(model_path_max_score)
                     # only save <model_bag_size> model states
                     if len(sorted_model_state_path_list) > model_bag_size:
                         os.remove(sorted_model_state_path_list[0])  # remove the state dict with the minimum score
-                score_dict4comparing[metric_key] = {
-                    "current": round(current_val_score, 5),
-                    "best": round(best_val_score, 5),
-                }
 
             # test
             for filename, test_data_loader in filename2test_data_loader.items():
@@ -438,15 +448,17 @@ if __name__ == "__main__":
     elif stage == "inference":
         # get model state paths
         target_run_ids = set(target_run_ids)
-        assert model_dir_for_test is not None and model_dir_for_test.strip() != "" "Please set model state directory!"
+        assert model_dir_for_test is not None and model_dir_for_test.strip() != "", "Please set model state directory!"
 
         run_id2model_state_paths = {}
         for root, dirs, files in os.walk(model_dir_for_test):
             for file_name in files:
-                path_se = re.search("run-\d{8}_\d{6}-(\w{8})/(.*)/", root)
+                path_se = re.search("run-\d{8}_\d{6}-(\w{8})/(.*)", root)
+                if path_se is None:
+                    continue
                 run_id = path_se.group(1)
                 metric = path_se.group(2)
-                if metric == metric4testing \
+                if metric == "val_{}".format(metric4testing) \
                         and run_id in target_run_ids \
                         and re.match(".*model_state.*\.pt", file_name):
                     if run_id not in run_id2model_state_paths:
@@ -465,7 +477,7 @@ if __name__ == "__main__":
                 print("model state loaded: {}".format("/".join(path.split("/")[-2:])))
                 model.eval()
                 model_name = re.sub("\.pt", "", path.split("/")[-1])
-                save_dir = os.path.join(data_out_dir, task_type, run_id, model_name)
+                save_dir = os.path.join(data_out_dir, exp_name, run_name, run_id, model_name)
                 if not os.path.exists(save_dir):
                     os.makedirs(save_dir)
 
@@ -476,7 +488,7 @@ if __name__ == "__main__":
                     pred_samples = evaluator.predict(test_data_loader, gold_test_data)
 
                     # save results
-                    json.dump(pred_samples, open(os.path.join(save_dir, filename), "w", encoding="utf-8"))
+                    save_as_json_lines(pred_samples, os.path.join(save_dir, filename))
 
                     # score
                     if cal_scores:

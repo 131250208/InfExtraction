@@ -37,10 +37,10 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "webnlg_star"
+exp_name = "cadec"
 language = "en"
 stage = "train"  # inference
-task_type = "re"  # re, re+ee
+task_type = "disc_ner"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
@@ -56,7 +56,7 @@ drop_neg_samples = True
 combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 5  # if no saving, set to 0
+model_bag_size = 25
 
 batch_size_train = 6
 batch_size_valid = 6
@@ -108,7 +108,8 @@ addtional_preprocessing_config = {
 # tagger config
 tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
-    "add_h2t_n_t2h_links": False,
+    "add_h2t_n_t2h_links": True,
+    "language": "en",
 }
 
 # optimizers and schedulers
@@ -169,7 +170,6 @@ char_encoder = False
 
 word_encoder = False
 subwd_encoder = True
-
 flair = False
 
 dep_gcn = False

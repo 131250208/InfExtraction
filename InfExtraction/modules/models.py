@@ -20,6 +20,10 @@ import logging
 from IPython.core.debugger import set_trace
 import time
 import torch.nn.functional as F
+from flair.embeddings import StackedEmbeddings
+from flair.data import Sentence
+from flair import embeddings as flair_embeddings
+from flair.tokenization import SpaceTokenizer
 
 
 class IEModel(nn.Module, metaclass=ABCMeta):
@@ -29,6 +33,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                  char_encoder_config=None,
                  subwd_encoder_config=None,
                  word_encoder_config=None,
+                 flair_config=None,
                  ner_tag_emb_config=None,
                  pos_tag_emb_config=None,
                  dep_config=None
@@ -152,6 +157,16 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                                         batch_first=True)
             self.cat_hidden_size += word_bilstm_hidden_size[1]
 
+        self.flair_config = flair_config
+        if flair_config is not None:
+            print("init flair embedding models...")
+            embedding_model_configs = flair_config["embedding_models"]
+            embedding_models = [getattr(flair_embeddings, config["model_name"])(*config["parameters"]) for config in embedding_model_configs]
+            for model in embedding_models:
+                self.cat_hidden_size += model.embedding_length
+            self.flair_emb = StackedEmbeddings(embedding_models)
+            print("done!")
+
         # subword_encoder
         self.subwd_encoder_config = subwd_encoder_config
         if subwd_encoder_config is not None:
@@ -186,6 +201,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                 self.cat_hidden_size += dep_gcn_dim
 
     def _cat_features(self,
+                      padded_text_list=None,
                       char_input_ids=None,
                       word_input_ids=None,
                       subword_input_ids=None,
@@ -233,6 +249,12 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
             features.append(word_hiddens)
 
+        # flair embedding
+        if self.flair_config is not None:
+            self.flair_emb.embed(padded_text_list)
+            flair_embeddings = torch.stack([torch.stack([tok.embedding for tok in sent]) for sent in padded_text_list])
+            features.append(flair_embeddings)
+
         # subword
         if self.subwd_encoder_config is not None:
             # subword_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
@@ -270,10 +292,17 @@ class IEModel(nn.Module, metaclass=ABCMeta):
 
     def generate_batch(self, batch_data):
         assert len(batch_data) > 0
+
         batch_dict = {
-            "sample_list": [sample for sample in batch_data]
+            "sample_list": [sample for sample in batch_data],
         }
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
+
+        if self.flair_config is not None:
+            batch_dict["padded_text_list"] = [
+                Sentence(sample["features"]["padded_text"],
+                         use_tokenizer=SpaceTokenizer())
+                for sample in batch_data]
 
         if self.subwd_encoder_config is not None:
             subword_input_ids_list = []

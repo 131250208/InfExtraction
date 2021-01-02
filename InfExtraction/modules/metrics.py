@@ -107,7 +107,7 @@ class MetricsCalculator:
         trigger_iden_set, trigger_class_set = set(), set()
         arg_hard_iden_set, arg_hard_class_set = set(), set()  # consider trigger offset
         arg_soft_iden_set, arg_soft_class_set = set(), set()  # do not consider trigger offset
-        arg_link_iden_set, arg_link_class_set = set(), set()  # for trigger-free metrics
+        arg_link_iden_set, arg_link_class_set = set(), set()  # for trigger-free
 
         for event in event_list:
             # trigger-based metrics
@@ -115,34 +115,22 @@ class MetricsCalculator:
             if "trigger" in event:
                 event_type = event["trigger_type"]
                 trigger_offset = event["trigger_tok_span"]
-                trigger_iden_set.add("{}\u2E80{}".format(*trigger_offset))
-                trigger_class_set.add("{}\u2E80{}\u2E80{}".format(event_type, *trigger_offset))
+                trigger_iden_set.add(str(trigger_offset))
+                trigger_class_set.add(str([event_type] + trigger_offset))
 
             for arg in event["argument_list"]:
                 argument_offset = arg["tok_span"]
                 argument_role = arg["type"]
                 event_type = arg["event_type"]
 
-                arg_soft_iden_set.add(
-                    "{}\u2E80{}\u2E80{}".format(event_type, *argument_offset))
-
-                arg_soft_class_set.add("{}\u2E80{}\u2E80{}\u2E80{}".format(event_type,
-                                                                           *argument_offset,
-                                                                           argument_role))
+                arg_soft_iden_set.add(str([event_type] + argument_offset))
+                arg_soft_class_set.add(str([event_type] + argument_offset + [argument_role]))
                 if "trigger" in event:
                     assert trigger_offset is not None
-                    arg_hard_iden_set.add(
-                        "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(event_type,
-                                                                    *argument_offset,
-                                                                    *trigger_offset,
-                                                                    ))
+                    arg_hard_iden_set.add(str([event_type] + argument_offset + trigger_offset))
+                    arg_hard_class_set.add(str([event_type] + argument_offset + trigger_offset + [argument_role]))
 
-                    arg_hard_class_set.add("{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(event_type,
-                                                                                               *argument_offset,
-                                                                                               *trigger_offset,
-                                                                                               argument_role))
-
-            # cal trigger-free metrics
+            # trigger-free metrics
             arg_list = copy.deepcopy(event["argument_list"])
             if "trigger" in event and event["trigger"] != "":
                 # take trigger as an ordinary argument
@@ -164,17 +152,10 @@ class MetricsCalculator:
                     arg_j_offset = arg_j["tok_span"]
                     arg_j_role = arg_j["type"]
 
-                    link_iden_mark = "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(arg_i_event_type,
-                                                                                         arg_j_event_type,
-                                                                                         *arg_i_offset,
-                                                                                         *arg_j_offset)
-                    link_class_mark = "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(
-                        arg_i_event_type,
-                        arg_j_event_type,
-                        *arg_i_offset,
-                        *arg_j_offset,
-                        arg_i_role,
-                        arg_j_role)
+                    link_iden_mark = str([arg_i_event_type] + [arg_j_event_type] + arg_i_offset + arg_j_offset)
+                    link_class_mark = str([arg_i_event_type] + [arg_j_event_type] +
+                                          arg_i_offset + arg_j_offset +
+                                          [arg_i_role] + [arg_j_role])
                     arg_link_iden_set.add(link_iden_mark)
                     arg_link_class_set.add(link_class_mark)
 
@@ -189,60 +170,41 @@ class MetricsCalculator:
             "arg_link_class": arg_link_class_set,
         }
 
-    def _get_mark_sets_rel(self, rel_list, ent_list):
-        rel_partial_text_set, \
-        rel_partial_offset_set, \
-        rel_exact_text_set, \
-        rel_exact_offset_set, \
+    def _get_mark_sets_ent(self, ent_list):
         ent_partial_text_set, \
         ent_partial_offset_set, \
         ent_exact_text_set, \
-        ent_exact_offset_set = set(), set(), set(), set(), set(), set(), set(), set()
-        # rel_strict_exact_text_set, \
-        # rel_strict_exact_offset_set, \
+        ent_exact_offset_set = set(), set(), set(), set()
 
         for ent in ent_list:
-            ent_partial_text_set.add("{}\u2E80{}".format(ent["text"].split(" ")[0], ent["type"]))
-            ent_exact_text_set.add("{}\u2E80{}".format(ent["text"], ent["type"]))
-            ent_partial_offset_set.add("{}\u2E80{}".format(ent["tok_span"][0], ent["type"]))
-            ent_exact_offset_set.add("{}\u2E80{}\u2E80{}".format(*ent["tok_span"], ent["type"]))
+            ent_partial_text_set.add(str([ent["text"].split(" ")[0], ent["type"]]))
+            ent_partial_offset_set.add(str([ent["tok_span"][0], ent["type"]]))
+            ent_exact_text_set.add(str([ent["text"], ent["type"]]))
+            ent_exact_offset_set.add(str([ent["type"]] + ent["tok_span"]))
+
+        return {
+            "ent_partial_text": ent_partial_text_set,
+            "ent_partial_offset": ent_partial_offset_set,
+            "ent_exact_text": ent_exact_text_set,
+            "ent_exact_offset": ent_exact_offset_set,
+        }
+
+    def _get_mark_sets_rel(self, rel_list):
+        rel_partial_text_set, \
+        rel_partial_offset_set, \
+        rel_exact_text_set, \
+        rel_exact_offset_set = set(), set(), set(), set()
 
         for rel in rel_list:
-            rel_partial_text_set.add("{}\u2E80{}\u2E80{}".format(rel["subject"].split(" ")[0],
-                                                                 rel["predicate"],
-                                                                 rel["object"].split(" ")[0]))
-            rel_partial_offset_set.add(
-                "{}\u2E80{}\u2E80{}".format(rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]))
-            rel_exact_text_set.add("{}\u2E80{}\u2E80{}".format(rel["subject"], rel["predicate"], rel["object"]))
-            rel_exact_offset_set.add("{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(*rel["subj_tok_span"],
-                                                                                 rel["predicate"],
-                                                                                 *rel["obj_tok_span"]))
-
-            # rel_strict_exact_text_set.add("{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(rel["subject"],
-            #                                                                           rel["subj_type"],
-            #                                                                           rel["predicate"],
-            #                                                                           rel["object"],
-            #                                                                           rel["obj_type"]
-            #                                                                           ))
-            # rel_strict_exact_offset_set.add(
-            #     "{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}\u2E80{}".format(*rel["subj_tok_span"],
-            #                                                                 rel["subj_type"],
-            #                                                                 rel["predicate"],
-            #                                                                 *rel["obj_tok_span"],
-            #                                                                 rel["obj_type"]
-            #                                                                 ))
-
+            rel_partial_text_set.add(str([rel["subject"].split(" ")[0], rel["predicate"], rel["object"].split(" ")[0]]))
+            rel_exact_text_set.add(str([rel["subject"], rel["predicate"], rel["object"]]))
+            rel_partial_offset_set.add(str([rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]]))
+            rel_exact_offset_set.add(str(rel["subj_tok_span"] + [rel["predicate"]] + rel["obj_tok_span"]))
         return {
             "rel_partial_text": rel_partial_text_set,
             "rel_partial_offset": rel_partial_offset_set,
             "rel_exact_text": rel_exact_text_set,
             "rel_exact_offset": rel_exact_offset_set,
-            # "rel_strict_exact_text": rel_strict_exact_text_set,
-            # "rel_strict_exact_offset": rel_strict_exact_offset_set,
-            "ent_partial_text": ent_partial_text_set,
-            "ent_partial_offset": ent_partial_offset_set,
-            "ent_exact_text": ent_exact_text_set,
-            "ent_exact_offset": ent_exact_offset_set,
         }
 
     def _cal_cpg(self, pred_set, gold_set, cpg):
@@ -269,40 +231,35 @@ class MetricsCalculator:
         # if len(pred_set) != len(gold_set):
         #     raise Exception("debug")
 
-    def _cal_rel_cpg(self, pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict):
+    def _cal_ent_cpg(self, pred_ent_list, gold_ent_list, ent_cpg_dict):
         '''
-        ere_cpg_dict = {
-            "rel_partial_text": [0, 0, 0],
-            "rel_partial_offset": [0, 0, 0],
-            "rel_exact_text": [0, 0, 0],
-            "rel_exact_offset": [0, 0, 0],
-            # "rel_strict_exact_text": [0, 0, 0],
-            # "rel_strict_exact_offset": [0, 0, 0],
+        ent_cpg_dict = {
             "ent_partial_text": [0, 0, 0],
             "ent_partial_offset": [0, 0, 0],
             "ent_exact_text": [0, 0, 0],
             "ent_exact_offset": [0, 0, 0],
         }
-        pattern: metric pattern
         '''
-        # pred_rel_list = [rel for rel in pred_rel_list if rel["predicate"].split(":")[0] not in {"EE"}]
-        # pred_ent_list = [ent for ent in pred_ent_list if ent["type"].split(":")[0] not in {"EXT", "EE"}]
+        pred_set_dict = self._get_mark_sets_ent(pred_ent_list)
+        gold_set_dict = self._get_mark_sets_ent(gold_ent_list)
+        for key in ent_cpg_dict.keys():
+            pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
+            self._cal_cpg(pred_set, gold_set, ent_cpg_dict[key])
 
-        # # filter extra entities and relations
-        # ent_types2filter = {"REL:", "EE:", "NER:"}
-        # for ent in gold_ent_list:
-        #     if re.search("[A-Z]+:", ent["type"]) is None:  # if entity types are annotated, filter default type
-        #         ent_types2filter.add("EXT:")
-        #         break
-        # filter_pattern = "({})".format("|".join(ent_types2filter))
-        # gold_ent_list = [ent for ent in gold_ent_list if re.search(filter_pattern, ent["type"]) is None]
-        # gold_rel_list = [rel for rel in gold_rel_list if re.search("EXT:|EE:", rel["predicate"]) is None]
-
-        gold_set_dict = self._get_mark_sets_rel(gold_rel_list, gold_ent_list)
-        pred_set_dict = self._get_mark_sets_rel(pred_rel_list, pred_ent_list)
-        for key in ere_cpg_dict.keys():
-            pred_rel_set, gold_rel_set = pred_set_dict[key], gold_set_dict[key]
-            self._cal_cpg(pred_rel_set, gold_rel_set, ere_cpg_dict[key])
+    def _cal_rel_cpg(self, pred_rel_list, gold_rel_list, re_cpg_dict):
+        '''
+        re_cpg_dict = {
+            "rel_partial_text": [0, 0, 0],
+            "rel_partial_offset": [0, 0, 0],
+            "rel_exact_text": [0, 0, 0],
+            "rel_exact_offset": [0, 0, 0],
+        }
+        '''
+        pred_set_dict = self._get_mark_sets_rel(pred_rel_list)
+        gold_set_dict = self._get_mark_sets_rel(gold_rel_list)
+        for key in re_cpg_dict.keys():
+            pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
+            self._cal_cpg(pred_set, gold_set, re_cpg_dict[key])
 
     def _cal_ee_cpg(self, pred_event_list, gold_event_list, ee_cpg_dict):
         '''
@@ -322,15 +279,6 @@ class MetricsCalculator:
         for key in ee_cpg_dict.keys():
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
             self._cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
-        #
-        # self._cal_cpg(pred_trigger_iden_set, gold_trigger_iden_set, ee_cpg_dict["trigger_iden"])
-        # self._cal_cpg(pred_trigger_class_set, gold_trigger_class_set, ee_cpg_dict["trigger_class"])
-        # self._cal_cpg(pred_arg_soft_iden_set, gold_arg_soft_iden_set, ee_cpg_dict["arg_soft_iden"])
-        # self._cal_cpg(pred_arg_soft_class_set, gold_arg_soft_class_set, ee_cpg_dict["arg_soft_class"])
-        # self._cal_cpg(pred_arg_hard_iden_set, gold_arg_hard_iden_set, ee_cpg_dict["arg_hard_iden"])
-        # self._cal_cpg(pred_arg_hard_class_set, gold_arg_hard_class_set, ee_cpg_dict["arg_hard_class"])
-        # self._cal_cpg(pred_arg_link_iden_set, gold_arg_link_iden_set, ee_cpg_dict["arg_link_iden"])
-        # self._cal_cpg(pred_arg_link_class_set, gold_arg_link_class_set, ee_cpg_dict["arg_link_class"])
 
     def get_ee_cpg_dict(self, pred_sample_list, golden_sample_list):
         ee_cpg_dict = {
@@ -350,17 +298,28 @@ class MetricsCalculator:
             # try:
             self._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
             # except Exception as e:
-            #     print("!")
+            #     print("event error!")
         return ee_cpg_dict
 
     def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list):
-        ere_cpg_dict = {
+        re_cpg_dict = {
             "rel_partial_text": [0, 0, 0],
             "rel_partial_offset": [0, 0, 0],
             "rel_exact_text": [0, 0, 0],
             "rel_exact_offset": [0, 0, 0],
-            # "rel_strict_exact_text": [0, 0, 0],
-            # "rel_strict_exact_offset": [0, 0, 0],
+        }
+        for idx, pred_sample in enumerate(pred_sample_list):
+            gold_sample = golden_sample_list[idx]
+            pred_rel_list = pred_sample["relation_list"]
+            gold_rel_list = gold_sample["relation_list"]
+            # try:
+            self._cal_rel_cpg(pred_rel_list, gold_rel_list, re_cpg_dict)
+            # except Exception:
+            #     pass
+        return re_cpg_dict
+
+    def get_ent_cpg_dict(self, pred_sample_list, golden_sample_list):
+        ent_cpg_dict = {
             "ent_partial_text": [0, 0, 0],
             "ent_partial_offset": [0, 0, 0],
             "ent_exact_text": [0, 0, 0],
@@ -368,15 +327,13 @@ class MetricsCalculator:
         }
         for idx, pred_sample in enumerate(pred_sample_list):
             gold_sample = golden_sample_list[idx]
-            pred_rel_list = pred_sample["relation_list"]
-            gold_rel_list = gold_sample["relation_list"]
             pred_ent_list = pred_sample["entity_list"]
             gold_ent_list = gold_sample["entity_list"]
             # try:
-            self._cal_rel_cpg(pred_rel_list, pred_ent_list, gold_rel_list, gold_ent_list, ere_cpg_dict)
+            self._cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict)
             # except Exception:
-            #     pass
-        return ere_cpg_dict
+            #     print("ent error")
+        return ent_cpg_dict
 
     def get_prf_scores(self, correct_num, pred_num, gold_num):
         '''
@@ -396,29 +353,30 @@ class MetricsCalculator:
         if data_filename != "":
             data_filename += "_"
 
-        # add keys to avoid key errors
-        for sample in golden_data:
-            for key in {"entity_list", "event_list", "relation_list"}:
-                if key not in sample:
-                    sample[key] = []
+        assert len(golden_data) > 0
+        golden_sample = golden_data[0]
+        # for sample in golden_data:
+        #     for key in {"entity_list", "event_list", "relation_list"}:
+        #         if key not in sample:
+        #             sample[key] = []
 
         total_cpg_dict = {}
-        if "re" in self.task_type:
-            # assert self.match_pattern is not None
-            cpg_dict = self.get_rel_cpg_dict(pred_data,
-                                             golden_data,
-                                             # self.match_pattern,
-                                             )
+        if "entity_list" in golden_sample:
+            cpg_dict = self.get_ent_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
-        if "ee" in self.task_type:
+        if "relation_list" in golden_sample:
+            cpg_dict = self.get_rel_cpg_dict(pred_data, golden_data)
+            total_cpg_dict = {**cpg_dict, **total_cpg_dict}
+
+        if "event_list" in golden_sample:
             cpg_dict = self.get_ee_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
         score_dict = {}
         for key, cpg in total_cpg_dict.items():
             prf = self.get_prf_scores(*cpg)
-            for idx, sct in enumerate(["prec", "recall", "f1"]):
+            for idx, sct in enumerate(["prec", "rec", "f1"]):
                 score_dict["{}{}_{}".format(data_filename, key, sct)] = round(prf[idx], 5)
 
         return score_dict
