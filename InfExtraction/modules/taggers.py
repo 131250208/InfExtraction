@@ -1131,7 +1131,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                             tok_span = [int(sp) for sp in tok_span]
                             char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
                             new_ent_list.append({
-                                "text": Preprocessor.extract_ent_by_char_sp(char_span, text, self.language),
+                                "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
                                 "type": ent_type,
                                 "char_span": char_span,
                                 "tok_span": tok_span,

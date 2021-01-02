@@ -4,9 +4,11 @@ import numpy as np
 import os
 from datetime import date
 import time
+from flair.embeddings import ELMoEmbeddings
 
 seed = 2333
 enable_bm = True
+
 
 def set_seed():
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -72,7 +74,8 @@ data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
 train_data = os.path.join(data_in_dir, exp_name, "train_data.json")
 valid_data = os.path.join(data_in_dir, exp_name, "valid_data.json")
-test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name))) # ["test_triples.json", ], ["test_data.json", ]
+test_data_list = glob(
+    "{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))  # ["test_triples.json", ], ["test_data.json", ]
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)
@@ -104,7 +107,7 @@ addtional_preprocessing_config = {
 # tagger config
 tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
-    "link_all_related_tokens": False,
+    "add_h2t_n_t2h_links": False,
 }
 
 # optimizers and schedulers
@@ -147,7 +150,7 @@ trainer_config = {
 }
 
 # pretrianed model state
-model_state_dict_path = None 
+model_state_dict_path = None
 
 # for test
 model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
@@ -166,10 +169,12 @@ char_encoder = False
 word_encoder = False
 subwd_encoder = True
 
+flair = False
+
 dep_gcn = False
 use_attns4rel = False
 
-token_level = "subword" # token is word or subword
+token_level = "subword"  # token is word or subword
 # subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
 # word: use stanza to get words, wich can be fed into both bilstm and bert
 
@@ -189,9 +194,9 @@ char_encoder_config = {
     "char_size": statistics["char_num"],
     "emb_dim": 16,
     "emb_dropout": 0.1,
-    "bilstm_layers": [1, 1], # layer num in bilstm1 and bilstm2
-    "bilstm_hidden_size": [16, 32], # hidden sizes of bilstm1 and bilstm2
-    "bilstm_dropout": [0., 0.1, 0.], # dropout rates for bilstm1, middle dropout layer, bilstm2
+    "bilstm_layers": [1, 1],  # layer num in bilstm1 and bilstm2
+    "bilstm_hidden_size": [16, 32],  # hidden sizes of bilstm1 and bilstm2
+    "bilstm_dropout": [0., 0.1, 0.],  # dropout rates for bilstm1, middle dropout layer, bilstm2
     "max_char_num_in_tok": 16,
 } if char_encoder else None
 
@@ -205,6 +210,15 @@ word_encoder_config = {
     "bilstm_dropout": [0., 0.1, 0.],
     "freeze_word_emb": False,
 } if word_encoder else None
+
+flair_config = {
+    "embedding_models": [
+        {
+            "model_name": "ELMoEmbeddings",
+            "parameters": [],
+        },
+    ]
+} if flair else None
 
 subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
@@ -234,6 +248,7 @@ model_settings = {
     "char_encoder_config": char_encoder_config,
     "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
+    "flair_config": flair_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
@@ -278,4 +293,3 @@ config_to_log = {
     "combine_split": combine,
     "use_ghm": use_ghm,
 }
-

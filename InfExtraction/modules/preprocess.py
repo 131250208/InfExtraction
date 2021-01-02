@@ -717,7 +717,7 @@ class Preprocessor:
                 #     ch_sp = [ent_char_span[idx], ent_char_span[idx + 1]]
                 #     segs.append(text[ch_sp[0]:ch_sp[1]])
                 # sep = " " if language == "en" else ""
-                ent_ext_fr_span = Preprocessor.extract_ent_by_char_sp(ent["char_span"], text, language)
+                ent_ext_fr_span = Preprocessor.extract_ent_fr_txt_by_char_sp(ent["char_span"], text, language)
                 if ent["text"] != ent_ext_fr_span:
                     raise Exception("char span error: ent_text: {} != ent_ext_fr_span: {}".format(ent["text"],
                                                                                                   ent_ext_fr_span))
@@ -888,7 +888,7 @@ class Preprocessor:
         return data
 
     @staticmethod
-    def extract_ent_by_char_sp(char_span, text, language):
+    def extract_ent_fr_txt_by_char_sp(char_span, text, language):
         sep = " " if language == "en" else ""
         segs = []
         for idx in range(0, len(char_span), 2):
@@ -906,9 +906,18 @@ class Preprocessor:
         return char_span
 
     @staticmethod
-    def extract_ent_by_tok_sp(tok_span, tok2char_span, text, language):
+    def extract_ent_fr_txt_by_tok_sp(tok_span, tok2char_span, text, language):
         char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-        return Preprocessor.extract_ent_by_char_sp(char_span, text, language)
+        return Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, language)
+
+    @staticmethod
+    def extract_ent_fr_toks(tok_span, toks, language):
+        sep = " " if language == "en" else ""
+        segs = []
+        for idx in range(0, len(tok_span), 2):
+            tk_sp = [tok_span[idx], tok_span[idx + 1]]
+            segs.append(sep.join(toks[tk_sp[0]:tk_sp[1]]))
+        return sep.join(segs)
 
     @staticmethod
     def check_tok_span(data, language):
@@ -930,8 +939,8 @@ class Preprocessor:
                 for ent in sample["entity_list"]:
                     word_span = ent["wd_span"]
                     subword_span = ent["subwd_span"]
-                    ent_wd = Preprocessor.extract_ent_by_tok_sp(word_span, word2char_span, text, language)
-                    ent_subwd = Preprocessor.extract_ent_by_tok_sp(subword_span, subword2char_span, text, language)
+                    ent_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(word_span, word2char_span, text, language)
+                    ent_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(subword_span, subword2char_span, text, language)
 
                     if not (ent_wd == ent_subwd == ent["text"]):
                         bad_ent = copy.deepcopy(ent)
@@ -949,10 +958,10 @@ class Preprocessor:
                     subj_subwd_span = rel["subj_subwd_span"]
                     obj_subwd_span = rel["obj_subwd_span"]
 
-                    subj_wd = Preprocessor.extract_ent_by_tok_sp(subj_wd_span, word2char_span, text, language)
-                    obj_wd = Preprocessor.extract_ent_by_tok_sp(obj_wd_span, word2char_span, text, language)
-                    subj_subwd = Preprocessor.extract_ent_by_tok_sp(subj_subwd_span, subword2char_span, text, language)
-                    obj_subwd = Preprocessor.extract_ent_by_tok_sp(obj_subwd_span, subword2char_span, text, language)
+                    subj_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(subj_wd_span, word2char_span, text, language)
+                    obj_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(obj_wd_span, word2char_span, text, language)
+                    subj_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(subj_subwd_span, subword2char_span, text, language)
+                    obj_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(obj_subwd_span, subword2char_span, text, language)
 
                     if not (subj_wd == rel["subject"] == subj_subwd and obj_wd == rel["object"] == obj_subwd):
                         bad_rel = copy.deepcopy(rel)
@@ -971,8 +980,8 @@ class Preprocessor:
                     bad = False
                     trigger_wd_span = event["trigger_wd_span"]
                     trigger_subwd_span = event["trigger_subwd_span"]
-                    trigger_wd = Preprocessor.extract_ent_by_tok_sp(trigger_wd_span, word2char_span, text, language)
-                    trigger_subwd = Preprocessor.extract_ent_by_tok_sp(trigger_subwd_span, subword2char_span, text, language)
+                    trigger_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_wd_span, word2char_span, text, language)
+                    trigger_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_subwd_span, subword2char_span, text, language)
 
                     if not (trigger_wd == trigger_subwd == event["trigger"]):
                         bad = True
@@ -982,8 +991,8 @@ class Preprocessor:
                     for arg in event_cp["argument_list"]:
                         arg_wd_span = arg["wd_span"]
                         arg_subwd_span = arg["subwd_span"]
-                        arg_wd = Preprocessor.extract_ent_by_tok_sp(arg_wd_span, word2char_span, text, language)
-                        arg_subwd = Preprocessor.extract_ent_by_tok_sp(arg_subwd_span, subword2char_span, text, language)
+                        arg_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(arg_wd_span, word2char_span, text, language)
+                        arg_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(arg_subwd_span, subword2char_span, text, language)
 
                         if not (arg_wd == arg_subwd == arg["text"]):
                             bad = True
@@ -1381,8 +1390,12 @@ class Preprocessor:
                 tok_level_offset, char_level_offset = start_ind, char_span[0]
 
                 # split features
-                split_features = {"word_list": features["word_list"][start_ind:end_ind],
-                                  "subword_list": features["subword_list"][start_ind:end_ind],
+                short_word_list = features["word_list"][start_ind:end_ind]
+                # short_word_list += ["[PAD]"] * (max_seq_len - len(short_word_list))
+                short_subword_list = features["subword_list"][start_ind:end_ind]
+                # short_subword_list += ["[PAD]"] * (max_seq_len - len(short_subword_list))
+                split_features = {"word_list": short_word_list,
+                                  "subword_list": short_subword_list,
                                   "tok2char_span": [[char_sp[0] - char_level_offset, char_sp[1] - char_level_offset]
                                                     for char_sp in features["tok2char_span"][start_ind:end_ind]],
                                   # "pos_tag_list": features["pos_tag_list"][start_ind:end_ind],
@@ -1634,8 +1647,8 @@ class Preprocessor:
             bad_events = []
             if "entity_list" in sample:
                 for ent in sample["entity_list"]:
-                    extr_ent = Preprocessor.extract_ent_by_tok_sp(ent["tok_span"], tok2char_span, text, language)
-                    extr_ent_c = Preprocessor.extract_ent_by_char_sp(ent["char_span"], text, language)
+                    extr_ent = Preprocessor.extract_ent_fr_txt_by_tok_sp(ent["tok_span"], tok2char_span, text, language)
+                    extr_ent_c = Preprocessor.extract_ent_fr_txt_by_char_sp(ent["char_span"], text, language)
 
                     if not (extr_ent == ent["text"] == extr_ent_c):
                         bad_ent = copy.deepcopy(ent)
@@ -1648,10 +1661,10 @@ class Preprocessor:
 
             if "relation_list" in sample:
                 for rel in sample["relation_list"]:
-                    extr_subj = Preprocessor.extract_ent_by_tok_sp(rel["subj_tok_span"], tok2char_span, text, language)
-                    extr_obj = Preprocessor.extract_ent_by_tok_sp(rel["obj_tok_span"], tok2char_span, text, language)
-                    extr_subj_c = Preprocessor.extract_ent_by_char_sp(rel["subj_char_span"], text, language)
-                    extr_obj_c = Preprocessor.extract_ent_by_char_sp(rel["obj_char_span"], text, language)
+                    extr_subj = Preprocessor.extract_ent_fr_txt_by_tok_sp(rel["subj_tok_span"], tok2char_span, text, language)
+                    extr_obj = Preprocessor.extract_ent_fr_txt_by_tok_sp(rel["obj_tok_span"], tok2char_span, text, language)
+                    extr_subj_c = Preprocessor.extract_ent_fr_txt_by_char_sp(rel["subj_char_span"], text, language)
+                    extr_obj_c = Preprocessor.extract_ent_fr_txt_by_char_sp(rel["obj_char_span"], text, language)
 
                     if not (extr_subj == rel["subject"] == extr_subj_c and extr_obj == rel["object"] == extr_obj_c):
                         bad_rel = copy.deepcopy(rel)
@@ -1667,8 +1680,8 @@ class Preprocessor:
                     bad_event = copy.deepcopy(event)
                     bad = False
                     trigger_tok_span = event["trigger_tok_span"]
-                    extr_trigger = Preprocessor.extract_ent_by_tok_sp(trigger_tok_span, tok2char_span, text, language)
-                    extr_trigger_c = Preprocessor.extract_ent_by_char_sp(event["trigger_char_span"], text, language)
+                    extr_trigger = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_tok_span, tok2char_span, text, language)
+                    extr_trigger_c = Preprocessor.extract_ent_fr_txt_by_char_sp(event["trigger_char_span"], text, language)
                     if not (extr_trigger == event["trigger"] == extr_trigger_c):
                         bad = True
                         bad_event["extr_trigger"] = extr_trigger
@@ -1676,8 +1689,8 @@ class Preprocessor:
 
                     for arg in event["argument_list"]:
                         arg_span = arg["tok_span"]
-                        extr_arg = Preprocessor.extract_ent_by_tok_sp(arg_span, tok2char_span, text, language)
-                        extr_arg_c = Preprocessor.extract_ent_by_char_sp(arg["char_span"], text, language)
+                        extr_arg = Preprocessor.extract_ent_fr_txt_by_tok_sp(arg_span, tok2char_span, text, language)
+                        extr_arg_c = Preprocessor.extract_ent_fr_txt_by_char_sp(arg["char_span"], text, language)
                         if not (extr_arg == arg["text"] == extr_arg_c):
                             bad = True
                             bad_event["extr_arg"] = extr_arg
@@ -1697,8 +1710,9 @@ class Preprocessor:
         return sample_id2mismatched_ents
 
     @staticmethod
-    def index_features(data, key2dict, max_seq_len, max_char_num_in_tok=None):
+    def index_features(data, language, key2dict, max_seq_len, max_char_num_in_tok=None):
         '''
+        :param language:
         :param data:
         :param key2dict: feature key to dict for indexing
         :param max_seq_len:
@@ -1723,7 +1737,12 @@ class Preprocessor:
             features["attention_mask"] = [1] * len(features["tok2char_span"])
             features["char_list"] = list(sample["text"])
 
-            indexed_features = {}
+            sep = " " if language == "en" else ""
+            features["word_list"] += ["[PAD]"] * (max_seq_len - len(features["word_list"]))
+            fin_features = {
+                "padded_text": sep.join(features["word_list"]),
+                "word_list": features["word_list"],
+            }
             for f_key, tags in features.items():
                 # features need indexing and padding
                 if f_key in key2dict.keys():
@@ -1736,7 +1755,7 @@ class Preprocessor:
 
                     indexer = Indexer(tag2id, max_seq_len, spe_tag_dict)
                     if f_key == "dependency_list":
-                        indexed_features[key_map[f_key]] = indexer.index_tag_list_w_matrix_pos(tags)
+                        fin_features[key_map[f_key]] = indexer.index_tag_list_w_matrix_pos(tags)
                     elif f_key == "char_list" and max_char_num_in_tok is not None:
                         char_input_ids = indexer.index_tag_list(tags)
                         # padding character ids
@@ -1749,16 +1768,16 @@ class Preprocessor:
                             else:
                                 char_ids = char_ids[:max_char_num_in_tok]
                             char_input_ids_padded.extend(char_ids)
-                        indexed_features[key_map[f_key]] = torch.LongTensor(char_input_ids_padded)
+                        fin_features[key_map[f_key]] = torch.LongTensor(char_input_ids_padded)
                     else:
-                        indexed_features[key_map[f_key]] = torch.LongTensor(indexer.index_tag_list(tags))
+                        fin_features[key_map[f_key]] = torch.LongTensor(indexer.index_tag_list(tags))
 
                 # features only need padding
                 elif f_key in {"token_type_ids", "attention_mask"}:
-                    indexed_features[f_key] = torch.LongTensor(Indexer.pad2length(tags, 0, max_seq_len))
+                    fin_features[f_key] = torch.LongTensor(Indexer.pad2length(tags, 0, max_seq_len))
                 elif f_key == "tok2char_span":
-                    indexed_features[f_key] = Indexer.pad2length(tags, [0, 0], max_seq_len)
-            sample["features"] = indexed_features
+                    fin_features[f_key] = Indexer.pad2length(tags, [0, 0], max_seq_len)
+            sample["features"] = fin_features
         return data
 
 
