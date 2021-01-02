@@ -129,8 +129,10 @@ if __name__ == "__main__":
     # data
     data_in_dir = settings.data_in_dir
     data_out_dir = settings.data_out_dir
-    train_data_path = settings.train_data
-    valid_data_path = settings.valid_data
+    ori_train_data = settings.train_data
+    ori_valid_data = settings.valid_data
+    filename2ori_test_data = settings.filename2ori_test_data
+
     dicts = settings.dicts
     statistics = settings.statistics
     key2dict = settings.key2dict  # map from feature key to indexing dict
@@ -212,15 +214,6 @@ if __name__ == "__main__":
 
     # reset settings from args
     # ...
-
-    # load data
-    ori_train_data = load_data(train_data_path)
-    ori_valid_data = load_data(valid_data_path)
-    filename2ori_test_data = {}
-    for test_data_path in settings.test_data_list:
-        filename = test_data_path.split("/")[-1]
-        ori_test_data = load_data(test_data_path)
-        filename2ori_test_data[filename] = ori_test_data
 
     # choose features and spans by token level
     ori_train_data = Preprocessor.choose_features_by_token_level(ori_train_data, token_level)

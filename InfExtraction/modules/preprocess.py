@@ -260,7 +260,7 @@ class WhiteWordTokenizer:
         tok2char_span = []
         char_num = 0
         for tok in tokens:
-            tok2char_span.append((char_num, char_num + len(tok)))
+            tok2char_span.append([char_num, char_num + len(tok)])
             char_num += len(tok) + 1  # +1: whitespace
         return tok2char_span
 
