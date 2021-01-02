@@ -11,7 +11,6 @@ Train the model
 '''
 from InfExtraction.modules.preprocess import Preprocessor
 from InfExtraction.modules import taggers
-from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
 from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data, save_as_json_lines
@@ -66,7 +65,6 @@ def get_dataloader(data,
     if len(sample_id2mismatched) > 0:
         logging.warning("mismatch errors in {}".format(data_type))
         pprint(sample_id2mismatched)
-    # check decoding
 
     # inexing
     indexed_data = Preprocessor.index_features(data,
@@ -268,6 +266,7 @@ if __name__ == "__main__":
 
     # model
     print("init model...")
+    from InfExtraction.modules import models
     model_class_name = getattr(models, model_name)
     model = model_class_name(tagger, metrics_cal, **model_settings)
     model = model.to(device)
