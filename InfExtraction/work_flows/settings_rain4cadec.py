@@ -7,6 +7,7 @@ import random
 import numpy as np
 from datetime import date
 import time
+from InfExtraction.modules.utils import load_data
 
 seed = 2333
 enable_bm = True
@@ -73,10 +74,22 @@ sliding_len_test = 20
 # data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
-train_data = os.path.join(data_in_dir, exp_name, "train_data.json")
-valid_data = os.path.join(data_in_dir, exp_name, "valid_data.json")
-test_data_list = glob(
-    "{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))  # ["test_triples.json", ], ["test_data.json", ]
+train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
+valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
+
+data4checking = copy.deepcopy(train_data)
+random.shuffle(data4checking)
+checking_num = 1000
+data4checking = data4checking[:checking_num]
+# data4checking = valid_data
+
+test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+filename2ori_test_data = {}
+for test_data_path in test_data_list:
+    filename = test_data_path.split("/")[-1]
+    ori_test_data = load_data(test_data_path)
+    filename2ori_test_data[filename] = ori_test_data
+
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)
@@ -103,6 +116,8 @@ addtional_preprocessing_config = {
     "classify_entities_by_relation": False,  # ee, re
     "add_nested_relation": False,  # ner
     "add_same_type_relation": False,  # ner
+    "add_next_link": False,  # if set to False, can not cover all cases. e.g. ent1: A -> B -> C. ent 2: B -> C,
+                             # only ent 1 will be extracted by clique finding
 }
 
 # tagger config
@@ -110,6 +125,7 @@ tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "add_h2t_n_t2h_links": True,
     "language": "en",
+    "add_next_link": addtional_preprocessing_config["add_next_link"],
 }
 
 # optimizers and schedulers
@@ -257,8 +273,9 @@ model_settings = {
     "rel_dim": 768,
     "do_span_len_emb": True,
     "emb_ent_info2rel": True,
-    "golden_ent_cla_guide": True,
-    "loss_weight_recover_steps": 6000,
+    "golden_ent_cla_guide": False,
+    "loss_weight": 0.3,
+    "loss_weight_recover_steps": 0,
 }
 
 model_settings_log = copy.deepcopy(model_settings)
