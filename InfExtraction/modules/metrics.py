@@ -210,12 +210,6 @@ class MetricsCalculator:
         '''
         cpg is a list: [correct_num, pred_num, gold_num]
         '''
-        # for mark_str in pred_set:
-        #     if mark_str in gold_set:
-        #         cpg[0] += 1
-        #     else:
-        #         raise Exception("debug")
-
         correct_num = 0
         for mark_str in pred_set:
             if mark_str in gold_set:
@@ -354,10 +348,6 @@ class MetricsCalculator:
 
         assert len(golden_data) > 0
         golden_sample = golden_data[0]
-        # for sample in golden_data:
-        #     for key in {"entity_list", "event_list", "relation_list"}:
-        #         if key not in sample:
-        #             sample[key] = []
 
         total_cpg_dict = {}
         if "entity_list" in golden_sample:
@@ -371,6 +361,9 @@ class MetricsCalculator:
         if "event_list" in golden_sample:
             cpg_dict = self.get_ee_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
+
+        # if "open_spo_list" in golden_sample:
+        #     cpg_dict = self.get_oie_scores
 
         score_dict = {}
         for key, cpg in total_cpg_dict.items():

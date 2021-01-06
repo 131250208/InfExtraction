@@ -428,6 +428,7 @@ class RAIN(IEModel):
                  emb_ent_info2rel=False,
                  golden_ent_cla_guide=False,
                  loss_weight_recover_steps=None,
+                 loss_weight=.5,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -435,6 +436,7 @@ class RAIN(IEModel):
         self.ent_tag_size, self.rel_tag_size = tagger.get_tag_size()
         self.loss_weight_recover_steps = loss_weight_recover_steps
         self.metrics_cal = metrics_cal
+        self.loss_weight = loss_weight
 
         self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
         self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
@@ -612,7 +614,7 @@ class RAIN(IEModel):
 
         total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
         current_step = self.bp_steps
-        ori_w_ent, ori_w_rel = 1 / 2, 1 / 2
+        ori_w_ent, ori_w_rel = self.loss_weight, 1 - self.loss_weight
         w_ent = max(1 - ori_w_ent * current_step / total_steps, ori_w_ent)
         w_rel = min(ori_w_rel * current_step / total_steps, ori_w_rel)
 
