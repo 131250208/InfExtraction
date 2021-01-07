@@ -1,7 +1,7 @@
 import torch
 import re
 import copy
-
+from InfExtraction.modules.ancient_eval4oie import OIEMetrics
 
 class MetricsCalculator:
     def __init__(self,
@@ -100,7 +100,8 @@ class MetricsCalculator:
 
         return sample_acc
 
-    def _get_mark_sets_ee(self, event_list):
+    @staticmethod
+    def _get_mark_sets_ee(event_list):
         trigger_iden_set, trigger_class_set = set(), set()
         arg_hard_iden_set, arg_hard_class_set = set(), set()  # consider trigger offset
         arg_soft_iden_set, arg_soft_class_set = set(), set()  # do not consider trigger offset
@@ -206,7 +207,8 @@ class MetricsCalculator:
             "rel_exact_offset": rel_exact_offset_set,
         }
 
-    def _cal_cpg(self, pred_set, gold_set, cpg):
+    @staticmethod
+    def _cal_cpg(pred_set, gold_set, cpg):
         '''
         cpg is a list: [correct_num, pred_num, gold_num]
         '''
@@ -254,7 +256,8 @@ class MetricsCalculator:
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
             self._cal_cpg(pred_set, gold_set, re_cpg_dict[key])
 
-    def _cal_ee_cpg(self, pred_event_list, gold_event_list, ee_cpg_dict):
+    @staticmethod
+    def _cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict):
         '''
         ee_cpg_dict = {
             "trigger_iden": [0, 0, 0],
@@ -267,13 +270,14 @@ class MetricsCalculator:
             "arg_link_class": [0, 0, 0],
         }
         '''
-        pred_set_dict = self._get_mark_sets_ee(pred_event_list)
-        gold_set_dict = self._get_mark_sets_ee(gold_event_list)
+        pred_set_dict = MetricsCalculator._get_mark_sets_ee(pred_event_list)
+        gold_set_dict = MetricsCalculator._get_mark_sets_ee(gold_event_list)
         for key in ee_cpg_dict.keys():
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
-            self._cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
+            MetricsCalculator._cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
 
-    def get_ee_cpg_dict(self, pred_sample_list, golden_sample_list):
+    @staticmethod
+    def get_ee_cpg_dict(pred_sample_list, golden_sample_list):
         ee_cpg_dict = {
             "trigger_iden": [0, 0, 0],
             "trigger_class": [0, 0, 0],
@@ -289,7 +293,7 @@ class MetricsCalculator:
             pred_event_list = pred_sample["event_list"]
             gold_event_list = gold_sample["event_list"]
             # try:
-            self._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
+            MetricsCalculator._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
             # except Exception as e:
             #     print("event error!")
         return ee_cpg_dict
@@ -327,6 +331,19 @@ class MetricsCalculator:
             # except Exception:
             #     print("ent error")
         return ent_cpg_dict
+
+    def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
+        auc, prfc, _ = OIEMetrics.compare(pred_sample_list,
+                                          golden_sample_list,
+                                          OIEMetrics.binary_linient_tuple_match)
+
+        return {
+            "auc": auc,
+            "precision": prfc[0],
+            "recall": prfc[1],
+            "f1": prfc[2],
+            "confidence_threshold": prfc[3],
+        }
 
     def get_prf_scores(self, correct_num, pred_num, gold_num):
         '''
@@ -366,9 +383,13 @@ class MetricsCalculator:
         #     cpg_dict = self.get_oie_scores
 
         score_dict = {}
-        for key, cpg in total_cpg_dict.items():
+        for sc_pattern, cpg in total_cpg_dict.items():
             prf = self.get_prf_scores(*cpg)
             for idx, sct in enumerate(["prec", "rec", "f1"]):
-                score_dict["{}{}_{}".format(data_filename, key, sct)] = round(prf[idx], 5)
+                score_dict["{}{}_{}".format(data_filename, sc_pattern, sct)] = round(prf[idx], 5)
 
+        if "open_spo_list" in golden_sample:
+            oie_score_dict = self.get_ioe_score_dict(golden_data, golden_data)
+            for sct, val in oie_score_dict.items():
+                score_dict["{}{}".format(data_filename, sct)] = round(val, 5)
         return score_dict

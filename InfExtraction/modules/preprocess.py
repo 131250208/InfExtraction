@@ -406,9 +406,12 @@ class Preprocessor:
         out_list = []
         memory = set()
         for item in inp_list:
-            if str(item) not in memory:
+            mem = str(item)
+            if type(item) is dict:
+                mem = str(dict(sorted(item.items())))
+            if mem not in memory:
                 out_list.append(item)
-                memory.add(str(item))
+                memory.add(mem)
         return out_list
 
     @staticmethod
@@ -854,6 +857,8 @@ class Preprocessor:
         def char_span2tok_span(char_span, char2tok_span):
             tok_span = []
             for idx in range(0, len(char_span), 2):  # len(char_span) > 2 if discontinuous entity
+                if char_span[-1] == 0:
+                    return char_span
                 ch_sp = [char_span[idx], char_span[idx + 1]]
                 tok_span_list = char2tok_span[ch_sp[0]:ch_sp[1]]
                 tok_span.extend([tok_span_list[0][0], tok_span_list[-1][1]])
@@ -1003,7 +1008,7 @@ class Preprocessor:
         return new_spans, add_text
 
     @staticmethod
-    def extract_ent_fr_txt_by_char_sp(char_span, text, language):
+    def extract_ent_fr_txt_by_char_sp(char_span, text, language=None):
         sep = " " if language == "en" else ""
         segs = []
         for idx in range(0, len(char_span), 2):
@@ -1016,6 +1021,8 @@ class Preprocessor:
         char_span = []
         for idx in range(0, len(tok_span), 2):
             tk_sp = [tok_span[idx], tok_span[idx + 1]]
+            if tk_sp[-1] == 0:
+                return tok_span
             char_span_list = tok2char_span[tk_sp[0]:tk_sp[1]]
             char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
         return char_span

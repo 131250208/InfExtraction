@@ -997,13 +997,12 @@ class TPLinkerTree(IEModel):
         }
 
 
-class SelfAttentionTriggerFreeEE(IEModel):
+class TFBoys(IEModel):
     def __init__(self,
                  tagger,
                  metrics_cal,
                  handshaking_kernel_config=None,
                  fin_hidden_size=None,
-                 conv_config=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -1020,25 +1019,11 @@ class SelfAttentionTriggerFreeEE(IEModel):
                                                     only_look_after=False,  # full handshaking
                                                     )
 
-        # # learn local info
-        # self.conv_config = conv_config
-        # if conv_config is not None:
-        #     self.convs = nn.ModuleList()
-        #     conv_layers = conv_config["conv_layers"]
-        #     conv_kernel_size = conv_config["conv_kernel_size"]
-        #     conv_padding = (conv_kernel_size - 1) // 2
-        #
-        #     for _ in range(conv_layers):
-        #         self.convs.append(nn.Conv2d(fin_hidden_size,
-        #                                     fin_hidden_size,
-        #                                     conv_kernel_size,
-        #                                     padding=conv_padding))
-
         # decoding fc
         self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
 
     def generate_batch(self, batch_data):
-        batch_dict = super(SelfAttentionTriggerFreeEE, self).generate_batch(batch_data)
+        batch_dict = super(TFBoys, self).generate_batch(batch_data)
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
         # shaking tag
         tag_points_batch = [sample["tag_points"] for sample in batch_data]
@@ -1047,18 +1032,13 @@ class SelfAttentionTriggerFreeEE(IEModel):
         return batch_dict
 
     def forward(self, **kwargs):
-        super(SelfAttentionTriggerFreeEE, self).forward()
+        super(TFBoys, self).forward()
 
         cat_hiddens = self._cat_features(**kwargs)
         cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
 
         shaking_hiddens = self.handshaking_kernel(cat_hiddens, cat_hiddens)
 
-        # if self.conv_config is not None:
-        #     for conv in self.convs:
-        #         shaking_hiddens = conv(shaking_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
-
-        # predicted_oudtuts: (batch_size, shaking_seq_len, tag_num)
         predicted_oudtuts = self.dec_fc(shaking_hiddens)
 
         return predicted_oudtuts

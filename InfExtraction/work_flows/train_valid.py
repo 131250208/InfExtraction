@@ -231,6 +231,8 @@ if __name__ == "__main__":
     tagger_class_name = getattr(taggers, tagger_name)
     if task_type == "re+ee":
         tagger_class_name = taggers.create_rebased_ee_tagger(tagger_class_name)
+    elif task_type == "re+oie":
+        tagger_class_name = taggers.create_rebased_oie_tagger(tagger_class_name)
     elif task_type == "disc_ner":
         tagger_class_name = taggers.create_rebased_discontinuous_ner_tagger(tagger_class_name)
 
