@@ -235,15 +235,12 @@ if __name__ == "__main__":
         tagger_class_name = taggers.create_rebased_oie_tagger(tagger_class_name)
     elif task_type == "disc_ner":
         tagger_class_name = taggers.create_rebased_discontinuous_ner_tagger(tagger_class_name)
-
-
-    # elif task_type == "re+ner":
-    #     tagger_class_name = taggers.create_rebased_ner_tagger(tagger_class_name)
+    elif task_type == "re+tfboys":
+        tagger_class_name = taggers.create_rebased_tfboys_tagger(tagger_class_name)
 
     # additional preprocessing
     def additional_preprocess(data, data_type):
         return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
-
 
     train_data = additional_preprocess(ori_train_data, "train")
     valid_data = additional_preprocess(ori_valid_data, "valid")
