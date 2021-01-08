@@ -155,7 +155,11 @@ class Evaluator:
             del batch_predict_data["golden_tags"]
 
         for k, v in batch_predict_data.items():
-            batch_predict_data[k] = v.to(self.device)
+            if k == "padded_text_list":
+                for sent in v:
+                    sent.to(self.device)
+            else:
+                batch_predict_data[k] = v.to(self.device)
 
         with torch.no_grad():
             pred_outputs = self.model(**batch_predict_data)
