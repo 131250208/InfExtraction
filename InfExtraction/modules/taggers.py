@@ -1476,7 +1476,7 @@ def create_rebased_oie_tagger(base_class):
 #     return REBasedNERTagger
 
 
-class TaggerSelfAtEE(Tagger):
+class Tagger4TriggerFreeEELu(Tagger):
     def __init__(self, data):
         '''
         :param data: all data, used to generate entity type and relation type dicts
@@ -1485,7 +1485,7 @@ class TaggerSelfAtEE(Tagger):
         # generate unified tag
         tag_set = set()
         self.separator = "\u2E80"
-        for sample in data:
+        for sample in tqdm(data, desc="generate tag set"):
             tag_triplets = self._get_tags(sample)
             tag_set |= {t[-1] for t in tag_triplets}
 
@@ -1794,7 +1794,7 @@ class TaggerSelfAtEE(Tagger):
         return pred_sample
 
 
-# class Tagger4TFBoys(TaggerSelfAtEE):
+# class Tagger4TFBoys(Tagger4TriggerFreeEELu):
 #     def decode(self, sample, pred_tags):
 #         predicted_matrix_tag = pred_tags[0]
 #         matrix_points = Indexer.matrix2points(predicted_matrix_tag)
@@ -1893,7 +1893,7 @@ class TaggerSelfAtEE(Tagger):
 from collections import Counter
 
 
-class Tagger4TFBoys(TaggerSelfAtEE):
+class Tagger4TFBoys(Tagger4TriggerFreeEELu):
     def _get_tags(self, sample):
         tag_list = []
         event_list = sample["event_list"]
