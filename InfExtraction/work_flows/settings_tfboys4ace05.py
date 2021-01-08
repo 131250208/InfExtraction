@@ -78,11 +78,10 @@ data_out_dir = "../../data/res_data"
 train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
 valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
 
-data4checking = copy.deepcopy(train_data)
+data4checking = copy.deepcopy(valid_data)
 random.shuffle(data4checking)
 checking_num = 1000
 data4checking = data4checking[:checking_num]
-# data4checking = valid_data
 
 test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
@@ -251,7 +250,8 @@ model_settings = {
     "flair_config": flair_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "fin_hidden_size": 768,
+    "event_con_dim": 768,
+    "vis_dim": 768,
 }
 
 model_settings_log = copy.deepcopy(model_settings)
