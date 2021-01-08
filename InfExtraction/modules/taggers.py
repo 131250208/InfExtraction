@@ -393,6 +393,8 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
             })
             self.add_h2t_n_t2h_links = True
 
+        # self.output_ent_length = kwargs["output_ent_length"]
+
         self.rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
         ent_link_types = {"EH2ET"}
 
@@ -419,7 +421,8 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         matrix_points: [(tok_pos1, tok_pos2, tag_id), ]
         '''
         ent_matrix_points, rel_matrix_points = [], []
-
+        # if self.output_ent_length:
+        #     len_matrix_points = []
         if "entity_list" in sample:
             for ent in sample["entity_list"]:
                 point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
@@ -432,16 +435,16 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 obj_tok_span = rel["obj_tok_span"]
                 rel = rel["predicate"]
 
-                if self.filter_by_cliques:
-                    clique = list(range(*subj_tok_span)) + list(range(*obj_tok_span))
-                    for i in clique:
-                        for j in clique:
-                            if i == j:
-                                continue
-                            point = (i, j, self.rel_tag2id[self.separator.join([rel, "CLI"])])
-                            rel_matrix_points.append(point)
-                            # point = (j, i, self.rel_tag2id[self.separator.join([rel, "O2S"])])
-                            # rel_matrix_points.append(point)
+                # if self.filter_by_cliques:
+                #     clique = list(range(*subj_tok_span)) + list(range(*obj_tok_span))
+                #     for i in clique:
+                #         for j in clique:
+                #             if i == j:
+                #                 continue
+                #             point = (i, j, self.rel_tag2id[self.separator.join([rel, "CLI"])])
+                #             rel_matrix_points.append(point)
+                #             # point = (j, i, self.rel_tag2id[self.separator.join([rel, "O2S"])])
+                #             # rel_matrix_points.append(point)
 
                 # add related boundaries
                 rel_matrix_points.append(
@@ -452,6 +455,11 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                     (subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "ST2OT"])]))
                 rel_matrix_points.append(
                     (obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OT2ST"])]))
+
+                # if self.output_ent_length:
+                #     ent_len_sum = subj_tok_span[-1] - subj_tok_span[0] + obj_tok_span[-1] - obj_tok_span[0]
+                #     ent_matrix_points.append(
+                #         (subj_tok_span[0], obj_tok_span[1] - 1, ent_len_sum))
 
                 if self.add_h2t_n_t2h_links:
                     rel_matrix_points.append(

@@ -423,7 +423,7 @@ class RAIN(IEModel):
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  rel_dim=None,
-                 use_attns4rel=None,
+                 use_attns4rel=False,
                  do_span_len_emb=False,
                  emb_ent_info2rel=False,
                  golden_ent_cla_guide=False,
@@ -454,7 +454,7 @@ class RAIN(IEModel):
                                                                     )
 
         self.use_attns4rel = use_attns4rel
-        if use_attns4rel is not None:
+        if use_attns4rel:
             self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
                                       rel_dim,
                                       )
