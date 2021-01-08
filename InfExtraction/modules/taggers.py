@@ -1894,6 +1894,29 @@ from collections import Counter
 
 
 class Tagger4TFBoys(TaggerSelfAtEE):
+    def _get_tags(self, sample):
+        tag_list = []
+        event_list = sample["event_list"]
+
+        for event in event_list:
+            event_type = event["trigger_type"]
+            pseudo_argument = {
+                "type": "Trigger",
+                "tok_span": event["trigger_tok_span"],
+            }
+            argument_list = [pseudo_argument, ] + event["argument_list"]
+            for arg_i in argument_list:
+                for arg_j in argument_list:
+                    arg_type = arg_j["type"]
+                    ea_tag = "{}{}{}".format(event_type, self.separator, arg_type)
+                    for i in range(*arg_i["tok_span"]):
+                        tag_list.append([i, arg_j["tok_span"][0], "{}{}{}".format(ea_tag, self.separator, "B")])
+                        tag_list.append([i, arg_j["tok_span"][-1] - 1, "{}{}{}".format(ea_tag, self.separator, "E")])
+                        for j in range(*arg_j["tok_span"]):
+                            eap_tag = "{}{}{}".format(ea_tag, self.separator, "C")  # in a clique
+                            tag_list.append([i, j, eap_tag])
+        return tag_list
+
     def decode(self, sample, pred_tags):
         predicted_matrix_tag = pred_tags[0]
         matrix_points = Indexer.matrix2points(predicted_matrix_tag)
@@ -1905,45 +1928,54 @@ class Tagger4TFBoys(TaggerSelfAtEE):
         event2graph = {}
         for pt in matrix_points:
             tag = self.id2tag[pt[2]]
-            event_type, arg_role, bio_tag = tag.split(self.separator)
+            event_type, arg_role, last_tag = tag.split(self.separator)
             if event_type not in event2tag_matrix:
                 event2tag_matrix[event_type] = [[[] for i in range(token_num)] for j in range(token_num)]
                 event2graph[event_type] = nx.Graph()
-            event2tag_matrix[event_type][pt[0]][pt[1]].append(self.separator.join([arg_role, bio_tag]))
-            if pt[0] != pt[1]:
+
+            if last_tag == "C" and pt[0] != pt[1]:
                 event2graph[event_type].add_edge(pt[0], pt[1])
-            else:
+            elif last_tag == "C" and pt[0] == pt[1]:
                 event2graph[event_type].add_node(pt[0])
+            else:
+                assert last_tag in {"B", "E"}
+                event2tag_matrix[event_type][pt[0]][pt[1]].append(self.separator.join([arg_role, last_tag]))
 
         event_list = []
         for event_type, graph in event2graph.items():
             tag_matrix = event2tag_matrix[event_type]
 
-            cliques = list(nx.find_cliques(graph)) # all maximal cliques
+            cliques = list(nx.find_cliques(graph))  # all maximal cliques
             inv_num = [0 for _ in range(token_num)]  # shared nodes: num > 1
             for cli in cliques:
                 for n in cli:
                     inv_num[n] += 1
 
             for cli in cliques:
-                role2bio = {}
-                for j in cli:
-                    for i in cli:
-                        if inv_num[i] > 1:  # skip shared nodes
-                            continue
+                role2tag_seq = {}
+                for i in cli:
+                    if inv_num[i] > 1:  # skip shared nodes, important
+                        continue
+                    for j in cli:
                         tags = tag_matrix[i][j]
                         for t in tags:
-                            role, bio_tag = t.split(self.separator)
-                            if role not in role2bio:
-                                role2bio[role] = ["O" for _ in range(token_num)]
-                            if role2bio[role][j] == "O" or role2bio[role][j] == "I":
-                                role2bio[role][j] = bio_tag
+                            role, last_tag = t.split(self.separator)
+                            if role not in role2tag_seq:
+                                role2tag_seq[role] = {"B": set(),
+                                                      "E": set()}
+                            role2tag_seq[role][last_tag].add(j)
 
                 arguments = []
                 event = {}
-                for role, bio_seq in role2bio.items():
-                    for m in re.finditer("B[IB]*", "".join(bio_seq)):
-                        tok_span = [*m.span()]
+                for role, tag_seq in role2tag_seq.items():
+                    span_list = []
+                    for b_idx in sorted(tag_seq["B"]):
+                        for e_idx in sorted(tag_seq["E"]):
+                            if b_idx <= e_idx:
+                                span_list.append([b_idx, e_idx + 1])
+                                break
+
+                    for tok_span in span_list:
                         char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
                         arg_text = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text)
                         if role == "Trigger":

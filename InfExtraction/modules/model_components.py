@@ -185,6 +185,7 @@ class SingleSourceHandshakingKernel(nn.Module):
         visible = guide.permute(0, 2, 1, 3)
 
         shaking_pre = None
+
         # pre_num = 0
 
         def add_presentation(all_prst, prst):
@@ -271,6 +272,7 @@ class HandshakingKernel4TP3(nn.Module):
         visible = guide.permute(0, 2, 1, 3)
 
         ent_feature_pre = None
+
         # pre_num = 0
 
         def add_presentation(all_prst, prst):
@@ -279,7 +281,6 @@ class HandshakingKernel4TP3(nn.Module):
             else:
                 all_prst += prst
             return all_prst
-
 
         # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
         # mask lower triangle
@@ -332,7 +333,7 @@ class HandshakingKernel(nn.Module):
         super().__init__()
         self.shaking_type = shaking_type
         self.only_look_after = only_look_after
-            
+
         if "cat" in shaking_type:
             self.cat_fc = nn.Linear(guide_hidden_size + vis_hidden_size, vis_hidden_size)
         if "cln" in shaking_type:
@@ -340,10 +341,10 @@ class HandshakingKernel(nn.Module):
         if "lstm" in shaking_type:
             assert only_look_after is True
             self.lstm4span = nn.LSTM(vis_hidden_size,
-                                          vis_hidden_size,
-                                          num_layers=1,
-                                          bidirectional=False,
-                                          batch_first=True)
+                                     vis_hidden_size,
+                                     num_layers=1,
+                                     bidirectional=False,
+                                     batch_first=True)
         if "biaffine" in shaking_type:
             self.biaffine = nn.Bilinear(guide_hidden_size, vis_hidden_size, vis_hidden_size)
 
@@ -372,7 +373,7 @@ class HandshakingKernel(nn.Module):
             else:
                 all_prst += prst
             return all_prst
-        
+
         if self.only_look_after:
             if "lstm" in self.shaking_type:
                 batch_size, _, matrix_size, vis_hidden_size = visible.size()
@@ -393,7 +394,7 @@ class HandshakingKernel(nn.Module):
             # guide, visible: (batch_size, shaking_seq_len, hidden_size)
             guide = MyMatrix.upper_reg2seq(guide)
             visible = MyMatrix.upper_reg2seq(visible)
-        
+
         if "cat" in self.shaking_type:
             tp_cat_pre = torch.cat([guide, visible], dim=-1)
             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
@@ -424,15 +425,15 @@ class CrossLSTM(nn.Module):
                  ):
         super().__init__()
         self.vertical_lstm = nn.LSTM(in_feature_dim,
-                                  out_feature_dim // 2,
-                                  num_layers=num_layers,
-                                  bidirectional=True,
-                                  batch_first=True)
+                                     out_feature_dim // 2,
+                                     num_layers=num_layers,
+                                     bidirectional=True,
+                                     batch_first=True)
         self.horizontal_lstm = nn.LSTM(in_feature_dim,
-                                  out_feature_dim // 2,
-                                  num_layers=num_layers,
-                                  bidirectional=True,
-                                  batch_first=True)
+                                       out_feature_dim // 2,
+                                       num_layers=num_layers,
+                                       bidirectional=True,
+                                       batch_first=True)
 
         self.hv_comb_type = hv_comb_type
         if hv_comb_type == "cat":
@@ -448,7 +449,8 @@ class CrossLSTM(nn.Module):
         hor_context, _ = self.horizontal_lstm(matrix.view(-1, matrix_hor_len, hidden_size))
         hor_context = hor_context.view(batch_size, matrix_ver_len, matrix_hor_len, hidden_size)
 
-        ver_context, _ = self.vertical_lstm(matrix.permute(0, 2, 1, 3).contiguous().view(-1, matrix_ver_len, hidden_size))
+        ver_context, _ = self.vertical_lstm(
+            matrix.permute(0, 2, 1, 3).contiguous().view(-1, matrix_ver_len, hidden_size))
         ver_context = ver_context.view(batch_size, matrix_hor_len, matrix_ver_len, hidden_size)
         ver_context = ver_context.permute(0, 2, 1, 3)
 
@@ -595,7 +597,7 @@ class InteractionKernel(nn.Module):
         rel_context_flat = self.lamtha4rel_cont * rel_upper_context + (1 - self.lamtha4rel_cont) * rel_lower_context
 
         ent_hs_hiddens_guided = self.rel_guide_ent_cln(ent_hs_hiddens, rel_context_flat)
-        
+
         return ent_hs_hiddens_guided, rel_hs_hiddens_guided
 
 
@@ -618,7 +620,7 @@ class GraphConvLayer(nn.Module):
         :param node_hiddens: [batch, seq, dim]
         :return:
         """
-    
+
         batch, seq, dim = node_hiddens.shape
         weight_adj = weight_adj.permute(0, 3, 1, 2)  # [batch, dim_e, seq, seq]
 
@@ -631,7 +633,7 @@ class GraphConvLayer(nn.Module):
         elif self.pooling == 'sum':
             Ax = Ax.sum(dim=1)
         # Ax: [batch, seq, dim]
-        
+
         gcn_outputs = self.W(Ax)
         weights_gcn_outputs = F.relu(gcn_outputs)
 
@@ -659,7 +661,6 @@ class Edgeupdate(nn.Module):
         :return:
         """
 
-        node = torch.cat([node1, node2], dim=-1) # [batch, seq, seq, dim * 2]
+        node = torch.cat([node1, node2], dim=-1)  # [batch, seq, seq, dim * 2]
         edge = self.W(torch.cat([edge, node], dim=-1))
         return edge  # [batch, seq, seq, dim_e]
-

@@ -1002,25 +1002,27 @@ class TFBoys(IEModel):
                  tagger,
                  metrics_cal,
                  handshaking_kernel_config=None,
-                 fin_hidden_size=None,
+                 event_con_dim=None,
+                 vis_dim=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
         self.tag_size = tagger.get_tag_size()
         self.metrics_cal = metrics_cal
 
-        self.aggr_fc4handshaking_kernal = nn.Linear(self.cat_hidden_size, fin_hidden_size)
+        self.aggr_fc4event_context = nn.Linear(self.cat_hidden_size, event_con_dim)
+        self.aggr_fc4vis_tok = nn.Linear(self.cat_hidden_size, vis_dim)
 
         # handshaking kernel
         shaking_type = handshaking_kernel_config["shaking_type"]
-        self.handshaking_kernel = HandshakingKernel(fin_hidden_size,
-                                                    fin_hidden_size,
+        self.handshaking_kernel = HandshakingKernel(event_con_dim,
+                                                    vis_dim,
                                                     shaking_type,
-                                                    only_look_after=False,  # full handshaking
+                                                    only_look_after=False,  # matrix
                                                     )
 
         # decoding fc
-        self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
+        self.dec_fc = nn.Linear(vis_dim, self.tag_size)
 
     def generate_batch(self, batch_data):
         batch_dict = super(TFBoys, self).generate_batch(batch_data)
@@ -1035,9 +1037,10 @@ class TFBoys(IEModel):
         super(TFBoys, self).forward()
 
         cat_hiddens = self._cat_features(**kwargs)
-        cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
+        event_con = self.aggr_fc4event_context(cat_hiddens)
+        vis_tok_hiddens = self.aggr_fc4vis_tok(cat_hiddens)
 
-        shaking_hiddens = self.handshaking_kernel(cat_hiddens, cat_hiddens)
+        shaking_hiddens = self.handshaking_kernel(event_con, vis_tok_hiddens)
 
         predicted_oudtuts = self.dec_fc(shaking_hiddens)
 
