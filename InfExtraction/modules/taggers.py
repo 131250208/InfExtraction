@@ -3,10 +3,11 @@ import re
 from abc import ABCMeta, abstractmethod
 from tqdm import tqdm
 from InfExtraction.modules.preprocess import Indexer, Preprocessor
-from InfExtraction.modules.metrics import MetricsCalculator
 import numpy as np
 import networkx as nx
-from InfExtraction.modules.ancient_eval4oie import OIEMetrics
+# from InfExtraction.modules.metrics import MetricsCalculator
+# from InfExtraction.modules.ancient_eval4oie import OIEMetrics
+
 
 class Tagger(metaclass=ABCMeta):
     @classmethod
@@ -1444,7 +1445,8 @@ def create_rebased_oie_tagger(base_class):
             pred_sample["open_spo_list"] = spo_list
             # del pred_sample["relation_list"]
             # del pred_sample["entity_list"]
-            auc, prfc, _ = OIEMetrics.compare([pred_sample], [ori_sample], OIEMetrics.binary_linient_tuple_match)
+
+            # auc, prfc, _ = OIEMetrics.compare([pred_sample], [ori_sample], OIEMetrics.binary_linient_tuple_match)
             # if auc != 1. or prfc[2] != 1.:
             #     print("1")
             return ori_sample
@@ -1996,7 +1998,8 @@ class Tagger4TFBoys(Tagger4TriggerFreeEELu):
 
         pred_sample = copy.deepcopy(sample)
         pred_sample["event_list"] = event_list
-        sc_dict = MetricsCalculator.get_ee_cpg_dict([pred_sample], [sample])
+
+        # sc_dict = MetricsCalculator.get_ee_cpg_dict([pred_sample], [sample])
         # for sck, sc in sc_dict.items():
         #     if sc[0] != sc[2] or sc[0] != sc[1]:
         #         print("1")

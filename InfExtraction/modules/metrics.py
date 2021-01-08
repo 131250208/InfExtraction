@@ -1,7 +1,7 @@
 import torch
 import re
 import copy
-from InfExtraction.modules.ancient_eval4oie import OIEMetrics
+
 
 class MetricsCalculator:
     def __init__(self,
@@ -333,6 +333,7 @@ class MetricsCalculator:
         return ent_cpg_dict
 
     def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
+        from InfExtraction.modules.ancient_eval4oie import OIEMetrics
         auc, prfc, _ = OIEMetrics.compare(pred_sample_list,
                                           golden_sample_list,
                                           OIEMetrics.binary_linient_tuple_match)
