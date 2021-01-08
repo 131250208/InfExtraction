@@ -38,7 +38,7 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "webnlg_star"
+exp_name = "webnlg"
 language = "en"
 stage = "train"  # inference
 task_type = "re"  # re, re+ee
@@ -74,8 +74,16 @@ sliding_len_test = 20
 # data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
+
 train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
 valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
+
+data4checking = copy.deepcopy(train_data)
+random.shuffle(data4checking)
+checking_num = 1000
+data4checking = data4checking[:checking_num]
+# data4checking = valid_data
+
 test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
 for test_data_path in test_data_list:
@@ -115,6 +123,8 @@ addtional_preprocessing_config = {
 tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "add_h2t_n_t2h_links": False,
+    "language": "en",
+    "add_next_link": addtional_preprocessing_config["add_next_link"],
 }
 
 # optimizers and schedulers
@@ -264,7 +274,7 @@ model_settings = {
     "do_span_len_emb": True,
     "emb_ent_info2rel": True,
     "golden_ent_cla_guide": True,
-    "loss_weight_recover_steps": 6000,
+    "loss_weight_recover_steps": 0,
 }
 
 model_settings_log = copy.deepcopy(model_settings)
