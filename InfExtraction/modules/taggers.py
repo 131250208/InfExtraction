@@ -1149,6 +1149,8 @@ def create_rebased_tfboys_tagger(base_class):
                             if i == j:
                                 continue
                             edge_key = separator.join([offset_j, ob_offset])
+                            if edge_key not in event2edge_map[event_type]:
+                                continue
                             can_roles = event2edge_map[event_type][edge_key]
 
                             offset_split = offset_j.split(",")
