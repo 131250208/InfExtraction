@@ -1993,7 +1993,7 @@ class Tagger4TFBoys(Tagger4TriggerFreeEELu):
                                 "type": role,
                                 "event_type": event_type,
                             })
-                    event["argument_list"] = arguments
+                event["argument_list"] = arguments
                 event_list.append(event)
 
         pred_sample = copy.deepcopy(sample)
