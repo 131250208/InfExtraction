@@ -265,7 +265,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         if self.subwd_encoder_config is not None:
             # subword_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
             context_outputs = self.bert(subword_input_ids, attention_mask, token_type_ids)
-            self.attn_tuple = context_outputs[3]
+            self.attn_tuple = context_outputs[3] if len(context_outputs) >= 4 else None
             hidden_states = context_outputs[2]
             # subword_hiddens: (batch_size, seq_len, hidden_size)
             subword_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_bert:], dim=0),
@@ -461,9 +461,13 @@ class RAIN(IEModel):
 
         self.use_attns4rel = use_attns4rel
         if use_attns4rel:
-            self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
-                                      rel_dim,
-                                      )
+            if self.attn_tuple is None:
+                logging.warning("Failed to get bert attention tuple! "
+                                "Can not use attentions for relation matrix. Please check your config!")
+            else:
+                self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
+                                          rel_dim,
+                                          )
 
         self.do_span_len_emb = do_span_len_emb
         if do_span_len_emb:
@@ -580,7 +584,7 @@ class RAIN(IEModel):
         rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens)
 
         # attentions: (batch_size, layers * heads, seg_len, seq_len)
-        if self.use_attns4rel:
+        if self.attn_tuple is not None and self.use_attns4rel:
             attns = torch.cat(self.attn_tuple, dim=1).permute(0, 2, 3, 1)
             attns = self.attns_fc(attns)
             rel_hs_hiddens += attns
