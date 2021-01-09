@@ -103,7 +103,8 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             ## config
             word2id = word_encoder_config["word2id"]
             word_emb_dropout = word_encoder_config["emb_dropout"]
-            word_fusion_dim = word_encoder_config["word_fusion_dim"] if "word_fusion_dim" in word_encoder_config else 128
+            word_fusion_dim = word_encoder_config[
+                "word_fusion_dim"] if "word_fusion_dim" in word_encoder_config else 128
             word_bilstm_hidden_size = word_encoder_config["bilstm_hidden_size"]
             word_bilstm_layers = word_encoder_config["bilstm_layers"]
             word_bilstm_dropout = word_encoder_config["bilstm_dropout"]
@@ -166,7 +167,8 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         if flair_config is not None:
             print("init flair embedding models...")
             embedding_model_configs = flair_config["embedding_models"]
-            embedding_models = [getattr(flair_embeddings, config["model_name"])(*config["parameters"]) for config in embedding_model_configs]
+            embedding_models = [getattr(flair_embeddings, config["model_name"])(*config["parameters"]) for config in
+                                embedding_model_configs]
             for model in embedding_models:
                 self.cat_hidden_size += model.embedding_length
             self.flair_emb = StackedEmbeddings(embedding_models)
@@ -461,13 +463,9 @@ class RAIN(IEModel):
 
         self.use_attns4rel = use_attns4rel
         if use_attns4rel:
-            if self.attn_tuple is None:
-                logging.warning("Failed to get bert attention tuple! "
-                                "Can not use attentions for relation matrix. Please check your config!")
-            else:
-                self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
-                                          rel_dim,
-                                          )
+            self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
+                                      rel_dim,
+                                      )
 
         self.do_span_len_emb = do_span_len_emb
         if do_span_len_emb:
@@ -533,7 +531,8 @@ class RAIN(IEModel):
         if self.span_type_matrix is None or \
                 self.span_type_matrix.size()[0] != batch_size or \
                 self.span_type_matrix.size()[1] != seq_len:
-            self.span_type_matrix = torch.ones([seq_len, seq_len]).to(ent_hs_hiddens.device).triu().long()[None, :, :].repeat(batch_size, 1, 1)
+            self.span_type_matrix = torch.ones([seq_len, seq_len]).to(ent_hs_hiddens.device).triu().long()[None, :,
+                                    :].repeat(batch_size, 1, 1)
         span_type_emb = self.span_type_emb(self.span_type_matrix)
 
         # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
@@ -584,7 +583,11 @@ class RAIN(IEModel):
         rel_hs_hiddens = self.rel_handshaking_kernel(rel_hiddens)
 
         # attentions: (batch_size, layers * heads, seg_len, seq_len)
-        if self.attn_tuple is not None and self.use_attns4rel:
+        if self.use_attns4rel:
+            if self.attn_tuple is None:
+                logging.warning("Failed to get bert attention tuple! "
+                                "Can not use attentions for relation matrix. "
+                                "Please add output_attentions=true to your config.json!")
             attns = torch.cat(self.attn_tuple, dim=1).permute(0, 2, 3, 1)
             attns = self.attns_fc(attns)
             rel_hs_hiddens += attns
