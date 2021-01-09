@@ -1045,7 +1045,7 @@ def create_rebased_tfboys_tagger(base_class):
                                 "object": arg_j["text"],
                                 "obj_char_span": arg_j["char_span"],
                                 "obj_tok_span": arg_j["tok_span"],
-                                "predicate": "EE:{}".format(separator.join([event_type, arg_i["type"], arg_j["type"]])),
+                                "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),  # 01092130 event_type
                             })
 
                 if "relation_list" in sample:
@@ -1089,7 +1089,8 @@ def create_rebased_tfboys_tagger(base_class):
             text = sample["text"]
             separator = "\u2E82"
             event2graph = {}
-            event2edge_map = {}
+            edge_map = {}
+            # event2edge_map = {}  # 01092130
             for rel in rel_list:
                 subj_offset_str = "{},{}".format(*rel["subj_tok_span"])
                 obj_offset_str = "{},{}".format(*rel["obj_tok_span"])
@@ -1101,21 +1102,29 @@ def create_rebased_tfboys_tagger(base_class):
                     event2graph[event_type].add_edge(subj_offset_str, obj_offset_str)
 
                 else:
-                    event_type, subj_role, obj_role = rel["predicate"].split(separator)
+                    subj_role, obj_role = rel["predicate"].split(separator)  # 01092130 event_type
 
                     edge_key = separator.join([subj_offset_str, obj_offset_str])
                     edge_key_rv = separator.join([obj_offset_str, subj_offset_str])
                     arg_link = separator.join([subj_role, obj_role])
                     arg_link_rv = separator.join([obj_role, subj_role])
 
-                    if event_type not in event2edge_map:
-                        event2edge_map[event_type] = {}
-                    if edge_key not in event2edge_map[event_type]:
-                        event2edge_map[event_type][edge_key] = set()
-                    if edge_key_rv not in event2edge_map[event_type]:
-                        event2edge_map[event_type][edge_key_rv] = set()
-                    event2edge_map[event_type][edge_key].add(arg_link)
-                    event2edge_map[event_type][edge_key_rv].add(arg_link_rv)
+                    if edge_key not in edge_map:
+                        edge_map[edge_key] = set()
+                    if edge_key_rv not in edge_map:
+                        edge_map[edge_key_rv] = set()
+                    edge_map[edge_key].add(arg_link)
+                    edge_map[edge_key_rv].add(arg_link_rv)
+
+                    # # 01092130
+                    # if event_type not in event2edge_map:
+                    #     event2edge_map[event_type] = {}
+                    # if edge_key not in event2edge_map[event_type]:
+                    #     event2edge_map[event_type][edge_key] = set()
+                    # if edge_key_rv not in event2edge_map[event_type]:
+                    #     event2edge_map[event_type][edge_key_rv] = set()
+                    # event2edge_map[event_type][edge_key].add(arg_link)
+                    # event2edge_map[event_type][edge_key_rv].add(arg_link_rv)
 
             # event2offset2roles = {}
             # for ent in ent_list:
@@ -1133,6 +1142,8 @@ def create_rebased_tfboys_tagger(base_class):
             # find events (cliques) under every event type
             event_list = []
             for event_type, graph in event2graph.items():
+                # if event_type not in event2edge_map:  # 01092130
+                #     continue
 
                 cliques = list(nx.find_cliques(graph))  # all maximal cliques
                 node2num = {}  # shared nodes: num > 1
@@ -1178,11 +1189,17 @@ def create_rebased_tfboys_tagger(base_class):
                             # if i == j:
                             #     continue
                             edge_key = separator.join([subj_offset, obj_offset])
-                            if edge_key not in event2edge_map[event_type]:
+                            # if edge_key not in event2edge_map[event_type]:  # 01092130
+                            #     continue
+                            # links = event2edge_map[event_type][edge_key]
+                            if edge_key not in edge_map:  # 01092130
                                 continue
-                            links = event2edge_map[event_type][edge_key]
+                            links = edge_map[edge_key]
                             for link in links:
                                 subj_role, obj_role = link.split(separator)
+                                if subj_role not in self.event_type2arg_rols[event_type] or \
+                                    obj_role not in self.event_type2arg_rols[event_type]:
+                                    continue
                                 if subj_offset not in offset2roles:
                                     offset2roles[subj_offset] = set()
                                 if obj_offset not in offset2roles:
