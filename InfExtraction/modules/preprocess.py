@@ -395,11 +395,12 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
 
 
 class Preprocessor:
-    def __init__(self, language, pretrained_model_path):
+    def __init__(self, language, pretrained_model_path, do_lower_case):
         self.subword_tokenizer = None
         self.word_tokenizer = None
         self.language = language
         self.pretrained_model_path = pretrained_model_path
+        self.do_lower_case = do_lower_case
 
     @staticmethod
     def unique_list(inp_list):
@@ -444,7 +445,7 @@ class Preprocessor:
         if self.subword_tokenizer is None:
             self.subword_tokenizer = BertTokenizerAlignedWithStanza.from_pretrained(self.pretrained_model_path,
                                                                                     add_special_tokens=False,
-                                                                                    do_lower_case=False,
+                                                                                    do_lower_case=self.do_lower_case,
                                                                                     stanza_language=self.language)
             # print("tokenizer loaded: {}".format(self.pretrained_model_path))
         return self.subword_tokenizer
@@ -1232,11 +1233,16 @@ class Preprocessor:
             for subw_id, wid in enumerate(subword2word_id):
                 subw = sample["features"]["subword_list"][subw_id]
                 word = sample["features"]["word_list"][wid]
+                if self.do_lower_case:
+                    word = word.lower()
                 assert re.sub("##", "", subw) in word or subw == "[UNK]"
+
             for subw_id, char_sp in enumerate(feats["subword2char_span"]):
                 subw = sample["features"]["subword_list"][subw_id]
                 subw = re.sub("##", "", subw)
                 subw_extr = sample["text"][char_sp[0]:char_sp[1]]
+                if self.do_lower_case:
+                    subw_extr = subw_extr.lower()
                 try:
                     assert subw_extr == subw or subw == "[UNK]"
                 except Exception:
@@ -1410,9 +1416,10 @@ class Preprocessor:
                     new_features["dependency_list"] = features["subword_dependency_list"]
                 sample["features"] = new_features
             else:
+                subwd_list = [w.lower() for w in features["word_list"]] if self.do_lower_case else features["word_list"]
                 new_features = {
                     "word_list": features["word_list"],
-                    "subword_list": features["word_list"],
+                    "subword_list": subwd_list,
                     "tok2char_span": features["word2char_span"],
                     # "ner_tag_list": features["ner_tag_list"],
                     # "pos_tag_list": features["pos_tag_list"],
