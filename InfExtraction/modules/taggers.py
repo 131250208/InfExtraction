@@ -407,7 +407,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         if "entity_list" in sample:
             for ent in sample["entity_list"]:
                 point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
-                         self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
+                             self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
                 ent_matrix_points.append(point)
 
         if "relation_list" in sample:
@@ -416,6 +416,8 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 obj_tok_span = rel["obj_tok_span"]
                 rel = rel["predicate"]
 
+                if rel not in self.rel2id:
+                    continue
                 # if self.filter_by_cliques:
                 #     clique = list(range(*subj_tok_span)) + list(range(*obj_tok_span))
                 #     for i in clique:
@@ -428,6 +430,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 #             # rel_matrix_points.append(point)
 
                 # add related boundaries
+
                 rel_matrix_points.append(
                     (subj_tok_span[0], obj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "SH2OH"])]))
                 rel_matrix_points.append(
@@ -983,6 +986,7 @@ def create_rebased_ee_tagger(base_class):
     return REBasedEETagger
 
 
+import time
 def create_rebased_tfboys_tagger(base_class):
     class REBasedTFBOYSTagger(base_class):
         def __init__(self, data, *args, **kwargs):
@@ -1018,13 +1022,11 @@ def create_rebased_tfboys_tagger(base_class):
                     for i, arg_i in enumerate(arg_list):
                         fin_ent_list.append({
                             "text": arg_i["text"],
-                            "type": "EE:{}{}{}".format(arg_i["type"], separator, event_type),
+                            "type": "EE:{}".format(arg_i["type"]),  # "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
                             "char_span": arg_i["char_span"],
                             "tok_span": arg_i["tok_span"],
                         })
                         for j, arg_j in enumerate(arg_list):
-                            if i == j:
-                                continue
                             fin_rel_list.append({
                                 "subject": arg_i["text"],
                                 "subj_char_span": arg_i["char_span"],
@@ -1032,12 +1034,24 @@ def create_rebased_tfboys_tagger(base_class):
                                 "object": arg_j["text"],
                                 "obj_char_span": arg_j["char_span"],
                                 "obj_tok_span": arg_j["tok_span"],
-                                "predicate": "EE:{}{}{}".format(arg_i["type"], separator, event_type),
+                                "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
                             })
+                            # if i == j:
+                            #     continue
+                            fin_rel_list.append({
+                                "subject": arg_i["text"],
+                                "subj_char_span": arg_i["char_span"],
+                                "subj_tok_span": arg_i["tok_span"],
+                                "object": arg_j["text"],
+                                "obj_char_span": arg_j["char_span"],
+                                "obj_tok_span": arg_j["tok_span"],
+                                "predicate": "EE:{}".format(separator.join([event_type, arg_i["type"], arg_j["type"]])),
+                            })
+
                 if "relation_list" in sample:
                     fin_rel_list.extend(sample["relation_list"])
-                if "entity_list" in sample:
-                    fin_ent_list.extend(sample["entity_list"])
+                # if "entity_list" in sample:
+                #     fin_ent_list.extend(sample["entity_list"])
                 sample["entity_list"] = fin_ent_list
                 sample["relation_list"] = fin_rel_list
             new_data = super().additional_preprocess(new_data, data_type, **kwargs)
@@ -1077,30 +1091,44 @@ def create_rebased_tfboys_tagger(base_class):
             event2graph = {}
             event2edge_map = {}
             for rel in rel_list:
-                role, event_type = rel["predicate"].split(separator)
                 subj_offset_str = "{},{}".format(*rel["subj_tok_span"])
                 obj_offset_str = "{},{}".format(*rel["obj_tok_span"])
-                if event_type not in event2graph:
-                    event2graph[event_type] = nx.Graph()
-                    event2edge_map[event_type] = {}
-                event2graph[event_type].add_edge(subj_offset_str, obj_offset_str)
-                edge_key = separator.join([subj_offset_str, obj_offset_str])
-                if edge_key not in event2edge_map[event_type]:
-                    event2edge_map[event_type][edge_key] = set()
-                event2edge_map[event_type][edge_key].add(role)
 
-            event2offset2roles = {}
-            for ent in ent_list:
-                role, event_type = ent["type"].split(separator)
-                if event_type not in event2offset2roles:
-                    event2offset2roles[event_type] = {}
-                if event_type not in event2graph:
-                    event2graph[event_type] = nx.Graph()
-                offset_str = "{},{}".format(*ent["tok_span"])
-                if offset_str not in event2offset2roles[event_type]:
-                    event2offset2roles[event_type][offset_str] = set()
-                event2offset2roles[event_type][offset_str].add(role)
-                event2graph[event_type].add_node(offset_str)
+                if "IN_SAME_EVENT" in rel["predicate"]:
+                    _, event_type = rel["predicate"].split(separator)
+                    if event_type not in event2graph:
+                        event2graph[event_type] = nx.Graph()
+                    event2graph[event_type].add_edge(subj_offset_str, obj_offset_str)
+
+                else:
+                    event_type, subj_role, obj_role = rel["predicate"].split(separator)
+
+                    edge_key = separator.join([subj_offset_str, obj_offset_str])
+                    edge_key_rv = separator.join([obj_offset_str, subj_offset_str])
+                    arg_link = separator.join([subj_role, obj_role])
+                    arg_link_rv = separator.join([obj_role, subj_role])
+
+                    if event_type not in event2edge_map:
+                        event2edge_map[event_type] = {}
+                    if edge_key not in event2edge_map[event_type]:
+                        event2edge_map[event_type][edge_key] = set()
+                    if edge_key_rv not in event2edge_map[event_type]:
+                        event2edge_map[event_type][edge_key_rv] = set()
+                    event2edge_map[event_type][edge_key].add(arg_link)
+                    event2edge_map[event_type][edge_key_rv].add(arg_link_rv)
+
+            # event2offset2roles = {}
+            # for ent in ent_list:
+            #     event_type, role = ent["type"].split(separator)
+            #     if event_type not in event2offset2roles:
+            #         event2offset2roles[event_type] = {}
+            #     if event_type not in event2graph:
+            #         event2graph[event_type] = nx.Graph()
+            #     offset_str = "{},{}".format(*ent["tok_span"])
+            #     if offset_str not in event2offset2roles[event_type]:
+            #         event2offset2roles[event_type][offset_str] = set()
+            #     event2offset2roles[event_type][offset_str].add(role)
+            #     event2graph[event_type].add_node(offset_str)
 
             # find events (cliques) under every event type
             event_list = []
@@ -1116,9 +1144,53 @@ def create_rebased_tfboys_tagger(base_class):
                     event = {}
                     arguments = []
 
-                    if len(cli) == 1:
-                        offset_str = cli[0]
-                        can_roles = event2offset2roles[event_type][offset_str]
+                    # if len(cli) == 1:
+                    #     offset_str = cli[0]
+                    #     can_roles = event2offset2roles[event_type][offset_str]
+                    #     offset_split = offset_str.split(",")
+                    #     tok_span = [int(offset_split[0]), int(offset_split[1])]
+                    #     char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+                    #     arg_text = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text)
+                    #     for role in can_roles:
+                    #         if role == "Trigger":
+                    #             event["trigger"] = arg_text
+                    #             event["trigger_type"] = event_type
+                    #             event["trigger_tok_span"] = tok_span
+                    #             event["trigger_char_span"] = char_span
+                    #         else:
+                    #             arguments.append({
+                    #                 "text": arg_text,
+                    #                 "type": role,
+                    #                 "char_span": char_span,
+                    #                 "tok_span": tok_span,
+                    #                 "event_type": event_type,
+                    #             })
+                    #     event["argument_list"] = arguments
+                    #     event_list.append(event)
+                    #     continue
+
+                    offset2roles = {}
+                    for i, subj_offset in enumerate(cli):
+                        if node2num[subj_offset] > 1:  # only distinguished nodes (only in one event)
+                            continue
+
+                        for j, obj_offset in enumerate(cli):
+                            # if i == j:
+                            #     continue
+                            edge_key = separator.join([subj_offset, obj_offset])
+                            if edge_key not in event2edge_map[event_type]:
+                                continue
+                            links = event2edge_map[event_type][edge_key]
+                            for link in links:
+                                subj_role, obj_role = link.split(separator)
+                                if subj_offset not in offset2roles:
+                                    offset2roles[subj_offset] = set()
+                                if obj_offset not in offset2roles:
+                                    offset2roles[obj_offset] = set()
+                                offset2roles[subj_offset].add(subj_role)
+                                offset2roles[obj_offset].add(obj_role)
+
+                    for offset_str, can_roles in offset2roles.items():
                         offset_split = offset_str.split(",")
                         tok_span = [int(offset_split[0]), int(offset_split[1])]
                         char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
@@ -1137,40 +1209,6 @@ def create_rebased_tfboys_tagger(base_class):
                                     "tok_span": tok_span,
                                     "event_type": event_type,
                                 })
-                        event["argument_list"] = arguments
-                        event_list.append(event)
-                        continue
-
-                    for i, ob_offset in enumerate(cli):
-                        if node2num[ob_offset] > 1:  # only distinguished nodes (only in one event) can be observer
-                            continue
-
-                        for j, offset_j in enumerate(cli):
-                            if i == j:
-                                continue
-                            edge_key = separator.join([offset_j, ob_offset])
-                            if edge_key not in event2edge_map[event_type]:
-                                continue
-                            can_roles = event2edge_map[event_type][edge_key]
-
-                            offset_split = offset_j.split(",")
-                            tok_span = [int(offset_split[0]), int(offset_split[1])]
-                            char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-                            arg_text = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text)
-                            for role in can_roles:
-                                if role == "Trigger":
-                                    event["trigger"] = arg_text
-                                    event["trigger_type"] = event_type
-                                    event["trigger_tok_span"] = tok_span
-                                    event["trigger_char_span"] = char_span
-                                else:
-                                    arguments.append({
-                                        "text": arg_text,
-                                        "type": role,
-                                        "char_span": char_span,
-                                        "tok_span": tok_span,
-                                        "event_type": event_type,
-                                    })
                     event["argument_list"] = arguments
                     event_list.append(event)
 
