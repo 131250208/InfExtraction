@@ -77,19 +77,18 @@ data_out_dir = "../../data/res_data"
 
 train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
 valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
-
-data4checking = copy.deepcopy(valid_data)
-random.shuffle(data4checking)
-checking_num = 1000
-data4checking = data4checking[:checking_num]
-# data4checking = valid_data
-
 test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
 for test_data_path in test_data_list:
     filename = test_data_path.split("/")[-1]
     ori_test_data = load_data(test_data_path)
     filename2ori_test_data[filename] = ori_test_data
+
+data4checking = copy.deepcopy(valid_data)
+random.shuffle(data4checking)
+checking_num = 1000
+data4checking = data4checking[:checking_num]
+
 
 dicts = "dicts.json"
 statistics = "statistics.json"
@@ -114,7 +113,7 @@ for key, val in dicts.items():
 # additional preprocessing
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
-    "classify_entities_by_relation": True,  # ee, re
+    "classify_entities_by_relation": False,  # ee, re
     "add_nested_relation": False,  # ner
     "add_same_type_relation": False,  # ner
 }
