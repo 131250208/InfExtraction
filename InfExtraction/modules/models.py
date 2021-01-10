@@ -1024,7 +1024,7 @@ class TFBoys(IEModel):
         self.metrics_cal = metrics_cal
 
         self.aggr_fc4event_context = nn.Linear(self.cat_hidden_size, event_con_dim)
-        self.multi_head_attn = nn.MultiheadAttention(event_con_dim, 12)
+        # self.multi_head_attn = nn.MultiheadAttention(event_con_dim, 12)
 
         self.aggr_fc4vis_tok = nn.Linear(self.cat_hidden_size, vis_dim)
 
@@ -1054,9 +1054,9 @@ class TFBoys(IEModel):
         cat_hiddens = self._cat_features(**kwargs)
         event_con = self.aggr_fc4event_context(cat_hiddens)
 
-        event_con = event_con.permute(1, 0, 2)
-        event_con, _ = self.multi_head_attn(event_con, event_con, event_con)
-        event_con = event_con.permute(1, 0, 2)
+        # event_con = event_con.permute(1, 0, 2)
+        # event_con, _ = self.multi_head_attn(event_con, event_con, event_con)
+        # event_con = event_con.permute(1, 0, 2)
 
         vis_tok_hiddens = self.aggr_fc4vis_tok(cat_hiddens)
 
