@@ -8,6 +8,26 @@ from pprint import pprint
 from tqdm import tqdm
 
 
+def ids2span(ids):
+    spans = []
+    pre = -10
+    for pos in ids:
+        if pos - 1 != pre:
+            spans.append(pre + 1)
+            spans.append(pos)
+        pre = pos
+    spans.append(pre + 1)
+    spans = spans[1:]
+    return spans
+
+
+def spans2ids(spans):
+    ids = []
+    for i in range(0, len(spans), 2):
+        ids.extend(list(range(spans[i], spans[i + 1])))
+    return ids
+
+
 def load_data(path, total_lines=None):
     filename = path.split("/")[-1]
     try:

@@ -277,6 +277,11 @@ class WhiteWordTokenizer:
 class ChineseWordTokenizer:
     @staticmethod
     def tokenize(text, ent_list=None):
+        '''
+        :param text:
+        :param ent_list: tokenize by entities first
+        :return:
+        '''
         if ent_list is not None and len(ent_list) > 0:
             boundary_ids = set()
             for ent in ent_list:
@@ -1395,7 +1400,7 @@ class Preprocessor:
         return dicts, data_statistics
 
     @staticmethod
-    def choose_features_by_token_level(data, token_level):
+    def choose_features_by_token_level(data, token_level, do_lower_case=False):
         for sample in data:
             features = sample["features"]
             if token_level == "subword":
@@ -1416,7 +1421,7 @@ class Preprocessor:
                     new_features["dependency_list"] = features["subword_dependency_list"]
                 sample["features"] = new_features
             else:
-                subwd_list = [w.lower() for w in features["word_list"]] if self.do_lower_case else features["word_list"]
+                subwd_list = [w.lower() for w in features["word_list"]] if do_lower_case else features["word_list"]
                 new_features = {
                     "word_list": features["word_list"],
                     "subword_list": subwd_list,

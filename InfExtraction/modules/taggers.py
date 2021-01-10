@@ -3,6 +3,7 @@ import re
 from abc import ABCMeta, abstractmethod
 from tqdm import tqdm
 from InfExtraction.modules.preprocess import Indexer, Preprocessor
+from InfExtraction.modules import utils
 import numpy as np
 import networkx as nx
 from InfExtraction.modules.metrics import MetricsCalculator
@@ -373,8 +374,6 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 "OH2ST",  # object head to subject tail
             })
             self.add_h2t_n_t2h_links = True
-
-        # self.output_ent_length = kwargs["output_ent_length"]
 
         self.rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
         ent_link_types = {"EH2ET"}
@@ -1723,7 +1722,7 @@ def create_rebased_oie_tagger(base_class):
 #     return REBasedNERTagger
 
 
-class Tagger4TriggerFreeEELu(Tagger):
+class TableFillingTagger(Tagger):
     def __init__(self, data):
         '''
         :param data: all data, used to generate entity type and relation type dicts
@@ -1732,7 +1731,7 @@ class Tagger4TriggerFreeEELu(Tagger):
         # generate unified tag
         tag_set = set()
         self.separator = "\u2E80"
-        for sample in tqdm(data, desc="generate tag set"):
+        for sample in tqdm(data, desc="generating tag set"):
             tag_triplets = self._get_tags(sample)
             tag_set |= {t[-1] for t in tag_triplets}
 
@@ -1742,6 +1741,27 @@ class Tagger4TriggerFreeEELu(Tagger):
     def get_tag_size(self):
         return len(self.tag2id)
 
+    def get_tag_points(self, sample):
+        tag_list = self._get_tags(sample)
+        new_tag_list = []
+        for tag in tag_list:
+            if tag[-1] in self.tag2id:
+                tag[-1] = self.tag2id[tag[-1]]
+                new_tag_list.append(tag)
+            else:
+                logging.warning("out of tag set: {} not in tag2id dict".format(tag[-1]))
+        return new_tag_list
+
+    def tag(self, data):
+        for sample in tqdm(data, desc="tagging"):
+            sample["tag_points"] = self.get_tag_points(sample)
+        return data
+
+    def _get_tags(self, sample):
+        pass
+
+
+class TriggerFreeLu(TableFillingTagger):
     def _get_tags(self, sample):
         tag_list = []
         event_list = sample["event_list"]
@@ -1765,22 +1785,6 @@ class Tagger4TriggerFreeEELu(Tagger):
                             eap_tag = "{}{}{}".format(ea_tag, self.separator, pos_tag)
                             tag_list.append([i, j, eap_tag])
         return tag_list
-
-    def get_tag_points(self, sample):
-        tag_list = self._get_tags(sample)
-        new_tag_list = []
-        for tag in tag_list:
-            if tag[-1] in self.tag2id:
-                tag[-1] = self.tag2id[tag[-1]]
-                new_tag_list.append(tag)
-            else:
-                logging.warning("out of tag set: {} not in tag2id dict".format(tag[-1]))
-        return new_tag_list
-
-    def tag(self, data):
-        for sample in tqdm(data, desc="tagging"):
-            sample["tag_points"] = self.get_tag_points(sample)
-        return data
 
     def decode(self, sample, pred_tags):
         predicted_matrix_tag = pred_tags[0]
@@ -2046,7 +2050,7 @@ class Tagger4TriggerFreeEELu(Tagger):
         return pred_sample
 
 
-# class Tagger4TFBoys(Tagger4TriggerFreeEELu):
+# class Tagger4TFBoys(TableFillingTagger):
 #     def decode(self, sample, pred_tags):
 #         predicted_matrix_tag = pred_tags[0]
 #         matrix_points = Indexer.matrix2points(predicted_matrix_tag)
@@ -2145,7 +2149,7 @@ class Tagger4TriggerFreeEELu(Tagger):
 from collections import Counter
 
 
-class Tagger4TFBoys(Tagger4TriggerFreeEELu):
+class Tagger4TFBoys(TableFillingTagger):
     def _get_tags(self, sample):
         tag_list = []
         event_list = sample["event_list"]
@@ -2256,7 +2260,7 @@ class Tagger4TFBoys(Tagger4TriggerFreeEELu):
         return pred_sample
 
 
-class Tagger4TFBoysV2(Tagger4TriggerFreeEELu):
+class Tagger4TFBoysV2(TableFillingTagger):
     def __init__(self, data, *args, **kwargs):
         self.sep4trigger_role = "\u2E81"
         self.sep4span_tag = "\u2E82"
@@ -2425,7 +2429,7 @@ class Tagger4TFBoysV2(Tagger4TriggerFreeEELu):
 
 
 
-class Tagger4TFBoysV3(Tagger4TriggerFreeEELu):
+class Tagger4TFBoysV3(TableFillingTagger):
     def __init__(self, data, *args, **kwargs):
         self.sep4trigger_role = "\u2E81"
         self.sep4span_tag = "\u2E82"
@@ -2587,4 +2591,140 @@ class Tagger4TFBoysV3(Tagger4TriggerFreeEELu):
         # for sck, sc in sc_dict.items():
         #     if sc[0] != sc[2] or sc[0] != sc[1]:
         #         print("1")
+        return pred_sample
+
+
+class NERTagger4RAIN(Tagger):
+    def __init__(self, data, *args, **kwargs):
+        '''
+        :param data: all data, used to generate tags
+        '''
+        self.language = kwargs["language"]
+
+        self.separator = "\u2E80"
+        shaking_link_types = {"EH2ET"}
+        matrix_link_types = {"CLIQUE"}
+        ent_type_set = set()
+        for sample in data:
+            for ent in sample["entity_list"]:
+                ent_type_set.add(ent["type"])
+        self.shaking_tags = {self.separator.join([ent_type, lt]) for ent_type in ent_type_set for lt in
+                             shaking_link_types}
+        self.matrix_tags = {self.separator.join([ent_type, lt]) for ent_type in ent_type_set for lt in
+                            matrix_link_types}
+
+        self.shk_tag2id = {t: idx for idx, t in enumerate(sorted(self.shaking_tags))}
+        self.id2shk_tag = {idx: t for t, idx in self.shk_tag2id.items()}
+
+        self.mt_tag2id = {t: idx for idx, t in enumerate(sorted(self.matrix_tags))}
+        self.id2mt_tag = {idx: t for t, idx in self.mt_tag2id.items()}
+
+    def get_tag_size(self):
+        return len(self.shk_tag2id), len(self.mt_tag2id)
+
+    def tag(self, data):
+        for sample in tqdm(data, desc="tagging"):
+            ent_points, rel_points = self.get_tag_points(sample)
+            sample["ent_points"] = ent_points
+            sample["rel_points"] = rel_points
+        return data
+
+    def get_tag_points(self, sample):
+        '''
+        matrix_points: [(tok_pos1, tok_pos2, tag_id), ]
+        '''
+        shk_points, mt_points = [], []
+
+        if "entity_list" in sample:
+            for ent in sample["entity_list"]:
+                point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
+                             self.shk_tag2id[self.separator.join([ent["type"], "EH2ET"])])
+                shk_points.append(point)
+                tok_ids = utils.spans2ids(ent["tok_span"])
+                for i in tok_ids:
+                    for j in tok_ids:
+                        point = (i, j, self.mt_tag2id[self.separator.join([ent["type"], "CLIQUE"])])
+                        mt_points.append(point)
+
+        return Preprocessor.unique_list(shk_points), Preprocessor.unique_list(mt_points)
+
+    def decode(self, sample, pred_tags):
+        '''
+        sample: to provide tok2char_span map and text
+        pred_tags: predicted tags
+        '''
+
+        pred_ent_tag, pred_rel_tag = pred_tags[0], pred_tags[1]
+        shk_points = Indexer.shaking_seq2points(pred_ent_tag)
+        mt_points = Indexer.matrix2points(pred_rel_tag)
+
+        sample_idx, text = sample["id"], sample["text"]
+        tok2char_span = sample["features"]["tok2char_span"]
+
+        ent_list = []
+        ent_type2boundaries = {}
+        ent_type2graph = {}
+        for pt in shk_points:
+            shk_tag = self.id2shk_tag[pt[2]]
+            ent_type, link_type = shk_tag.split(self.separator)
+
+            if link_type == "EH2ET":
+                boundary = [pt[0], pt[1] + 1]
+                if ent_type not in ent_type2boundaries:
+                    ent_type2boundaries[ent_type] = []
+                ent_type2boundaries[ent_type].append(boundary)
+
+        for pt in mt_points:
+            mt_tag = self.id2mt_tag[pt[2]]
+            ent_type, link_type = mt_tag.split(self.separator)
+            if link_type == "CLIQUE":
+                if ent_type not in ent_type2graph:
+                    ent_type2graph[ent_type] = nx.Graph()
+                ent_type2graph[ent_type].add_edge(pt[0], pt[1])
+
+        memory = set()
+        for ent_type, boundaries in ent_type2boundaries.items():
+            for bd in boundaries:
+                tok_ids = list(range(*bd))
+                graph = ent_type2graph[ent_type]
+                cliques = list(nx.find_cliques(nx.induced_subgraph(graph, tok_ids)))
+                cliques = [cli for cli in cliques if tok_ids[0] == min(cli) and tok_ids[-1] == max(cli)]
+
+                # only one clique and all tokens link to each other
+                if len(cliques) == 1 and len(cliques[0]) == len(tok_ids):
+                    tok_span = bd
+                    char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+                    ent_txt = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language)
+                    mem = "{},{}".format(ent_type, str(char_span))
+                    if mem not in memory:
+                        ent_list.append({
+                            "text": ent_txt,
+                            "char_span": char_span,
+                            "tok_span": tok_span,
+                            "type": ent_type,
+                        })
+                        memory.add(mem)
+                else:
+                    for cli in cliques:
+                        cli = sorted(cli)
+                        tok_span = utils.ids2span(cli)
+                        char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+                        ent_txt = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language)
+                        mem = "{},{}".format(ent_type, str(char_span))
+                        if mem not in memory:
+                            ent_list.append({
+                                "text": ent_txt,
+                                "char_span": char_span,
+                                "tok_span": tok_span,
+                                "type": ent_type,
+                            })
+                            memory.add(mem)
+
+        pred_sample = copy.deepcopy(sample)
+        pred_sample["entity_list"] = ent_list
+
+        sc_dict = MetricsCalculator.get_ent_cpg_dict([pred_sample], [sample])
+        for sck, sc in sc_dict.items():
+            if sc[0] != sc[2] or sc[0] != sc[1]:
+                print("1")
         return pred_sample

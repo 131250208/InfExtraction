@@ -168,14 +168,16 @@ class MetricsCalculator:
             "arg_link_class": arg_link_class_set,
         }
 
-    def _get_mark_sets_ent(self, ent_list):
+    @staticmethod
+    def _get_mark_sets_ent(ent_list):
         ent_partial_text_set, \
         ent_partial_offset_set, \
         ent_exact_text_set, \
         ent_exact_offset_set = set(), set(), set(), set()
-
+        word_pattern = "[0-9]+|[\[\]a-zA-Z]+|[^0-9a-zA-Z]"
         for ent in ent_list:
-            ent_partial_text_set.add(str([ent["text"].split(self.sep)[0], ent["type"]]))
+            wds = re.findall(word_pattern, ent["text"])
+            ent_partial_text_set.add(str([wds[0], ent["type"]]))
             ent_partial_offset_set.add(str([ent["tok_span"][0], ent["type"]]))
             ent_exact_text_set.add(str([ent["text"], ent["type"]]))
             ent_exact_offset_set.add(str([ent["type"]] + ent["tok_span"]))
@@ -226,7 +228,8 @@ class MetricsCalculator:
         # if len(pred_set) != len(gold_set):
         #     raise Exception("debug")
 
-    def _cal_ent_cpg(self, pred_ent_list, gold_ent_list, ent_cpg_dict):
+    @staticmethod
+    def _cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict):
         '''
         ent_cpg_dict = {
             "ent_partial_text": [0, 0, 0],
@@ -235,11 +238,11 @@ class MetricsCalculator:
             "ent_exact_offset": [0, 0, 0],
         }
         '''
-        pred_set_dict = self._get_mark_sets_ent(pred_ent_list)
-        gold_set_dict = self._get_mark_sets_ent(gold_ent_list)
+        pred_set_dict = MetricsCalculator._get_mark_sets_ent(pred_ent_list)
+        gold_set_dict = MetricsCalculator._get_mark_sets_ent(gold_ent_list)
         for key in ent_cpg_dict.keys():
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
-            self._cal_cpg(pred_set, gold_set, ent_cpg_dict[key])
+            MetricsCalculator._cal_cpg(pred_set, gold_set, ent_cpg_dict[key])
 
     def _cal_rel_cpg(self, pred_rel_list, gold_rel_list, re_cpg_dict):
         '''
@@ -315,7 +318,8 @@ class MetricsCalculator:
             #     pass
         return re_cpg_dict
 
-    def get_ent_cpg_dict(self, pred_sample_list, golden_sample_list):
+    @staticmethod
+    def get_ent_cpg_dict(pred_sample_list, golden_sample_list):
         ent_cpg_dict = {
             "ent_partial_text": [0, 0, 0],
             "ent_partial_offset": [0, 0, 0],
@@ -327,7 +331,7 @@ class MetricsCalculator:
             pred_ent_list = pred_sample["entity_list"]
             gold_ent_list = gold_sample["entity_list"]
             # try:
-            self._cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict)
+            MetricsCalculator._cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict)
             # except Exception:
             #     print("ent error")
         return ent_cpg_dict
