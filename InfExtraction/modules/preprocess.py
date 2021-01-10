@@ -447,7 +447,7 @@ class Preprocessor:
                                                                                     add_special_tokens=False,
                                                                                     do_lower_case=self.do_lower_case,
                                                                                     stanza_language=self.language)
-            # print("tokenizer loaded: {}".format(self.pretrained_model_path))
+            print("tokenizer loaded: {}".format(self.pretrained_model_path))
         return self.subword_tokenizer
 
     def _get_char2tok_span(self, tok2char_span):

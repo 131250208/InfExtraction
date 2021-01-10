@@ -1,6 +1,5 @@
-data_in_dir = "../../data/ori_data"
-data_out_dir = "../../data/normal_data"
-exp_name = "cadec"
+data_in_dir = "../../data/ori_data/cadec"
+data_out_dir = "../../data/normal_data/cadec4yelp"
 
 # used only if "word_list" or "word2char_span" are not in data
 word_tokenizer_type = "white"  # stanza, white, normal_chinese;

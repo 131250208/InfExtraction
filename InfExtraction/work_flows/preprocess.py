@@ -12,9 +12,8 @@ import logging
 from pprint import pprint
 
 # settings
-exp_name = settings.exp_name
-data_in_dir = os.path.join(settings.data_in_dir, exp_name)
-data_out_dir = os.path.join(settings.data_out_dir, exp_name)
+data_in_dir = settings.data_in_dir
+data_out_dir = settings.data_out_dir
 word_tokenizer_type = settings.word_tokenizer_type
 language = settings.language
 pretrained_model_tokenizer_path = settings.pretrained_model_tokenizer_path
