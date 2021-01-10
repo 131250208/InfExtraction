@@ -131,6 +131,7 @@ if __name__ == "__main__":
     data_out_dir = settings.data_out_dir
     ori_train_data = settings.train_data
     ori_valid_data = settings.valid_data
+    ori_data4checking = settings.data4checking
     filename2ori_test_data = settings.filename2ori_test_data
 
     dicts = settings.dicts
@@ -193,9 +194,6 @@ if __name__ == "__main__":
     metric4testing = settings.metric4testing
     cal_scores = settings.cal_scores
 
-    # # match_pattern, only for relation extraction
-    # match_pattern = settings.match_pattern if "re" in task_type else None
-
     # save model
     model_bag_size = settings.model_bag_size
 
@@ -218,8 +216,12 @@ if __name__ == "__main__":
     # choose features and spans by token level
     ori_train_data = Preprocessor.choose_features_by_token_level(ori_train_data, token_level)
     ori_train_data = Preprocessor.choose_spans_by_token_level(ori_train_data, token_level)
+
     ori_valid_data = Preprocessor.choose_features_by_token_level(ori_valid_data, token_level)
     ori_valid_data = Preprocessor.choose_spans_by_token_level(ori_valid_data, token_level)
+
+    ori_data4checking = Preprocessor.choose_features_by_token_level(ori_data4checking, token_level)
+    ori_data4checking = Preprocessor.choose_spans_by_token_level(ori_data4checking, token_level)
     for filename, test_data in filename2ori_test_data.items():
         filename2ori_test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level)
         filename2ori_test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
@@ -229,16 +231,16 @@ if __name__ == "__main__":
     tagger_class_name = getattr(taggers, tagger_name)
     if task_type == "re+ee":
         tagger_class_name = taggers.create_rebased_ee_tagger(tagger_class_name)
+    elif task_type == "re+oie":
+        tagger_class_name = taggers.create_rebased_oie_tagger(tagger_class_name)
     elif task_type == "disc_ner":
         tagger_class_name = taggers.create_rebased_discontinuous_ner_tagger(tagger_class_name)
-
-    # elif task_type == "re+ner":
-    #     tagger_class_name = taggers.create_rebased_ner_tagger(tagger_class_name)
+    elif task_type == "re+tfboys":
+        tagger_class_name = taggers.create_rebased_tfboys_tagger(tagger_class_name)
 
     # additional preprocessing
     def additional_preprocess(data, data_type):
         return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
-
 
     train_data = additional_preprocess(ori_train_data, "train")
     valid_data = additional_preprocess(ori_valid_data, "valid")
@@ -248,7 +250,8 @@ if __name__ == "__main__":
 
     all_data4gen_tag_dict = []
     all_data4gen_tag_dict.extend(train_data)
-    all_data4gen_tag_dict.extend(additional_preprocess(ori_valid_data, "train"))
+    # all_data4gen_tag_dict.extend(additional_preprocess(ori_valid_data, "train"))  # only when setting to "train"
+    # would it do additional preprocessing
     # all_data4gen_tag_dict.extend(additional_preprocess(ori_test_data, "train"))
 
     # tagger
@@ -256,7 +259,7 @@ if __name__ == "__main__":
 
     # metrics_calculator
     metrics_cal = MetricsCalculator(task_type,
-                                    # match_pattern,
+                                    language,
                                     use_ghm)
 
     # model
@@ -350,25 +353,25 @@ if __name__ == "__main__":
         if check_tagging_n_decoding:
             # for checking, take valid data as train data, do additional preprocessing to get tags
             # but take original valid data as golden dataset to evaluate
-            valid_data4checking = additional_preprocess(ori_valid_data, "train")
-            valid_dataloader4checking = get_dataloader(valid_data4checking,
-                                                       language,
-                                                       "train",  # only train data will be set a tag sequence
-                                                       token_level,
-                                                       max_seq_len_valid,
-                                                       sliding_len_valid,
-                                                       combine,
-                                                       batch_size_valid,
-                                                       key2dict,
-                                                       tagger,
-                                                       collate_fn,
-                                                       task_type,
-                                                       wdp_prefix,
-                                                       max_char_num_in_tok,
-                                                       split_early_stop,
-                                                       drop_neg_samples
-                                                       )
-            pprint(evaluator.check_tagging_n_decoding(valid_dataloader4checking, ori_valid_data))
+            data4checking = additional_preprocess(ori_data4checking, "train")
+            dataloader4checking = get_dataloader(data4checking,
+                                                 language,
+                                                 "train",  # only train data will be set a tag sequence
+                                                 token_level,
+                                                 max_seq_len_valid,
+                                                 sliding_len_valid,
+                                                 combine,
+                                                 batch_size_valid,
+                                                 key2dict,
+                                                 tagger,
+                                                 collate_fn,
+                                                 task_type,
+                                                 wdp_prefix,
+                                                 max_char_num_in_tok,
+                                                 split_early_stop,
+                                                 drop_neg_samples
+                                                 )
+            pprint(evaluator.check_tagging_n_decoding(dataloader4checking, ori_data4checking))
 
         # load pretrained model
         if model_state_dict_path is not None:
@@ -383,7 +386,6 @@ if __name__ == "__main__":
 
         # train and valid
         score_dict4comparing = {}
-
         for ep in range(epochs):
             # train
             trainer.train(ep, epochs)
@@ -405,7 +407,8 @@ if __name__ == "__main__":
                         "best": 0.0,
                     }
                 score_dict4comparing[metric_key]["current"] = current_val_score
-                score_dict4comparing[metric_key]["best"] = max(current_val_score, score_dict4comparing[metric_key]["best"])
+                score_dict4comparing[metric_key]["best"] = max(current_val_score,
+                                                               score_dict4comparing[metric_key]["best"])
 
                 # save models
                 if current_val_score > 0. and model_bag_size > 0:

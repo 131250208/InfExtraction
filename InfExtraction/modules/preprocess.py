@@ -395,20 +395,24 @@ class BertTokenizerAlignedWithStanza(BertTokenizerFast):
 
 
 class Preprocessor:
-    def __init__(self, language, pretrained_model_path):
+    def __init__(self, language, pretrained_model_path, do_lower_case):
         self.subword_tokenizer = None
         self.word_tokenizer = None
         self.language = language
         self.pretrained_model_path = pretrained_model_path
+        self.do_lower_case = do_lower_case
 
     @staticmethod
     def unique_list(inp_list):
         out_list = []
         memory = set()
         for item in inp_list:
-            if str(item) not in memory:
+            mem = str(item)
+            if type(item) is dict:
+                mem = str(dict(sorted(item.items())))
+            if mem not in memory:
                 out_list.append(item)
-                memory.add(str(item))
+                memory.add(mem)
         return out_list
 
     @staticmethod
@@ -441,9 +445,9 @@ class Preprocessor:
         if self.subword_tokenizer is None:
             self.subword_tokenizer = BertTokenizerAlignedWithStanza.from_pretrained(self.pretrained_model_path,
                                                                                     add_special_tokens=False,
-                                                                                    do_lower_case=False,
+                                                                                    do_lower_case=self.do_lower_case,
                                                                                     stanza_language=self.language)
-            # print("tokenizer loaded: {}".format(self.pretrained_model_path))
+            print("tokenizer loaded: {}".format(self.pretrained_model_path))
         return self.subword_tokenizer
 
     def _get_char2tok_span(self, tok2char_span):
@@ -854,6 +858,8 @@ class Preprocessor:
         def char_span2tok_span(char_span, char2tok_span):
             tok_span = []
             for idx in range(0, len(char_span), 2):  # len(char_span) > 2 if discontinuous entity
+                if char_span[-1] == 0:
+                    return char_span
                 ch_sp = [char_span[idx], char_span[idx + 1]]
                 tok_span_list = char2tok_span[ch_sp[0]:ch_sp[1]]
                 tok_span.extend([tok_span_list[0][0], tok_span_list[-1][1]])
@@ -885,10 +891,125 @@ class Preprocessor:
                     for arg in event["argument_list"]:
                         arg["wd_span"] = char_span2tok_span(arg["char_span"], char2word_span)
                         arg["subwd_span"] = char_span2tok_span(arg["char_span"], char2subwd_span)
+
+            if "open_spo_list" in sample:
+                for spo in sample["open_spo_list"]:
+                    if "subject" in spo and spo["subject"] is not None:
+                        spo["subject"]["wd_span"] = char_span2tok_span(spo["subject"]["char_span"], char2word_span)
+                        spo["subject"]["subwd_span"] = char_span2tok_span(spo["subject"]["char_span"], char2subwd_span)
+                    if "object" in spo and spo["object"] is not None:
+                        spo["object"]["wd_span"] = char_span2tok_span(spo["object"]["char_span"], char2word_span)
+                        spo["object"]["subwd_span"] = char_span2tok_span(spo["object"]["char_span"], char2subwd_span)
+                    if "predicate" in spo and spo["predicate"] is not None:
+                        spo["predicate"]["wd_span"] = char_span2tok_span(spo["predicate"]["char_span"], char2word_span)
+                        spo["predicate"]["subwd_span"] = char_span2tok_span(spo["predicate"]["char_span"], char2subwd_span)
+
+                    for arg in spo["other_args"]:
+                        arg["wd_span"] = char_span2tok_span(arg["char_span"], char2word_span)
+                        arg["subwd_span"] = char_span2tok_span(arg["char_span"], char2subwd_span)
         return data
 
     @staticmethod
-    def extract_ent_fr_txt_by_char_sp(char_span, text, language):
+    def search_spans_fr_txt(target_seg, text, language):
+        if target_seg == "" or target_seg is None:
+            return [0, 0], ""
+        add_text = re.sub("\S", "_", target_seg)
+        # if continuous
+        if language == "ch" and target_seg in text:
+            span = [*re.search(re.escape(target_seg), text).span()]
+            return span, add_text
+        if language == "en" and " {} ".format(target_seg) in " {} ".format(text):
+            span = [*re.search(re.escape(" {} ".format(target_seg)), " {} ".format(text)).span()]
+            return [span[0], span[1] - 2], add_text
+
+        # discontinuous but in the same order
+        words = target_seg.split(" ") if language == "en" else list(target_seg)
+        words = [re.escape(w) for w in words]
+        pattern = "(" + ").*(".join(words) + ")"
+
+        se = None
+        try:
+            se = re.search(pattern, text)
+        except Exception:
+            print("search error!")
+            print(target_seg)
+            print(text)
+            print("================")
+
+        if se is not None:  # same order but dicontinuous
+            spans = []
+            for i in range(len(words)):
+                spans.extend([*se.span(i + 1)])
+        else:  # different orders, or some words are not in the original text
+            sbwd_list = []
+            if language == "ch":
+                spe_patt = "A-Za-z0-9\.~!@#\$%^&\*()_\+,\?:'\"\s"
+                segs = re.findall("[{}]+|[^{}]+".format(spe_patt, spe_patt), target_seg)
+                for seg in segs:
+                    if re.match("[{}]+".format(spe_patt), seg):
+                        sbwd_list.append(seg)
+                    else:
+                        sbwd_list.extend(list(jieba.cut(seg, cut_all=True)))
+                        sbwd_list += list(seg)
+            elif language == "en":
+                sbwd_list = target_seg.split(" ")
+            sbwd_list = list(set(sbwd_list))
+
+            m_list = []
+            for sbwd in sorted(sbwd_list, key=lambda w: len(w), reverse=True):
+                finditer = re.finditer(re.escape(" {} ".format(sbwd)), " {} ".format(text))\
+                    if language == "en" else re.finditer(re.escape(sbwd), text)
+                for m in finditer:
+                    m_list.append(m)
+
+            m_list = sorted(m_list, key=lambda m: m.span()[1] - m.span()[0], reverse=True)
+            match_txt_list = [m.group()[1:-1] if language == "en" else m.group() for m in m_list]
+            match_span_list = [[m.span()[0], m.span()[1] - 2] if language == "en" else [*m.span()] for m in m_list]
+
+            sps = [0] * len(target_seg)
+            pred_cp = target_seg[:]
+            for m_idx, m_txt in enumerate(match_txt_list):
+                m_span = match_span_list[m_idx]
+                se = re.search(re.escape(" {} ".format(m_txt)), " {} ".format(pred_cp)) \
+                    if language == "en" else re.search(re.escape(m_txt), pred_cp)
+                if se is not None:
+                    star_idx = se.span()[0]
+                    sp = [se.span()[0], se.span()[1] - 2] if language == "en" else se.span()
+                    sps[star_idx] = [*m_span]
+
+                    # mask
+                    pred_ch_list = list(pred_cp)
+                    pred_ch_list[sp[0]:sp[1]] = ["_"] * (sp[1] - sp[0])
+                    pred_cp = "".join(pred_ch_list)
+            add_text = pred_cp
+
+            sps = [sp for sp in sps if sp != 0]
+            spans = []
+            for idx, sp in enumerate(sps):
+                spans.extend(sp)
+                # if language == "en" and idx != len(sps) - 1 and sps[idx][0] - 1 == sp[-1]:
+                #     spans.extend([spans[-1], spans[-1] + 1])  # whitespace
+
+        # merge
+        new_spans = []
+        for pid, pos in enumerate(spans):
+            p = pos if language == "ch" else pos - 1  # en: p - 1
+            if pid == 0 or pid % 2 != 0 or pid % 2 == 0 and p != new_spans[-1]:
+                new_spans.append(pos)
+            elif pid % 2 == 0 and p == new_spans[-1]:
+                new_spans.pop()
+        # seg_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(new_spans, text, language)
+        # try:
+        #     assert seg_extr == target_seg
+        # except Exception:
+        #     print(text)
+        #     print("{} != {}".format(seg_extr, target_seg))
+        #     print("add: {}".format(pred_cp))
+        #     print("================")
+        return new_spans, add_text
+
+    @staticmethod
+    def extract_ent_fr_txt_by_char_sp(char_span, text, language=None):
         sep = " " if language == "en" else ""
         segs = []
         for idx in range(0, len(char_span), 2):
@@ -901,6 +1022,8 @@ class Preprocessor:
         char_span = []
         for idx in range(0, len(tok_span), 2):
             tk_sp = [tok_span[idx], tok_span[idx + 1]]
+            if tk_sp[-1] == 0:
+                return tok_span
             char_span_list = tok2char_span[tk_sp[0]:tk_sp[1]]
             char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
         return char_span
@@ -1102,16 +1225,24 @@ class Preprocessor:
             num_words = len(word2subword_span)
             for k in {"ner_tag_list", "pos_tag_list", "word2char_span", "word_list"}:
                 if k in feats:
+                    # try:
                     assert len(feats[k]) == num_words
+                    # except Exception:
+                    #     print("!")
             assert len(feats["subword_list"]) == len(feats["subword2char_span"]) == len(subword2word_id)
             for subw_id, wid in enumerate(subword2word_id):
                 subw = sample["features"]["subword_list"][subw_id]
                 word = sample["features"]["word_list"][wid]
+                if self.do_lower_case:
+                    word = word.lower()
                 assert re.sub("##", "", subw) in word or subw == "[UNK]"
+
             for subw_id, char_sp in enumerate(feats["subword2char_span"]):
                 subw = sample["features"]["subword_list"][subw_id]
                 subw = re.sub("##", "", subw)
                 subw_extr = sample["text"][char_sp[0]:char_sp[1]]
+                if self.do_lower_case:
+                    subw_extr = subw_extr.lower()
                 try:
                     assert subw_extr == subw or subw == "[UNK]"
                 except Exception:
@@ -1125,12 +1256,21 @@ class Preprocessor:
         word2num = dict()
         word_set = set()
         char_set = set()
+
         rel_type_set = set()
+
         ent_type_set = set()
+
         event_type_set = set()
         argument_type_set = set()
+
+        prefix_set = set()
+        suffix_set = set()
+        predefined_rel_set = set()
+        other_arg_set = set()
+
         max_word_seq_length, max_subword_seq_length = 0, 0
-        ent_exist, rel_exist, event_exist = False, False, False
+        ent_exist, rel_exist, event_exist, oie_exist = False, False, False, False
 
         for sample in tqdm(data, desc="generating supporting data"):
             # POS tag
@@ -1159,6 +1299,20 @@ class Preprocessor:
                     event_type_set.add(event["trigger_type"])
                     for arg in event["argument_list"]:
                         argument_type_set.add(arg["type"])
+
+            if "open_spo_list" in sample:
+                oie_exist = True
+                for spo in sample["open_spo_list"]:
+                    predicate = spo["predicate"]
+                    if predicate["predefined"]:
+                        predefined_rel_set.add(predicate["complete"])
+                    if predicate["prefix"] != "":
+                        prefix_set.add(predicate["prefix"])
+                    if predicate["suffix"] != "":
+                        suffix_set.add(predicate["suffix"])
+
+                    for arg in spo["other_args"]:
+                        other_arg_set.add(arg["type"])
 
             # character
             char_set |= set(sample["text"])
@@ -1198,6 +1352,11 @@ class Preprocessor:
         if event_exist:
             data_statistics["event_type_num"] = len(event_type_set)
             data_statistics["arg_type_num"] = len(argument_type_set)
+        if oie_exist:
+            data_statistics["predefined_rel_num"] = len(predefined_rel_set)
+            data_statistics["prefix_num"] = len(prefix_set)
+            data_statistics["suffix_num"] = len(suffix_set)
+            data_statistics["other_arg_num"] = len(other_arg_set)
 
         if ent_exist:
             data_statistics["ent_types"] = list(ent_type_set)
@@ -1206,6 +1365,11 @@ class Preprocessor:
         if event_exist:
             data_statistics["event_types"] = list(event_type_set)
             data_statistics["arg_types"] = list(argument_type_set)
+        if oie_exist:
+            data_statistics["predefined_rel_types"] = list(predefined_rel_set)
+            data_statistics["prefix_types"] = list(prefix_set)
+            data_statistics["suffix_types"] = list(suffix_set)
+            data_statistics["other_args"] = list(other_arg_set)
 
         dicts = {
             "char2id": char2id,
@@ -1252,9 +1416,10 @@ class Preprocessor:
                     new_features["dependency_list"] = features["subword_dependency_list"]
                 sample["features"] = new_features
             else:
+                subwd_list = [w.lower() for w in features["word_list"]] if self.do_lower_case else features["word_list"]
                 new_features = {
                     "word_list": features["word_list"],
-                    "subword_list": features["word_list"],
+                    "subword_list": subwd_list,
                     "tok2char_span": features["word2char_span"],
                     # "ner_tag_list": features["ner_tag_list"],
                     # "pos_tag_list": features["pos_tag_list"],
@@ -1300,6 +1465,14 @@ class Preprocessor:
                         arg["tok_span"] = arg["subwd_span"] if token_level == "subword" else arg["wd_span"]
                         del arg["subwd_span"]
                         del arg["wd_span"]
+            if "open_spo_list" in sample:
+                tok_key = "subwd_span" if token_level == "subword" else "wd_span"
+                for spo in sample["open_spo_list"]:
+                    spo["subject"]["tok_span"] = spo["subject"][tok_key]
+                    spo["object"]["tok_span"] = spo["object"][tok_key]
+                    spo["predicate"]["tok_span"] = spo["predicate"][tok_key]
+                    for arg in spo["other_args"]:
+                        arg["tok_span"] = arg[tok_key]
         return data
 
     @staticmethod
@@ -1353,6 +1526,30 @@ class Preprocessor:
                 event_cp["argument_list"] = new_arg_list
                 sub_event_list.append(event_cp)
             new_sample["event_list"] = sub_event_list
+
+        if "open_spo_list" in sample:
+            sub_open_spo_list = []
+            for spo in sample["open_spo_list"]:
+                if "subject" in spo and spo["subject"] is not None and \
+                        not (spo["subject"]["tok_span"][0] >= start_ind and
+                             spo["subject"]["tok_span"][-1] <= end_ind):
+                    continue
+                if "object" in spo and spo["object"] is not None and \
+                        not (spo["object"]["tok_span"][0] >= start_ind and
+                             spo["object"]["tok_span"][-1] <= end_ind):
+                    continue
+                if "predicate" in spo and spo["predicate"] is not None and \
+                        not (spo["predicate"]["tok_span"][0] >= start_ind and
+                             spo["predicate"]["tok_span"][-1] <= end_ind):
+                    continue
+                spo_cp = copy.deepcopy(spo)
+                new_other_args = []
+                for arg in spo_cp["other_args"]:
+                    if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
+                        new_other_args.append(arg)
+                spo_cp["other_args"] = new_other_args
+                sub_open_spo_list.append(spo_cp)
+            new_sample["open_spo_list"] = sub_open_spo_list
         return new_sample
 
     @staticmethod
@@ -1472,6 +1669,31 @@ class Preprocessor:
                             sub_event_list.append(event_cp)
                     new_sample["event_list"] = sub_event_list
 
+                    # open ie
+                    sub_open_spo_list = []
+                    if "open_spo_list" in sample:
+                        for spo in sample["open_spo_list"]:
+                            if "subject" in spo and spo["subject"] is not None and \
+                                    not (spo["subject"]["tok_span"][0] >= start_ind and
+                                    spo["subject"]["tok_span"][-1] <= end_ind):
+                                continue
+                            if "object" in spo and spo["object"] is not None and \
+                                    not (spo["object"]["tok_span"][0] >= start_ind and
+                                    spo["object"]["tok_span"][-1] <= end_ind):
+                                continue
+                            if "predicate" in spo and spo["predicate"] is not None and \
+                                    not (spo["predicate"]["tok_span"][0] >= start_ind and
+                                    spo["predicate"]["tok_span"][-1] <= end_ind):
+                                continue
+                            spo_cp = copy.deepcopy(spo)
+                            new_other_args = []
+                            for arg in spo_cp["other_args"]:
+                                if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
+                                    new_other_args.append(arg)
+                            spo_cp["other_args"] = new_other_args
+                            sub_open_spo_list.append(spo_cp)
+                    new_sample["open_spo_list"] = sub_open_spo_list
+
                     # do not introduce excessive negative samples
                     if drop_neg_samples:
                         # if task_type == "re" and len(new_sample["relation_list"]) == 0:
@@ -1482,7 +1704,8 @@ class Preprocessor:
                         #     continue
                         if len(new_sample["relation_list"]) == 0 \
                                 and len(new_sample["entity_list"]) == 0 \
-                                and len(new_sample["event_list"]) == 0:
+                                and len(new_sample["event_list"]) == 0 \
+                                and len(new_sample["open_spo_list"]) == 0:
                             continue
 
                     # offset
@@ -1511,6 +1734,7 @@ class Preprocessor:
                 "entity_list": [],
                 "relation_list": [],
                 "event_list": [],
+                "open_spo_list": [],
             }
 
         new_data = []
@@ -1542,7 +1766,7 @@ class Preprocessor:
                                        sample["features"]["dependency_list"]]
                 combined_sample["features"]["dependency_list"].extend(new_dependency_list)
 
-            # split offsets
+            # offsets for recovering
             combined_sample["splits"].append({
                 "id": sample["id"],
                 "offset_in_this_seg": [token_offset, token_offset + len(sample["features"]["tok2char_span"])],
@@ -1561,6 +1785,8 @@ class Preprocessor:
                 combined_sample["relation_list"].extend(sample_cp["relation_list"])
             if "event_list" in sample_cp:
                 combined_sample["event_list"].extend(sample_cp["event_list"])
+            if "open_spo_list" in sample_cp:
+                combined_sample["open_spo_list"].extend(sample_cp["open_spo_list"])
 
         # do not forget the last one
         if combined_sample["text"] != "":
@@ -1570,7 +1796,7 @@ class Preprocessor:
     @staticmethod
     def decompose2splits(data):
         '''
-        decompose combined samples to splits by "splits"
+        decompose combined samples to splits by "splits" key
         :param data:
         :return:
         '''
@@ -1599,6 +1825,8 @@ class Preprocessor:
                         split_sample["relation_list"] = filtered_sample["relation_list"]
                     if "event_list" in filtered_sample:
                         split_sample["event_list"] = filtered_sample["event_list"]
+                    if "open_spo_list" in filtered_sample:
+                        split_sample["open_spo_list"] = filtered_sample["open_spo_list"]
                     # recover spans
                     split_sample = Preprocessor.span_offset(split_sample, -text_tok_span[0], -text_char_span[0])
                     new_data.append(split_sample)

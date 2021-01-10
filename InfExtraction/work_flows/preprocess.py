@@ -12,12 +12,12 @@ import logging
 from pprint import pprint
 
 # settings
-exp_name = settings.exp_name
-data_in_dir = os.path.join(settings.data_in_dir, exp_name)
-data_out_dir = os.path.join(settings.data_out_dir, exp_name)
+data_in_dir = settings.data_in_dir
+data_out_dir = settings.data_out_dir
 word_tokenizer_type = settings.word_tokenizer_type
 language = settings.language
 pretrained_model_tokenizer_path = settings.pretrained_model_tokenizer_path
+do_lower_case = settings.do_lower_case
 ori_data_format = settings.ori_data_format
 add_id = settings.add_id
 add_char_span = settings.add_char_span
@@ -36,7 +36,7 @@ for path, folds, files in os.walk(data_in_dir):
         file_name2data[file_name] = load_data(file_path)
 
 # preprocessor
-preprocessor = Preprocessor(language, pretrained_model_tokenizer_path)
+preprocessor = Preprocessor(language, pretrained_model_tokenizer_path, do_lower_case)
 
 # transform data from CasRel, ETL_span, et.
 for file_name, data in file_name2data.items():

@@ -8,15 +8,24 @@ from pprint import pprint
 from tqdm import tqdm
 
 
-def load_data(path):
+def load_data(path, total_lines=None):
     filename = path.split("/")[-1]
     try:
         print("loading data: {}".format(filename))
         data = json.load(open(path, "r", encoding="utf-8"))
-        print("done!")
+        if total_lines is not None:
+            print("total number is set: {}".format(total_lines))
+            data = data[:total_lines]
+        print("done! {} samples are loaded!".format(len(data)))
     except json.decoder.JSONDecodeError:
         with open(path, "r", encoding="utf-8") as file_in:
-            data = [json.loads(line) for line in tqdm(file_in, desc="loading data {}".format(filename))]
+            if total_lines is not None:
+                print("total number is set: {}".format(total_lines))
+            data = []
+            for line in tqdm(file_in, desc="loading data {}".format(filename), total=total_lines):
+                data.append(json.loads(line))
+                if total_lines is not None and len(data) == total_lines:
+                    break
     return data
 
 

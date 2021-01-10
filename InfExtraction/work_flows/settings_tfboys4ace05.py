@@ -38,38 +38,38 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "webnlg"
+exp_name = "ace2005_lu"
 language = "en"
 stage = "train"  # inference
-task_type = "re"  # re, re+ee
-model_name = "RAIN"
-tagger_name = "Tagger4RAIN"
+task_type = "ee"  # re, re+ee
+model_name = "TFBoys"
+tagger_name = "Tagger4TFBoys"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "bert-base-cased"
-pretrained_emb_name = "glove.6B.100d.txt"
+pretrained_model_name = "bert-base-uncased"
+pretrained_emb_name = "eegcn_word_emb.txt"
 use_wandb = False
 note = ""
-epochs = 100
+epochs = 500
 lr = 5e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
 drop_neg_samples = True
-combine = False  # combine splits
+combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 5  # if no saving, set to 0
+model_bag_size = 0  # if no saving, set to 0
 
-batch_size_train = 6
-batch_size_valid = 6
-batch_size_test = 6
+batch_size_train = 8
+batch_size_valid = 8
+batch_size_test = 8
 
-max_seq_len_train = 100
+max_seq_len_train = 64
 max_seq_len_valid = 100
 max_seq_len_test = 100
 
-sliding_len_train = 20
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_train = 64
+sliding_len_valid = 100
+sliding_len_test = 100
 
 # data
 data_in_dir = "../../data/normal_data"
@@ -78,11 +78,10 @@ data_out_dir = "../../data/res_data"
 train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
 valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
 
-data4checking = copy.deepcopy(train_data)
+data4checking = copy.deepcopy(valid_data)
 random.shuffle(data4checking)
 checking_num = 1000
 data4checking = data4checking[:checking_num]
-# data4checking = valid_data
 
 test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
@@ -110,22 +109,6 @@ key_map = {
 key2dict = {}
 for key, val in dicts.items():
     key2dict[key_map[key]] = val
-
-# additional preprocessing
-addtional_preprocessing_config = {
-    "add_default_entity_type": False,
-    "classify_entities_by_relation": False,  # ee, re
-    "add_nested_relation": False,  # ner
-    "add_same_type_relation": False,  # ner
-}
-
-# tagger config
-tagger_config = {
-    "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
-    "add_h2t_n_t2h_links": False,
-    "language": "en",
-    "add_next_link": addtional_preprocessing_config["add_next_link"],
-}
 
 # optimizers and schedulers
 optimizer_config = {
@@ -254,8 +237,7 @@ dep_config = {
 } if dep_gcn else None
 
 handshaking_kernel_config = {
-    "ent_shaking_type": "cln+lstm",
-    "rel_shaking_type": "cln",
+    "shaking_type": "cln",
 }
 
 # model settings
@@ -268,13 +250,8 @@ model_settings = {
     "flair_config": flair_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "use_attns4rel": use_attns4rel,
-    "ent_dim": 768,
-    "rel_dim": 768,
-    "do_span_len_emb": True,
-    "emb_ent_info2rel": True,
-    "golden_ent_cla_guide": True,
-    "loss_weight_recover_steps": 0,
+    "event_con_dim": 768,
+    "vis_dim": 768,
 }
 
 model_settings_log = copy.deepcopy(model_settings)
@@ -303,8 +280,6 @@ config_to_log = {
     **model_settings_log,
     "token_level": token_level,
     "optimizer": optimizer_config,
-    "addtional_preprocessing_config": addtional_preprocessing_config,
-    "tagger_config": tagger_config,
     "split_early_stop": split_early_stop,
     "drop_neg_samples": drop_neg_samples,
     "combine_split": combine,

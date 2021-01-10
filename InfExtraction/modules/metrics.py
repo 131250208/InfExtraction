@@ -6,13 +6,10 @@ import copy
 class MetricsCalculator:
     def __init__(self,
                  task_type,
-                 # match_pattern=None,
+                 language="en",
                  use_ghm=False):
         self.task_type = task_type  # for scoring
-
-        # self.match_pattern = match_pattern  # for scoring of relation extraction
-        # if task_type == "re":
-        #     assert self.match_pattern is not None
+        self.sep = " " if language == "en" else ""
 
         # for multilabel_categorical_crossentropy
         self.use_ghm = use_ghm
@@ -103,7 +100,8 @@ class MetricsCalculator:
 
         return sample_acc
 
-    def _get_mark_sets_ee(self, event_list):
+    @staticmethod
+    def _get_mark_sets_ee(event_list):
         trigger_iden_set, trigger_class_set = set(), set()
         arg_hard_iden_set, arg_hard_class_set = set(), set()  # consider trigger offset
         arg_soft_iden_set, arg_soft_class_set = set(), set()  # do not consider trigger offset
@@ -177,7 +175,7 @@ class MetricsCalculator:
         ent_exact_offset_set = set(), set(), set(), set()
 
         for ent in ent_list:
-            ent_partial_text_set.add(str([ent["text"].split(" ")[0], ent["type"]]))
+            ent_partial_text_set.add(str([ent["text"].split(self.sep)[0], ent["type"]]))
             ent_partial_offset_set.add(str([ent["tok_span"][0], ent["type"]]))
             ent_exact_text_set.add(str([ent["text"], ent["type"]]))
             ent_exact_offset_set.add(str([ent["type"]] + ent["tok_span"]))
@@ -196,7 +194,9 @@ class MetricsCalculator:
         rel_exact_offset_set = set(), set(), set(), set()
 
         for rel in rel_list:
-            rel_partial_text_set.add(str([rel["subject"].split(" ")[0], rel["predicate"], rel["object"].split(" ")[0]]))
+            rel_partial_text_set.add(str([rel["subject"].split(self.sep)[0],
+                                          rel["predicate"],
+                                          rel["object"].split(self.sep)[0]]))
             rel_exact_text_set.add(str([rel["subject"], rel["predicate"], rel["object"]]))
             rel_partial_offset_set.add(str([rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]]))
             rel_exact_offset_set.add(str(rel["subj_tok_span"] + [rel["predicate"]] + rel["obj_tok_span"]))
@@ -207,16 +207,11 @@ class MetricsCalculator:
             "rel_exact_offset": rel_exact_offset_set,
         }
 
-    def _cal_cpg(self, pred_set, gold_set, cpg):
+    @staticmethod
+    def _cal_cpg(pred_set, gold_set, cpg):
         '''
         cpg is a list: [correct_num, pred_num, gold_num]
         '''
-        # for mark_str in pred_set:
-        #     if mark_str in gold_set:
-        #         cpg[0] += 1
-        #     else:
-        #         raise Exception("debug")
-
         correct_num = 0
         for mark_str in pred_set:
             if mark_str in gold_set:
@@ -261,7 +256,8 @@ class MetricsCalculator:
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
             self._cal_cpg(pred_set, gold_set, re_cpg_dict[key])
 
-    def _cal_ee_cpg(self, pred_event_list, gold_event_list, ee_cpg_dict):
+    @staticmethod
+    def _cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict):
         '''
         ee_cpg_dict = {
             "trigger_iden": [0, 0, 0],
@@ -274,13 +270,14 @@ class MetricsCalculator:
             "arg_link_class": [0, 0, 0],
         }
         '''
-        pred_set_dict = self._get_mark_sets_ee(pred_event_list)
-        gold_set_dict = self._get_mark_sets_ee(gold_event_list)
+        pred_set_dict = MetricsCalculator._get_mark_sets_ee(pred_event_list)
+        gold_set_dict = MetricsCalculator._get_mark_sets_ee(gold_event_list)
         for key in ee_cpg_dict.keys():
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
-            self._cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
+            MetricsCalculator._cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
 
-    def get_ee_cpg_dict(self, pred_sample_list, golden_sample_list):
+    @staticmethod
+    def get_ee_cpg_dict(pred_sample_list, golden_sample_list):
         ee_cpg_dict = {
             "trigger_iden": [0, 0, 0],
             "trigger_class": [0, 0, 0],
@@ -296,7 +293,7 @@ class MetricsCalculator:
             pred_event_list = pred_sample["event_list"]
             gold_event_list = gold_sample["event_list"]
             # try:
-            self._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
+            MetricsCalculator._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
             # except Exception as e:
             #     print("event error!")
         return ee_cpg_dict
@@ -335,6 +332,20 @@ class MetricsCalculator:
             #     print("ent error")
         return ent_cpg_dict
 
+    def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
+        from InfExtraction.modules.ancient_eval4oie import OIEMetrics
+        auc, prfc, _ = OIEMetrics.compare(pred_sample_list,
+                                          golden_sample_list,
+                                          OIEMetrics.binary_linient_tuple_match)
+
+        return {
+            "auc": auc,
+            "precision": prfc[0],
+            "recall": prfc[1],
+            "f1": prfc[2],
+            "confidence_threshold": prfc[3],
+        }
+
     def get_prf_scores(self, correct_num, pred_num, gold_num):
         '''
         get precision, recall, and F1 score
@@ -355,10 +366,6 @@ class MetricsCalculator:
 
         assert len(golden_data) > 0
         golden_sample = golden_data[0]
-        # for sample in golden_data:
-        #     for key in {"entity_list", "event_list", "relation_list"}:
-        #         if key not in sample:
-        #             sample[key] = []
 
         total_cpg_dict = {}
         if "entity_list" in golden_sample:
@@ -373,10 +380,17 @@ class MetricsCalculator:
             cpg_dict = self.get_ee_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
+        # if "open_spo_list" in golden_sample:
+        #     cpg_dict = self.get_oie_scores
+
         score_dict = {}
-        for key, cpg in total_cpg_dict.items():
+        for sc_pattern, cpg in total_cpg_dict.items():
             prf = self.get_prf_scores(*cpg)
             for idx, sct in enumerate(["prec", "rec", "f1"]):
-                score_dict["{}{}_{}".format(data_filename, key, sct)] = round(prf[idx], 5)
+                score_dict["{}{}_{}".format(data_filename, sc_pattern, sct)] = round(prf[idx], 5)
 
+        if "open_spo_list" in golden_sample:
+            oie_score_dict = self.get_ioe_score_dict(golden_data, golden_data)
+            for sct, val in oie_score_dict.items():
+                score_dict["{}{}".format(data_filename, sct)] = round(val, 5)
         return score_dict

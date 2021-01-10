@@ -32,8 +32,8 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                  metrics_cal,
                  char_encoder_config=None,
                  subwd_encoder_config=None,
-                 word_encoder_config=None,
                  flair_config=None,
+                 word_encoder_config=None,
                  ner_tag_emb_config=None,
                  pos_tag_emb_config=None,
                  dep_config=None
@@ -46,7 +46,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         # count bp steps
         self.bp_steps = 0
 
-        # ner
+        # ner bio
         self.ner_tag_emb_config = ner_tag_emb_config
         if ner_tag_emb_config is not None:
             ner_tag_num = ner_tag_emb_config["ner_tag_num"]
@@ -103,6 +103,8 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             ## config
             word2id = word_encoder_config["word2id"]
             word_emb_dropout = word_encoder_config["emb_dropout"]
+            word_fusion_dim = word_encoder_config[
+                "word_fusion_dim"] if "word_fusion_dim" in word_encoder_config else 128
             word_bilstm_hidden_size = word_encoder_config["bilstm_hidden_size"]
             word_bilstm_layers = word_encoder_config["bilstm_layers"]
             word_bilstm_dropout = word_encoder_config["bilstm_dropout"]
@@ -139,10 +141,13 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             word_emb_dim = init_word_embedding_matrix.size()[1]
             self.cat_hidden_size += word_emb_dim
 
-            ## use lstm to encode word
             self.word_emb = nn.Embedding.from_pretrained(init_word_embedding_matrix, freeze=freeze_word_emb)
             self.word_emb_dropout = nn.Dropout(p=word_emb_dropout)
-            self.word_lstm_l1 = nn.LSTM(self.cat_hidden_size,
+
+            ## fusion
+            self.aggr_fc4fusion_word_level_fts = nn.Linear(self.cat_hidden_size, word_fusion_dim)
+            ## lstm 4 encoding word level features
+            self.word_lstm_l1 = nn.LSTM(word_fusion_dim,
                                         word_bilstm_hidden_size[0] // 2,
                                         num_layers=word_bilstm_layers[0],
                                         dropout=word_bilstm_dropout[0],
@@ -157,11 +162,13 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                                         batch_first=True)
             self.cat_hidden_size += word_bilstm_hidden_size[1]
 
+        # flair embeddings
         self.flair_config = flair_config
         if flair_config is not None:
             print("init flair embedding models...")
             embedding_model_configs = flair_config["embedding_models"]
-            embedding_models = [getattr(flair_embeddings, config["model_name"])(*config["parameters"]) for config in embedding_model_configs]
+            embedding_models = [getattr(flair_embeddings, config["model_name"])(*config["parameters"]) for config in
+                                embedding_model_configs]
             for model in embedding_models:
                 self.cat_hidden_size += model.embedding_length
             self.flair_emb = StackedEmbeddings(embedding_models)
@@ -245,7 +252,8 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             word_input_emb = self.word_emb(word_input_ids)
             word_input_emb = self.word_emb_dropout(word_input_emb)
             features.append(word_input_emb)
-            word_hiddens, _ = self.word_lstm_l1(torch.cat(features, dim=-1))
+            word_fts = self.aggr_fc4fusion_word_level_fts(torch.cat(features, dim=-1))
+            word_hiddens, _ = self.word_lstm_l1(word_fts)
             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
             features.append(word_hiddens)
 
@@ -258,9 +266,9 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         # subword
         if self.subwd_encoder_config is not None:
             # subword_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
-            context_oudtuts = self.bert(subword_input_ids, attention_mask, token_type_ids)
-            self.attn_tuple = context_oudtuts[3]
-            hidden_states = context_oudtuts[2]
+            context_outputs = self.bert(subword_input_ids, attention_mask, token_type_ids)
+            self.attn_tuple = context_outputs[3] if len(context_outputs) >= 4 else None
+            hidden_states = context_outputs[2]
             # subword_hiddens: (batch_size, seq_len, hidden_size)
             subword_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_bert:], dim=0),
                                          dim=0)
@@ -423,11 +431,12 @@ class RAIN(IEModel):
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  rel_dim=None,
-                 use_attns4rel=None,
+                 use_attns4rel=False,
                  do_span_len_emb=False,
                  emb_ent_info2rel=False,
                  golden_ent_cla_guide=False,
                  loss_weight_recover_steps=None,
+                 loss_weight=.5,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -435,6 +444,7 @@ class RAIN(IEModel):
         self.ent_tag_size, self.rel_tag_size = tagger.get_tag_size()
         self.loss_weight_recover_steps = loss_weight_recover_steps
         self.metrics_cal = metrics_cal
+        self.loss_weight = loss_weight
 
         self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
         self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
@@ -452,7 +462,7 @@ class RAIN(IEModel):
                                                                     )
 
         self.use_attns4rel = use_attns4rel
-        if use_attns4rel is not None:
+        if use_attns4rel:
             self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
                                       rel_dim,
                                       )
@@ -521,7 +531,8 @@ class RAIN(IEModel):
         if self.span_type_matrix is None or \
                 self.span_type_matrix.size()[0] != batch_size or \
                 self.span_type_matrix.size()[1] != seq_len:
-            self.span_type_matrix = torch.ones([seq_len, seq_len]).to(ent_hs_hiddens.device).triu().long()[None, :, :].repeat(batch_size, 1, 1)
+            self.span_type_matrix = torch.ones([seq_len, seq_len]).to(ent_hs_hiddens.device).triu().long()[None, :,
+                                    :].repeat(batch_size, 1, 1)
         span_type_emb = self.span_type_emb(self.span_type_matrix)
 
         # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
@@ -573,6 +584,10 @@ class RAIN(IEModel):
 
         # attentions: (batch_size, layers * heads, seg_len, seq_len)
         if self.use_attns4rel:
+            if self.attn_tuple is None:
+                logging.warning("Failed to get bert attention tuple! "
+                                "Can not use attentions for relation matrix. "
+                                "Please add output_attentions=true to your config.json!")
             attns = torch.cat(self.attn_tuple, dim=1).permute(0, 2, 3, 1)
             attns = self.attns_fc(attns)
             rel_hs_hiddens += attns
@@ -612,7 +627,7 @@ class RAIN(IEModel):
 
         total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
         current_step = self.bp_steps
-        ori_w_ent, ori_w_rel = 1 / 2, 1 / 2
+        ori_w_ent, ori_w_rel = self.loss_weight, 1 - self.loss_weight
         w_ent = max(1 - ori_w_ent * current_step / total_steps, ori_w_ent)
         w_rel = min(ori_w_rel * current_step / total_steps, ori_w_rel)
 
@@ -995,48 +1010,37 @@ class TPLinkerTree(IEModel):
         }
 
 
-class SelfAttentionTriggerFreeEE(IEModel):
+class TFBoys(IEModel):
     def __init__(self,
                  tagger,
                  metrics_cal,
                  handshaking_kernel_config=None,
-                 fin_hidden_size=None,
-                 conv_config=None,
+                 event_con_dim=None,
+                 vis_dim=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
         self.tag_size = tagger.get_tag_size()
         self.metrics_cal = metrics_cal
 
-        self.aggr_fc4handshaking_kernal = nn.Linear(self.cat_hidden_size, fin_hidden_size)
+        self.aggr_fc4event_context = nn.Linear(self.cat_hidden_size, event_con_dim)
+        self.multi_head_attn = nn.MultiheadAttention(event_con_dim, 12)
+
+        self.aggr_fc4vis_tok = nn.Linear(self.cat_hidden_size, vis_dim)
 
         # handshaking kernel
         shaking_type = handshaking_kernel_config["shaking_type"]
-        self.handshaking_kernel = HandshakingKernel(fin_hidden_size,
-                                                    fin_hidden_size,
+        self.handshaking_kernel = HandshakingKernel(event_con_dim,
+                                                    vis_dim,
                                                     shaking_type,
-                                                    only_look_after=False,  # full handshaking
+                                                    only_look_after=False,  # matrix
                                                     )
 
-        # # learn local info
-        # self.conv_config = conv_config
-        # if conv_config is not None:
-        #     self.convs = nn.ModuleList()
-        #     conv_layers = conv_config["conv_layers"]
-        #     conv_kernel_size = conv_config["conv_kernel_size"]
-        #     conv_padding = (conv_kernel_size - 1) // 2
-        #
-        #     for _ in range(conv_layers):
-        #         self.convs.append(nn.Conv2d(fin_hidden_size,
-        #                                     fin_hidden_size,
-        #                                     conv_kernel_size,
-        #                                     padding=conv_padding))
-
         # decoding fc
-        self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
+        self.dec_fc = nn.Linear(vis_dim, self.tag_size)
 
     def generate_batch(self, batch_data):
-        batch_dict = super(SelfAttentionTriggerFreeEE, self).generate_batch(batch_data)
+        batch_dict = super(TFBoys, self).generate_batch(batch_data)
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
         # shaking tag
         tag_points_batch = [sample["tag_points"] for sample in batch_data]
@@ -1045,18 +1049,19 @@ class SelfAttentionTriggerFreeEE(IEModel):
         return batch_dict
 
     def forward(self, **kwargs):
-        super(SelfAttentionTriggerFreeEE, self).forward()
+        super(TFBoys, self).forward()
 
         cat_hiddens = self._cat_features(**kwargs)
-        cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
+        event_con = self.aggr_fc4event_context(cat_hiddens)
 
-        shaking_hiddens = self.handshaking_kernel(cat_hiddens, cat_hiddens)
+        event_con = event_con.permute(1, 0, 2)
+        event_con, _ = self.multi_head_attn(event_con, event_con, event_con)
+        event_con = event_con.permute(1, 0, 2)
 
-        # if self.conv_config is not None:
-        #     for conv in self.convs:
-        #         shaking_hiddens = conv(shaking_hiddens.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        vis_tok_hiddens = self.aggr_fc4vis_tok(cat_hiddens)
 
-        # predicted_oudtuts: (batch_size, shaking_seq_len, tag_num)
+        shaking_hiddens = self.handshaking_kernel(event_con, vis_tok_hiddens)
+
         predicted_oudtuts = self.dec_fc(shaking_hiddens)
 
         return predicted_oudtuts

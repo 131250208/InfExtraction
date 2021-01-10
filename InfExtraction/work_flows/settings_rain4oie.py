@@ -38,10 +38,10 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "webnlg"
+exp_name = "oie4"
 language = "en"
 stage = "train"  # inference
-task_type = "re"  # re, re+ee
+task_type = "re+oie"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
@@ -57,7 +57,7 @@ drop_neg_samples = True
 combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 5  # if no saving, set to 0
+model_bag_size = 0  # if no saving, set to 0
 
 batch_size_train = 6
 batch_size_valid = 6
@@ -75,7 +75,7 @@ sliding_len_test = 20
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
 
-train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
+train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"), 1000)
 valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
 
 data4checking = copy.deepcopy(train_data)
@@ -117,12 +117,14 @@ addtional_preprocessing_config = {
     "classify_entities_by_relation": False,  # ee, re
     "add_nested_relation": False,  # ner
     "add_same_type_relation": False,  # ner
+    "add_next_link": True,   # if set to False, can not cover all cases. e.g. ent1: A -> B -> C. ent 2: B -> C,
+                             # only ent 1 will be extracted by clique finding
 }
 
 # tagger config
 tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
-    "add_h2t_n_t2h_links": False,
+    "add_h2t_n_t2h_links": True,
     "language": "en",
     "add_next_link": addtional_preprocessing_config["add_next_link"],
 }
@@ -274,7 +276,7 @@ model_settings = {
     "do_span_len_emb": True,
     "emb_ent_info2rel": True,
     "golden_ent_cla_guide": True,
-    "loss_weight_recover_steps": 0,
+    "loss_weight_recover_steps": 6000,
 }
 
 model_settings_log = copy.deepcopy(model_settings)
