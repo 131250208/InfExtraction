@@ -2354,15 +2354,33 @@ class Tagger4TFBoysV2(Tagger4TriggerFreeEELu):
                         for t in tags:
                             g_tag, v_tag = t.split(self.separator)
                             v_role, v_sp_tag = v_tag.split(self.sep4span_tag)
-                            # g_role, g_sp_tag = v_tag.split(self.sep4span_tag)
-                            # if g_role not in self.event_type2arg_rols[event_type] or \
-                            #         v_role not in self.event_type2arg_rols[event_type]:
-                            #     continue
+                            g_role, g_sp_tag = v_tag.split(self.sep4span_tag)
+                            if g_role not in self.event_type2arg_rols[event_type] or \
+                                    v_role not in self.event_type2arg_rols[event_type]:
+                                continue
 
                             if v_role not in role2tag_seq:
                                 role2tag_seq[v_role] = {"B": set(),
                                                         "E": set()}
                             role2tag_seq[v_role][v_sp_tag].add(j)
+
+                for j in cli:
+                    if inv_num[j] > 1:  # skip shared nodes, important
+                        continue
+                    for i in cli:
+                        tags = tag_matrix[i][j]
+                        for t in tags:
+                            g_tag, v_tag = t.split(self.separator)
+                            v_role, v_sp_tag = g_tag.split(self.sep4span_tag)
+                            g_role, g_sp_tag = v_tag.split(self.sep4span_tag)
+                            if g_role not in self.event_type2arg_rols[event_type] or \
+                                    v_role not in self.event_type2arg_rols[event_type]:
+                                continue
+
+                            if v_role not in role2tag_seq:
+                                role2tag_seq[v_role] = {"B": set(),
+                                                        "E": set()}
+                            role2tag_seq[v_role][v_sp_tag].add(i)
 
                 arguments = []
                 event = {}
