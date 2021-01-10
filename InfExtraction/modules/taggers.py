@@ -2398,7 +2398,173 @@ class Tagger4TFBoysV2(Tagger4TriggerFreeEELu):
                         if "Trigger" in role:
                             _, et = role.split(self.sep4trigger_role)
 
-                            assert et == event_type
+                            # assert et == event_type
+                            event["trigger_tok_span"] = tok_span
+                            event["trigger"] = arg_text
+                            event["trigger_char_span"] = char_span
+                            event["trigger_type"] = event_type
+                        else:
+                            arguments.append({
+                                "tok_span": tok_span,
+                                "char_span": char_span,
+                                "text": arg_text,
+                                "type": role,
+                                "event_type": event_type,
+                            })
+                event["argument_list"] = arguments
+                event_list.append(event)
+
+        pred_sample = copy.deepcopy(sample)
+        pred_sample["event_list"] = event_list
+
+        # sc_dict = MetricsCalculator.get_ee_cpg_dict([pred_sample], [sample])
+        # for sck, sc in sc_dict.items():
+        #     if sc[0] != sc[2] or sc[0] != sc[1]:
+        #         print("1")
+        return pred_sample
+
+
+
+class Tagger4TFBoysV3(Tagger4TriggerFreeEELu):
+    def __init__(self, data, *args, **kwargs):
+        self.sep4trigger_role = "\u2E81"
+        self.sep4span_tag = "\u2E82"
+        super(Tagger4TFBoysV3, self).__init__(data, *args, **kwargs)
+        self.event_type2arg_rols = {}
+        for sample in data:
+            for event in sample["event_list"]:
+                event_type = event["trigger_type"]
+                if event_type not in self.event_type2arg_rols:
+                    self.event_type2arg_rols[event_type] = set()
+                self.event_type2arg_rols[event_type].add(self.sep4trigger_role.join(["Trigger", event_type]))
+                for arg in event["argument_list"]:
+                    self.event_type2arg_rols[event_type].add(arg["type"])
+
+
+    def _get_tags(self, sample):
+        tag_list = []
+        event_list = sample["event_list"]
+
+        for event in event_list:
+            event_type = event["trigger_type"]
+            pseudo_argument = {
+                "type": "Trigger",
+                "tok_span": event["trigger_tok_span"],
+            }
+            argument_list = [pseudo_argument, ] + event["argument_list"]
+            for arg_i in argument_list:
+                for arg_j in argument_list:
+                    arg_i_head = self.sep4span_tag.join([arg_i["type"], "B"])
+                    arg_i_tail = self.sep4span_tag.join([arg_i["type"], "E"])
+                    arg_j_head = self.sep4span_tag.join([arg_j["type"], "B"])
+                    arg_j_tail = self.sep4span_tag.join([arg_j["type"], "E"])
+
+                    tag_list.append([arg_i["tok_span"][0], arg_j["tok_span"][0],
+                                     self.separator.join([arg_i_head, arg_j_head])])
+                    tag_list.append([arg_i["tok_span"][0], arg_j["tok_span"][-1] - 1,
+                                     self.separator.join([arg_i_head, arg_j_tail])])
+                    tag_list.append([arg_i["tok_span"][-1] - 1, arg_j["tok_span"][0],
+                                     self.separator.join([arg_i_tail, arg_j_head])])
+                    tag_list.append([arg_i["tok_span"][-1] - 1, arg_j["tok_span"][-1] - 1,
+                                     self.separator.join([arg_i_tail, arg_j_tail])])
+
+                    for i in range(*arg_i["tok_span"]):
+                        for j in range(*arg_j["tok_span"]):
+                            clique_tag = self.separator.join(["IN_CLIQUE", event_type])  # in a clique
+                            tag_list.append([i, j, clique_tag])
+        return tag_list
+
+    def decode(self, sample, pred_tags):
+        predicted_matrix_tag = pred_tags[0]
+        matrix_points = Indexer.matrix2points(predicted_matrix_tag)
+        tok2char_span = sample["features"]["tok2char_span"]
+        token_num = len(tok2char_span)
+        sample_idx, text = sample["id"], sample["text"]
+
+        tag_matrix = [[set() for i in range(token_num)] for j in range(token_num)]
+        event2graph = {}
+        for pt in matrix_points:
+            tag = self.id2tag[pt[2]]
+            tag_1, tag_2 = tag.split(self.separator)
+            if tag_1 == "IN_CLIQUE":
+                event_type = tag_2
+                if event_type not in event2graph:
+                    event2graph[event_type] = nx.Graph()
+                event2graph[event_type].add_edge(pt[0], pt[1])
+            else:
+                tag_matrix[pt[0]][pt[1]].add(tag)
+
+        # if sample_idx == "combined_137":
+        #     print("!")
+        event_list = []
+        inv_num = [0 for _ in range(token_num)]
+        for event_type, graph in event2graph.items():
+            cliques = list(nx.find_cliques(graph))  # all maximal cliques
+            # inv_num = [0 for _ in range(token_num)]  # shared nodes: num > 1
+            for cli in cliques:
+                for n in cli:
+                    inv_num[n] += 1
+
+        for event_type, graph in event2graph.items():
+
+            cliques = list(nx.find_cliques(graph))  # all maximal cliques
+            # inv_num = [0 for _ in range(token_num)]  # shared nodes: num > 1
+            # for cli in cliques:
+            #     for n in cli:
+            #         inv_num[n] += 1
+
+            for cli in cliques:
+                role2tag_seq = {}
+                for i in cli:
+                    if inv_num[i] > 1:  # skip shared nodes, important
+                        continue
+                    for j in cli:
+                        tags = tag_matrix[i][j]
+                        for t in tags:
+                            g_tag, v_tag = t.split(self.separator)
+                            v_role, v_sp_tag = v_tag.split(self.sep4span_tag)
+                            g_role, g_sp_tag = v_tag.split(self.sep4span_tag)
+                            if g_role not in self.event_type2arg_rols[event_type] or \
+                                    v_role not in self.event_type2arg_rols[event_type]:
+                                continue
+
+                            if v_role not in role2tag_seq:
+                                role2tag_seq[v_role] = {"B": set(),
+                                                        "E": set()}
+                            role2tag_seq[v_role][v_sp_tag].add(j)
+
+                for j in cli:
+                    if inv_num[j] > 1:  # skip shared nodes, important
+                        continue
+                    for i in cli:
+                        tags = tag_matrix[i][j]
+                        for t in tags:
+                            g_tag, v_tag = t.split(self.separator)
+                            v_role, v_sp_tag = g_tag.split(self.sep4span_tag)
+                            g_role, g_sp_tag = v_tag.split(self.sep4span_tag)
+                            if g_role not in self.event_type2arg_rols[event_type] or \
+                                    v_role not in self.event_type2arg_rols[event_type]:
+                                continue
+
+                            if v_role not in role2tag_seq:
+                                role2tag_seq[v_role] = {"B": set(),
+                                                        "E": set()}
+                            role2tag_seq[v_role][v_sp_tag].add(i)
+
+                arguments = []
+                event = {}
+                for role, tag_seq in role2tag_seq.items():
+                    span_list = []
+                    for b_idx in sorted(tag_seq["B"]):
+                        for e_idx in sorted(tag_seq["E"]):
+                            if b_idx <= e_idx:
+                                span_list.append([b_idx, e_idx + 1])
+                                break
+
+                    for tok_span in span_list:
+                        char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+                        arg_text = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text)
+                        if "Trigger" in role:
                             event["trigger_tok_span"] = tok_span
                             event["trigger"] = arg_text
                             event["trigger_char_span"] = char_span
