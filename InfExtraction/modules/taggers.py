@@ -2148,7 +2148,7 @@ class Tagger4TFBoys(Tagger4TriggerFreeEELu):
         for event in event_list:
             event_type = event["trigger_type"]
             pseudo_argument = {
-                "type": "Trigger",
+                "type": ":".join(["Trigger", event_type]),
                 "tok_span": event["trigger_tok_span"],
             }
             argument_list = [pseudo_argument, ] + event["argument_list"]
@@ -2225,7 +2225,7 @@ class Tagger4TFBoys(Tagger4TriggerFreeEELu):
                     for tok_span in span_list:
                         char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
                         arg_text = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text)
-                        if role == "Trigger":
+                        if "Trigger" in role:
                             event["trigger_tok_span"] = tok_span
                             event["trigger"] = arg_text
                             event["trigger_char_span"] = char_span
