@@ -207,6 +207,10 @@ if __name__ == "__main__":
     if "char_encoder_config" in model_settings and model_settings["char_encoder_config"] is not None:
         max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
 
+    do_lower_case = False
+    if "subwd_encoder_config" in model_settings and "do_lower_case" in model_settings["subwd_encoder_config"]:
+        do_lower_case = model_settings["subwd_encoder_config"]["do_lower_case"]
+
     # env
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -214,16 +218,16 @@ if __name__ == "__main__":
     # ...
 
     # choose features and spans by token level
-    ori_train_data = Preprocessor.choose_features_by_token_level(ori_train_data, token_level)
+    ori_train_data = Preprocessor.choose_features_by_token_level(ori_train_data, token_level, do_lower_case)
     ori_train_data = Preprocessor.choose_spans_by_token_level(ori_train_data, token_level)
 
-    ori_valid_data = Preprocessor.choose_features_by_token_level(ori_valid_data, token_level)
+    ori_valid_data = Preprocessor.choose_features_by_token_level(ori_valid_data, token_level, do_lower_case)
     ori_valid_data = Preprocessor.choose_spans_by_token_level(ori_valid_data, token_level)
 
-    ori_data4checking = Preprocessor.choose_features_by_token_level(ori_data4checking, token_level)
+    ori_data4checking = Preprocessor.choose_features_by_token_level(ori_data4checking, token_level, do_lower_case)
     ori_data4checking = Preprocessor.choose_spans_by_token_level(ori_data4checking, token_level)
     for filename, test_data in filename2ori_test_data.items():
-        filename2ori_test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level)
+        filename2ori_test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level, do_lower_case)
         filename2ori_test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<

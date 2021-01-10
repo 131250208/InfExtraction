@@ -1010,7 +1010,7 @@ class TPLinkerTree(IEModel):
         }
 
 
-class TFBoys(IEModel):
+class TableFillingBackbone(IEModel):
     def __init__(self,
                  tagger,
                  metrics_cal,
@@ -1040,7 +1040,7 @@ class TFBoys(IEModel):
         self.dec_fc = nn.Linear(vis_dim, self.tag_size)
 
     def generate_batch(self, batch_data):
-        batch_dict = super(TFBoys, self).generate_batch(batch_data)
+        batch_dict = super(TableFillingBackbone, self).generate_batch(batch_data)
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
         # shaking tag
         tag_points_batch = [sample["tag_points"] for sample in batch_data]
@@ -1049,7 +1049,7 @@ class TFBoys(IEModel):
         return batch_dict
 
     def forward(self, **kwargs):
-        super(TFBoys, self).forward()
+        super(TableFillingBackbone, self).forward()
 
         cat_hiddens = self._cat_features(**kwargs)
         event_con = self.aggr_fc4event_context(cat_hiddens)
