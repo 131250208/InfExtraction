@@ -446,6 +446,7 @@ class RAIN(IEModel):
         self.loss_weight_recover_steps = loss_weight_recover_steps
         self.metrics_cal = metrics_cal
         self.loss_weight = loss_weight
+        self.init_loss_weight = init_loss_weight
 
         self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
         self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
