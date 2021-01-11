@@ -645,7 +645,7 @@ class RAIN(IEModel):
             w_ent = min(init_ent_w + step_weight, stable_ent_w)
             w_rel = max(init_rel_w - step_weight, stable_rel_w)
 
-        print("ent_w: {}, rel_w: {}".format(w_ent, w_rel))
+        # print("ent_w: {}, rel_w: {}".format(w_ent, w_rel))
         loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
                                                                             ent_gold_tag,
                                                                             self.bp_steps) + \
