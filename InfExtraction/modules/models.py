@@ -437,6 +437,7 @@ class RAIN(IEModel):
                  golden_ent_cla_guide=False,
                  loss_weight_recover_steps=None,
                  loss_weight=.5,
+                 init_loss_weight=.5,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -627,10 +628,23 @@ class RAIN(IEModel):
 
         total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
         current_step = self.bp_steps
-        ori_w_ent, ori_w_rel = self.loss_weight, 1 - self.loss_weight
-        w_ent = max(1 - ori_w_ent * current_step / total_steps, ori_w_ent)
-        w_rel = min(ori_w_rel * current_step / total_steps, ori_w_rel)
 
+        init_ent_w, init_rel_w = self.init_loss_weight, 1 - self.init_loss_weight
+        stable_ent_w, stable_rel_w = self.loss_weight, 1 - self.loss_weight
+        if init_ent_w > stable_ent_w:
+            # decrease to stable in total_steps
+            dif = init_ent_w - stable_ent_w
+            step_weight = dif * current_step / total_steps
+            w_ent = max(init_ent_w - step_weight, stable_ent_w)
+            w_rel = min(init_rel_w + step_weight, stable_rel_w)
+        else:
+            # increase to stable in total_steps
+            dif = stable_ent_w - init_ent_w
+            step_weight = dif * current_step / total_steps
+            w_ent = min(init_ent_w + step_weight, stable_ent_w)
+            w_rel = max(init_rel_w - step_weight, stable_rel_w)
+
+        print("ent_w: {}, rel_w: {}".format(w_ent, w_rel))
         loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
                                                                             ent_gold_tag,
                                                                             self.bp_steps) + \
