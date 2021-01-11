@@ -2725,8 +2725,8 @@ class NERTagger4RAIN(Tagger):
         pred_sample = copy.deepcopy(sample)
         pred_sample["entity_list"] = ent_list
 
-        sc_dict = MetricsCalculator.get_ent_cpg_dict([pred_sample], [sample])
-        for sck, sc in sc_dict.items():
-            if sc[0] != sc[2] or sc[0] != sc[1]:
-                print("1")
+        # sc_dict = MetricsCalculator.get_ent_cpg_dict([pred_sample], [sample])
+        # for sck, sc in sc_dict.items():
+        #     if sc[0] != sc[2] or sc[0] != sc[1]:
+        #         print("1")
         return pred_sample
