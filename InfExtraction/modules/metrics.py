@@ -1,7 +1,7 @@
 import torch
 import re
 import copy
-
+from IPython.core.debugger import set_trace
 
 class MetricsCalculator:
     def __init__(self,
@@ -101,7 +101,7 @@ class MetricsCalculator:
         return sample_acc
 
     @staticmethod
-    def _get_mark_sets_ee(event_list):
+    def get_mark_sets_ee(event_list):
         trigger_iden_set, trigger_class_set = set(), set()
         arg_hard_iden_set, arg_hard_class_set = set(), set()  # consider trigger offset
         arg_soft_iden_set, arg_soft_class_set = set(), set()  # do not consider trigger offset
@@ -169,36 +169,62 @@ class MetricsCalculator:
         }
 
     @staticmethod
-    def _get_mark_sets_ent(ent_list):
+    def get_partial_ent(ent_text):
+        ch_pattern = "[\u4e00-\u9fa5\s]+"
+        try:
+            part_ent = ent_text[0] if re.match(ch_pattern, ent_text[0]) is not None else ent_text.split()[0]
+            return part_ent
+        except Exception:
+            set_trace()
+
+    @staticmethod
+    def get_mark_sets_ent(ent_list, sent_w_disc=False):
         ent_partial_text_set, \
         ent_partial_offset_set, \
         ent_exact_text_set, \
-        ent_exact_offset_set = set(), set(), set(), set()
-        word_pattern = "[0-9]+|[\[\]a-zA-Z]+|[^0-9a-zA-Z]"
+        ent_exact_offset_set, \
+        disc_ent_exact_offset_set, \
+        disc_ent_exact_text_set, \
+        ent_exact_offset_on_sents_w_disc_set, \
+        ent_exact_text_on_sents_w_disc_set = set(), set(), set(), set(), set(), set(), set(), set()
+        # tmp = [0, 0]
         for ent in ent_list:
-            wds = re.findall(word_pattern, ent["text"])
-            ent_partial_text_set.add(str([wds[0], ent["type"]]))
+            part_ent = MetricsCalculator.get_partial_ent(ent["text"])
+            ent_partial_text_set.add(str([part_ent, ent["type"]]))
             ent_partial_offset_set.add(str([ent["tok_span"][0], ent["type"]]))
+
             ent_exact_text_set.add(str([ent["text"], ent["type"]]))
             ent_exact_offset_set.add(str([ent["type"]] + ent["tok_span"]))
-
+            if sent_w_disc:
+                ent_exact_offset_on_sents_w_disc_set.add(str([ent["type"]] + ent["tok_span"]))
+                ent_exact_text_on_sents_w_disc_set.add(str([ent["text"], ent["type"]]))
+                # tmp[0] += 1
+            if len(ent["tok_span"]) > 2:
+                disc_ent_exact_offset_set.add(str([ent["type"]] + ent["tok_span"]))
+                disc_ent_exact_text_set.add(str([ent["text"], ent["type"]]))
+                # tmp[1] += 1
         return {
             "ent_partial_text": ent_partial_text_set,
             "ent_partial_offset": ent_partial_offset_set,
             "ent_exact_text": ent_exact_text_set,
             "ent_exact_offset": ent_exact_offset_set,
-        }
-
-    def _get_mark_sets_rel(self, rel_list):
+            "disc_ent_exact_offset": disc_ent_exact_offset_set,
+            "disc_ent_exact_text": disc_ent_exact_text_set,
+            "ent_exact_offset_on_sents_w_disc": ent_exact_offset_on_sents_w_disc_set,
+            "ent_exact_text_on_sents_w_disc": ent_exact_text_on_sents_w_disc_set,
+        }  #, tmp
+    
+    @staticmethod
+    def get_mark_sets_rel(rel_list):
         rel_partial_text_set, \
         rel_partial_offset_set, \
         rel_exact_text_set, \
         rel_exact_offset_set = set(), set(), set(), set()
 
         for rel in rel_list:
-            rel_partial_text_set.add(str([rel["subject"].split(self.sep)[0],
-                                          rel["predicate"],
-                                          rel["object"].split(self.sep)[0]]))
+            part_subj = MetricsCalculator.get_partial_ent(rel["subject"])
+            part_obj = MetricsCalculator.get_partial_ent(rel["subject"])
+            rel_partial_text_set.add(str([part_subj, rel["predicate"], part_obj]))
             rel_exact_text_set.add(str([rel["subject"], rel["predicate"], rel["object"]]))
             rel_partial_offset_set.add(str([rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]]))
             rel_exact_offset_set.add(str(rel["subj_tok_span"] + [rel["predicate"]] + rel["obj_tok_span"]))
@@ -210,7 +236,7 @@ class MetricsCalculator:
         }
 
     @staticmethod
-    def _cal_cpg(pred_set, gold_set, cpg):
+    def cal_cpg(pred_set, gold_set, cpg):
         '''
         cpg is a list: [correct_num, pred_num, gold_num]
         '''
@@ -229,7 +255,7 @@ class MetricsCalculator:
         #     raise Exception("debug")
 
     @staticmethod
-    def _cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict):
+    def cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict, sent_w_disc=False):
         '''
         ent_cpg_dict = {
             "ent_partial_text": [0, 0, 0],
@@ -237,14 +263,20 @@ class MetricsCalculator:
             "ent_exact_text": [0, 0, 0],
             "ent_exact_offset": [0, 0, 0],
         }
+        if compute disc:
+        ent_cpg_dict["disc_ent_exact_offset"] = [0, 0, 0]
+        ent_cpg_dict["disc_ent_exact_text"] = [0, 0, 0]
+        ent_cpg_dict["ent_exact_offset_on_sents_w_disc"] = [0, 0, 0]
+        ent_cpg_dict["ent_exact_text_on_sents_w_disc"] = [0, 0, 0]
         '''
-        pred_set_dict = MetricsCalculator._get_mark_sets_ent(pred_ent_list)
-        gold_set_dict = MetricsCalculator._get_mark_sets_ent(gold_ent_list)
+        pred_set_dict = MetricsCalculator.get_mark_sets_ent(pred_ent_list, sent_w_disc)
+        gold_set_dict = MetricsCalculator.get_mark_sets_ent(gold_ent_list, sent_w_disc)
         for key in ent_cpg_dict.keys():
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
-            MetricsCalculator._cal_cpg(pred_set, gold_set, ent_cpg_dict[key])
+            MetricsCalculator.cal_cpg(pred_set, gold_set, ent_cpg_dict[key])
 
-    def _cal_rel_cpg(self, pred_rel_list, gold_rel_list, re_cpg_dict):
+    @staticmethod
+    def cal_rel_cpg(pred_rel_list, gold_rel_list, re_cpg_dict):
         '''
         re_cpg_dict = {
             "rel_partial_text": [0, 0, 0],
@@ -253,14 +285,14 @@ class MetricsCalculator:
             "rel_exact_offset": [0, 0, 0],
         }
         '''
-        pred_set_dict = self._get_mark_sets_rel(pred_rel_list)
-        gold_set_dict = self._get_mark_sets_rel(gold_rel_list)
+        pred_set_dict = MetricsCalculator.get_mark_sets_rel(pred_rel_list)
+        gold_set_dict = MetricsCalculator.get_mark_sets_rel(gold_rel_list)
         for key in re_cpg_dict.keys():
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
-            self._cal_cpg(pred_set, gold_set, re_cpg_dict[key])
+            MetricsCalculator.cal_cpg(pred_set, gold_set, re_cpg_dict[key])
 
     @staticmethod
-    def _cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict):
+    def cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict):
         '''
         ee_cpg_dict = {
             "trigger_iden": [0, 0, 0],
@@ -273,11 +305,11 @@ class MetricsCalculator:
             "arg_link_class": [0, 0, 0],
         }
         '''
-        pred_set_dict = MetricsCalculator._get_mark_sets_ee(pred_event_list)
-        gold_set_dict = MetricsCalculator._get_mark_sets_ee(gold_event_list)
+        pred_set_dict = MetricsCalculator.get_mark_sets_ee(pred_event_list)
+        gold_set_dict = MetricsCalculator.get_mark_sets_ee(gold_event_list)
         for key in ee_cpg_dict.keys():
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
-            MetricsCalculator._cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
+            MetricsCalculator.cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
 
     @staticmethod
     def get_ee_cpg_dict(pred_sample_list, golden_sample_list):
@@ -296,7 +328,7 @@ class MetricsCalculator:
             pred_event_list = pred_sample["event_list"]
             gold_event_list = gold_sample["event_list"]
             # try:
-            MetricsCalculator._cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
+            MetricsCalculator.cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
             # except Exception as e:
             #     print("event error!")
         return ee_cpg_dict
@@ -313,7 +345,7 @@ class MetricsCalculator:
             pred_rel_list = pred_sample["relation_list"]
             gold_rel_list = gold_sample["relation_list"]
             # try:
-            self._cal_rel_cpg(pred_rel_list, gold_rel_list, re_cpg_dict)
+            self.cal_rel_cpg(pred_rel_list, gold_rel_list, re_cpg_dict)
             # except Exception:
             #     pass
         return re_cpg_dict
@@ -326,12 +358,20 @@ class MetricsCalculator:
             "ent_exact_text": [0, 0, 0],
             "ent_exact_offset": [0, 0, 0],
         }
+
+        if any(len(ent["char_span"]) > 2 for sample in golden_sample_list for ent in sample["entity_list"]):
+            ent_cpg_dict["disc_ent_exact_offset"] = [0, 0, 0]
+            ent_cpg_dict["disc_ent_exact_text"] = [0, 0, 0]
+            ent_cpg_dict["ent_exact_offset_on_sents_w_disc"] = [0, 0, 0]
+            ent_cpg_dict["ent_exact_text_on_sents_w_disc"] = [0, 0, 0]
+
         for idx, pred_sample in enumerate(pred_sample_list):
             gold_sample = golden_sample_list[idx]
             pred_ent_list = pred_sample["entity_list"]
             gold_ent_list = gold_sample["entity_list"]
+            sent_w_disc = any(len(ent["tok_span"]) > 2 for ent in gold_ent_list)
             # try:
-            MetricsCalculator._cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict)
+            MetricsCalculator.cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict, sent_w_disc)
             # except Exception:
             #     print("ent error")
         return ent_cpg_dict
