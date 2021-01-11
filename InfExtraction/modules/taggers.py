@@ -2684,9 +2684,11 @@ class NERTagger4RAIN(Tagger):
 
         memory = set()
         for ent_type, boundaries in ent_type2boundaries.items():
+            if ent_type not in ent_type2graph:
+                continue
+            graph = ent_type2graph[ent_type]
             for bd in boundaries:
                 tok_ids = list(range(*bd))
-                graph = ent_type2graph[ent_type]
                 cliques = list(nx.find_cliques(nx.induced_subgraph(graph, tok_ids)))
                 cliques = [cli for cli in cliques if tok_ids[0] == min(cli) and tok_ids[-1] == max(cli)]
 
