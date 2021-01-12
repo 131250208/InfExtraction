@@ -208,7 +208,9 @@ if __name__ == "__main__":
         max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
 
     do_lower_case = False
-    if "subwd_encoder_config" in model_settings and "do_lower_case" in model_settings["subwd_encoder_config"]:
+    if "subwd_encoder_config" in model_settings and \
+            model_settings["subwd_encoder_config"] is not None and \
+            "do_lower_case" in model_settings["subwd_encoder_config"]:
         do_lower_case = model_settings["subwd_encoder_config"]["do_lower_case"]
 
     # env
