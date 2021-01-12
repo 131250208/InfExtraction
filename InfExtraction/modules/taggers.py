@@ -1242,6 +1242,202 @@ def create_rebased_tfboys_tagger(base_class):
 
 
 def create_rebased_discontinuous_ner_tagger(base_class):
+    # class REBasedDiscontinuousNERTagger(base_class):
+    #     def __init__(self, *arg, **kwargs):
+    #         super(REBasedDiscontinuousNERTagger, self).__init__(*arg, **kwargs)
+    #         self.language = kwargs["language"]
+    #         self.add_next_link = kwargs["add_next_link"]
+    #
+    #     @classmethod
+    #     def additional_preprocess(cls, data, data_type, **kwargs):
+    #         if data_type != "train":
+    #             return data
+    #
+    #         add_next_link = kwargs["add_next_link"]
+    #         new_tag_sep = "\u2E82"
+    #         new_data = []
+    #         for sample in data:
+    #             new_sample = copy.deepcopy(sample)
+    #             text = sample["text"]
+    #             new_ent_list = []
+    #             new_rel_list = []
+    #             for ent in sample["entity_list"]:
+    #                 assert len(ent["char_span"]) == len(ent["tok_span"])
+    #                 ent_type = ent["type"]
+    #                 for idx_i in range(0, len(ent["char_span"]), 2):
+    #                     seg_i_ch_span = [ent["char_span"][idx_i], ent["char_span"][idx_i + 1]]
+    #                     seg_i_tok_span = [ent["tok_span"][idx_i], ent["tok_span"][idx_i + 1]]
+    #                     if add_next_link:
+    #                         position_tag = "B" if idx_i == 0 else "I"
+    #                         new_ent_type = "{}{}{}".format(ent_type, new_tag_sep, position_tag)
+    #                     else:
+    #                         new_ent_type = ent_type
+    #
+    #                     new_ent_list.append({
+    #                         "text": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
+    #                         "type": new_ent_type,
+    #                         "char_span": seg_i_ch_span,
+    #                         "tok_span": seg_i_tok_span,
+    #                     })
+    #                     for idx_j in range(idx_i + 2, len(ent["char_span"]), 2):
+    #                         seg_j_ch_span = [ent["char_span"][idx_j], ent["char_span"][idx_j + 1]]
+    #                         seg_j_tok_span = [ent["tok_span"][idx_j], ent["tok_span"][idx_j + 1]]
+    #                         if add_next_link and idx_j == idx_i + 2:
+    #                             new_rel_list.append({
+    #                                 "subject": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
+    #                                 "subj_char_span": seg_i_ch_span,
+    #                                 "subj_tok_span": seg_i_tok_span,
+    #                                 "object": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
+    #                                 "obj_char_span": seg_j_ch_span,
+    #                                 "obj_tok_span": seg_j_tok_span,
+    #                                 "predicate": "{}{}{}".format(ent_type, new_tag_sep, "NEXT"),
+    #                             })
+    #                         new_rel_list.append({
+    #                             "subject": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
+    #                             "subj_char_span": seg_i_ch_span,
+    #                             "subj_tok_span": seg_i_tok_span,
+    #                             "object": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
+    #                             "obj_char_span": seg_j_ch_span,
+    #                             "obj_tok_span": seg_j_tok_span,
+    #                             "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
+    #                         })
+    #                         new_rel_list.append({
+    #                             "subject": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
+    #                             "subj_char_span": seg_j_ch_span,
+    #                             "subj_tok_span": seg_j_tok_span,
+    #                             "object": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
+    #                             "obj_char_span": seg_i_ch_span,
+    #                             "obj_tok_span": seg_i_tok_span,
+    #                             "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
+    #                         })
+    #             new_sample["entity_list"] = new_ent_list
+    #             new_sample["relation_list"] = new_rel_list
+    #             new_data.append(new_sample)
+    #         return new_data
+    #
+    #     def decode(self, sample, pred_outs):
+    #         pred_sample = super(REBasedDiscontinuousNERTagger, self).decode(sample, pred_outs)
+    #         return self._trans(pred_sample)
+    #
+    #     def _trans(self, ori_sample):
+    #         # decoding
+    #         ent_list = ori_sample["entity_list"]
+    #         rel_list = ori_sample["relation_list"]
+    #         text = ori_sample["text"]
+    #         tok2char_span = ori_sample["features"]["tok2char_span"]
+    #
+    #         new_ent_list = []
+    #         new_tag_sep = "\u2E82"
+    #         ent_type2anns = {}
+    #
+    #         # map entities by type
+    #         for ent in ent_list:
+    #             if self.add_next_link:
+    #                 ent_type, pos_tag = ent["type"].split(new_tag_sep)
+    #                 ent["type"] = pos_tag
+    #             else:
+    #                 ent_type = ent["type"]
+    #             if ent_type not in ent_type2anns:
+    #                 ent_type2anns[ent_type] = {
+    #                     "seg_list": [],
+    #                     "rel_list": [],
+    #                 }
+    #
+    #             ent_type2anns[ent_type]["seg_list"].append(ent)
+    #
+    #         # map relations by entity type
+    #         for rel in rel_list:
+    #             ent_type, rel_tag = rel["predicate"].split(new_tag_sep)
+    #             rel["predicate"] = rel_tag
+    #             assert ent_type in ent_type2anns
+    #             if ent_type in ent_type2anns:
+    #                 ent_type2anns[ent_type]["rel_list"].append(rel)
+    #
+    #         for ent_type, anns in ent_type2anns.items():
+    #             offset2seg_types = {}  # "1,2" -> {B, I}
+    #             graph = nx.Graph()
+    #             for seg in anns["seg_list"]:
+    #                 offset_key = "{},{}".format(*seg["tok_span"])
+    #                 if offset_key not in offset2seg_types:
+    #                     offset2seg_types[offset_key] = set()
+    #                 offset2seg_types[offset_key].add(seg["type"])
+    #                 graph.add_node(offset_key)  # add a segment as a node
+    #
+    #             for rel in anns["rel_list"]:
+    #                 subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
+    #                 obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
+    #                 if rel["predicate"] == "SAME_ENT":
+    #                     graph.add_edge(subj_offset_key, obj_offset_key)  # add an edge between 2 segments
+    #
+    #             for cli in nx.find_cliques(graph):
+    #                 if self.add_next_link:
+    #                     # collect "next" links in this clique
+    #                     link_map = {}  # "1,2" -> "3,6"
+    #                     cli = set(cli)
+    #                     for rel in anns["rel_list"]:
+    #                         if rel["predicate"] == "NEXT":
+    #                             subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
+    #                             obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
+    #                             if subj_offset_key in cli and obj_offset_key in cli:
+    #                                 link_map[subj_offset_key] = obj_offset_key
+    #
+    #                     # iterate all nodes (segments) in this clique, and link them by "next" link (link_map)
+    #                     for offset_key in cli:
+    #                         assert offset_key in offset2seg_types  # debug for ground truth, 删
+    #                         if offset_key not in offset2seg_types:
+    #                             continue
+    #                         if "B" in offset2seg_types[offset_key]:  # it is a entity start
+    #                             point_offset_key = offset_key
+    #                             tok_span = [*point_offset_key.split(",")]
+    #                             while point_offset_key in link_map:  # has a next link to another node
+    #                                 point_offset_key = link_map[point_offset_key]  # point to next node
+    #                                 if "I" not in offset2seg_types[point_offset_key]:  # if it is not an inside segment
+    #                                     break
+    #                                 tok_span.extend(point_offset_key.split(","))
+    #                             tok_span = [int(sp) for sp in tok_span]
+    #                             char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+    #                             new_ent_list.append({
+    #                                 "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
+    #                                 "type": ent_type,
+    #                                 "char_span": char_span,
+    #                                 "tok_span": tok_span,
+    #                             })
+    #                 else:  # if no next links, sort spans by order
+    #                     spans = []
+    #                     for n in cli:
+    #                         start, end = n.split(",")
+    #                         spans.append([int(start), int(end)])
+    #                     tok_span = []
+    #                     last_end = -10
+    #                     for sp in sorted(spans, key=lambda sp: sp[0]):
+    #                         # if overlapping, the closest first (to the start seg)
+    #                         # if sp[0] <= last_end and self.language == "en" or \
+    #                         #         sp[0] < last_end and self.language == "ch":
+    #                         #     continue
+    #                         if sp[0] < last_end:
+    #                             continue
+    #                         tok_span.extend(sp)
+    #                         last_end = sp[1]
+    #                     char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+    #                     new_ent_list.append({
+    #                         "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
+    #                         "type": ent_type,
+    #                         "char_span": char_span,
+    #                         "tok_span": tok_span,
+    #                     })
+    #
+    #         # merge continuous spans
+    #         for ent in new_ent_list:
+    #             new_tok_spans = utils.merge_spans(ent["tok_span"], self.language, "token")
+    #             new_char_spans = utils.merge_spans(ent["char_span"], self.language, "char")
+    #             ent_extr_ch = Preprocessor.extract_ent_fr_txt_by_char_sp(new_char_spans, text, self.language)
+    #             ent_extr_tk = Preprocessor.extract_ent_fr_txt_by_tok_sp(new_tok_spans, tok2char_span, text, self.language)
+    #             assert ent_extr_ch == ent_extr_tk == ent["text"]
+    #
+    #         ori_sample["entity_list"] = new_ent_list
+    #         del ori_sample["relation_list"]
+    #         return ori_sample
+
     class REBasedDiscontinuousNERTagger(base_class):
         def __init__(self, *arg, **kwargs):
             super(REBasedDiscontinuousNERTagger, self).__init__(*arg, **kwargs)
@@ -1253,7 +1449,6 @@ def create_rebased_discontinuous_ner_tagger(base_class):
             if data_type != "train":
                 return data
 
-            add_next_link = kwargs["add_next_link"]
             new_tag_sep = "\u2E82"
             new_data = []
             for sample in data:
@@ -1264,14 +1459,23 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                 for ent in sample["entity_list"]:
                     assert len(ent["char_span"]) == len(ent["tok_span"])
                     ent_type = ent["type"]
+
+                    ch_sp = [ent["char_span"][0], ent["char_span"][-1]]
+                    tok_sp = [ent["tok_span"][0], ent["tok_span"][-1]]
+                    # boundary
+                    new_ent_list.append({
+                        "text": text[ch_sp[0]:ch_sp[1]],
+                        "type": new_tag_sep.join([ent_type, "BOUNDARY"]),
+                        "char_span": ch_sp,
+                        "tok_span": tok_sp,
+                    })
+
                     for idx_i in range(0, len(ent["char_span"]), 2):
                         seg_i_ch_span = [ent["char_span"][idx_i], ent["char_span"][idx_i + 1]]
                         seg_i_tok_span = [ent["tok_span"][idx_i], ent["tok_span"][idx_i + 1]]
-                        if add_next_link:
-                            position_tag = "B" if idx_i == 0 else "I"
-                            new_ent_type = "{}{}{}".format(ent_type, new_tag_sep, position_tag)
-                        else:
-                            new_ent_type = ent_type
+
+                        position_tag = "B" if idx_i == 0 else "I"
+                        new_ent_type = "{}{}{}".format(ent_type, new_tag_sep, position_tag)
 
                         new_ent_list.append({
                             "text": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
@@ -1282,16 +1486,6 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                         for idx_j in range(idx_i + 2, len(ent["char_span"]), 2):
                             seg_j_ch_span = [ent["char_span"][idx_j], ent["char_span"][idx_j + 1]]
                             seg_j_tok_span = [ent["tok_span"][idx_j], ent["tok_span"][idx_j + 1]]
-                            if add_next_link and idx_j == idx_i + 2:
-                                new_rel_list.append({
-                                    "subject": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-                                    "subj_char_span": seg_i_ch_span,
-                                    "subj_tok_span": seg_i_tok_span,
-                                    "object": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-                                    "obj_char_span": seg_j_ch_span,
-                                    "obj_tok_span": seg_j_tok_span,
-                                    "predicate": "{}{}{}".format(ent_type, new_tag_sep, "NEXT"),
-                                })
                             new_rel_list.append({
                                 "subject": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
                                 "subj_char_span": seg_i_ch_span,
@@ -1301,15 +1495,16 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                                 "obj_tok_span": seg_j_tok_span,
                                 "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
                             })
-                            new_rel_list.append({
-                                "subject": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-                                "subj_char_span": seg_j_ch_span,
-                                "subj_tok_span": seg_j_tok_span,
-                                "object": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-                                "obj_char_span": seg_i_ch_span,
-                                "obj_tok_span": seg_i_tok_span,
-                                "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
-                            })
+                            # new_rel_list.append({
+                            #     "subject": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
+                            #     "subj_char_span": seg_j_ch_span,
+                            #     "subj_tok_span": seg_j_tok_span,
+                            #     "object": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
+                            #     "obj_char_span": seg_i_ch_span,
+                            #     "obj_tok_span": seg_i_tok_span,
+                            #     "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
+                            # })
+
                 new_sample["entity_list"] = new_ent_list
                 new_sample["relation_list"] = new_rel_list
                 new_data.append(new_sample)
@@ -1330,80 +1525,97 @@ def create_rebased_discontinuous_ner_tagger(base_class):
             new_tag_sep = "\u2E82"
             ent_type2anns = {}
 
-            # classify entities by type
+            # map boudaries by entity type
+            # map entities by type
             for ent in ent_list:
-                if self.add_next_link:
-                    ent_type, pos_tag = ent["type"].split(new_tag_sep)
-                    ent["type"] = pos_tag
-                else:
-                    ent_type = ent["type"]
+                ent_type, pos_tag = ent["type"].split(new_tag_sep)
+                ent["type"] = pos_tag
                 if ent_type not in ent_type2anns:
                     ent_type2anns[ent_type] = {
                         "seg_list": [],
                         "rel_list": [],
+                        "boundaries": [],
                     }
-                # if self.add_next_link:
-                #     ent["type"] = pos_tag
-                ent_type2anns[ent_type]["seg_list"].append(ent)
 
-            # classify relations by entity type
+                if ent["type"] == "BOUNDARY":
+                    ent_type2anns[ent_type]["boundaries"].append(ent)
+                else:
+                    ent_type2anns[ent_type]["seg_list"].append(ent)
+
+            # map relations by entity type
             for rel in rel_list:
                 ent_type, rel_tag = rel["predicate"].split(new_tag_sep)
                 rel["predicate"] = rel_tag
-                assert ent_type in ent_type2anns  # debug, 正式删, 训练不充分时，ent_type可能不在
                 if ent_type in ent_type2anns:
                     ent_type2anns[ent_type]["rel_list"].append(rel)
 
+            # if ori_sample["id"] == "train_15232":
+            #     print("!")
+            #     print("??")
+
             for ent_type, anns in ent_type2anns.items():
-                offset2seg_types = {}  # "1,2" -> {B, I}
-                graph = nx.Graph()
-                for seg in anns["seg_list"]:
-                    offset_key = "{},{}".format(*seg["tok_span"])
-                    if offset_key not in offset2seg_types:
-                        offset2seg_types[offset_key] = set()
-                    offset2seg_types[offset_key].add(seg["type"])
-                    graph.add_node(offset_key)  # add a segment as a node
+                for boundary in anns["boundaries"]:
+                    bd_span = boundary["tok_span"]
+                    sub_seg_list = [seg for seg in anns["seg_list"] if utils.span_contains(bd_span, seg["tok_span"])]
+                    sub_rel_list = [rel for rel in anns["rel_list"]
+                                    if utils.span_contains(bd_span, rel["subj_tok_span"])
+                                    and utils.span_contains(bd_span, rel["obj_tok_span"])]
 
-                for rel in anns["rel_list"]:
-                    subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
-                    obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
-                    if rel["predicate"] == "SAME_ENT":
-                        graph.add_edge(subj_offset_key, obj_offset_key)  # add an edge between 2 segments
+                    offset2seg_types = {}  # "1,2" -> {B, I}
+                    graph = nx.Graph()
+                    for seg in sub_seg_list:
+                        offset_key = "{},{}".format(*seg["tok_span"])
+                        if offset_key not in offset2seg_types:
+                            offset2seg_types[offset_key] = set()
+                        offset2seg_types[offset_key].add(seg["type"])
+                        graph.add_node(offset_key)  # add a segment as a node
 
-                for cli in nx.find_cliques(graph):
-                    if self.add_next_link:
-                        # filter "next" links in this clique
-                        link_map = {}  # "1,2" -> "3,6"
-                        cli = set(cli)
-                        for rel in anns["rel_list"]:
-                            if rel["predicate"] == "NEXT":
-                                subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
-                                obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
-                                if subj_offset_key in cli and obj_offset_key in cli:
-                                    link_map[subj_offset_key] = obj_offset_key
+                    for rel in sub_rel_list:
+                        subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
+                        obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
+                        if rel["predicate"] == "SAME_ENT":
+                            graph.add_edge(subj_offset_key, obj_offset_key)  # add an edge between 2 segments
 
-                        # iterate all nodes (segments) in this clique, and link them by "next" link (link_map)
-                        for offset_key in cli:
-                            assert offset_key in offset2seg_types  # debug for ground truth, 删
-                            if offset_key not in offset2seg_types:
-                                continue
-                            if "B" in offset2seg_types[offset_key]:  # it is a entity start
-                                point_offset_key = offset_key
-                                tok_span = [*point_offset_key.split(",")]
-                                while point_offset_key in link_map:  # has a next link to another node
-                                    point_offset_key = link_map[point_offset_key]  # point to next node
-                                    if "I" not in offset2seg_types[point_offset_key]:  # if it is not an inside segment
-                                        break
-                                    tok_span.extend(point_offset_key.split(","))
-                                tok_span = [int(sp) for sp in tok_span]
-                                char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-                                new_ent_list.append({
-                                    "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
-                                    "type": ent_type,
-                                    "char_span": char_span,
-                                    "tok_span": tok_span,
-                                })
-                    else:
+                    cliques = []
+                    for cli in nx.find_cliques(graph):
+                        if any(int(n.split(",")[0]) == bd_span[0] for n in cli) and \
+                                any(int(n.split(",")[1]) == bd_span[1] for n in cli):
+                            cliques.append(cli)
+
+                    for cli in cliques:
+                        # if self.add_next_link:
+                        #     # collect "next" links in this clique
+                        #     link_map = {}  # "1,2" -> "3,6"
+                        #     cli = set(cli)
+                        #     for rel in anns["rel_list"]:
+                        #         if rel["predicate"] == "NEXT":
+                        #             subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
+                        #             obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
+                        #             if subj_offset_key in cli and obj_offset_key in cli:
+                        #                 link_map[subj_offset_key] = obj_offset_key
+                        #
+                        #     # iterate all nodes (segments) in this clique, and link them by "next" link (link_map)
+                        #     for offset_key in cli:
+                        #         assert offset_key in offset2seg_types  # debug for ground truth, 删
+                        #         if offset_key not in offset2seg_types:
+                        #             continue
+                        #         if "B" in offset2seg_types[offset_key]:  # it is a entity start
+                        #             point_offset_key = offset_key
+                        #             tok_span = [*point_offset_key.split(",")]
+                        #             while point_offset_key in link_map:  # has a next link to another node
+                        #                 point_offset_key = link_map[point_offset_key]  # point to next node
+                        #                 if "I" not in offset2seg_types[point_offset_key]:  # if it is not an inside segment
+                        #                     break
+                        #                 tok_span.extend(point_offset_key.split(","))
+                        #             tok_span = [int(sp) for sp in tok_span]
+                        #             char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+                        #             new_ent_list.append({
+                        #                 "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
+                        #                 "type": ent_type,
+                        #                 "char_span": char_span,
+                        #                 "tok_span": tok_span,
+                        #             })
+                        # else:  # if no next links, sort spans by order
                         spans = []
                         for n in cli:
                             start, end = n.split(",")
@@ -1426,9 +1638,19 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                             "char_span": char_span,
                             "tok_span": tok_span,
                         })
-            ori_sample["entity_list"] = new_ent_list
-            del ori_sample["relation_list"]
-            return ori_sample
+
+            # merge continuous spans
+            for ent in new_ent_list:
+                new_tok_spans = utils.merge_spans(ent["tok_span"], self.language, "token")
+                new_char_spans = utils.merge_spans(ent["char_span"], self.language, "char")
+                ent_extr_ch = Preprocessor.extract_ent_fr_txt_by_char_sp(new_char_spans, text, self.language)
+                ent_extr_tk = Preprocessor.extract_ent_fr_txt_by_tok_sp(new_tok_spans, tok2char_span, text, self.language)
+                assert ent_extr_ch == ent_extr_tk == ent["text"]
+
+            pred_sample = copy.deepcopy(ori_sample)
+            pred_sample["entity_list"] = new_ent_list
+            del pred_sample["relation_list"]
+            return pred_sample
 
     return REBasedDiscontinuousNERTagger
 
