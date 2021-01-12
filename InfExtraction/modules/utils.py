@@ -8,6 +8,10 @@ from pprint import pprint
 from tqdm import tqdm
 
 
+def span_contains(span1, span2):
+    return span1[0] <= span2[0] < span2[-1] <= span1[-1]
+
+
 def ids2span(ids):
     spans = []
     pre = -10
@@ -26,6 +30,23 @@ def spans2ids(spans):
     for i in range(0, len(spans), 2):
         ids.extend(list(range(spans[i], spans[i + 1])))
     return ids
+
+
+def merge_spans(spans, language, span_type):
+    '''
+    :param spans:
+    :param language: ch or en
+    :param span_type: token or char
+    :return:
+    '''
+    new_spans = []
+    for pid, pos in enumerate(spans):
+        p = pos if language == "ch" or span_type == "token" else pos - 1  # en: p - 1
+        if pid == 0 or pid % 2 != 0 or pid % 2 == 0 and p != new_spans[-1]:
+            new_spans.append(pos)
+        elif pid % 2 == 0 and p == new_spans[-1]:
+            new_spans.pop()
+    return new_spans
 
 
 def load_data(path, total_lines=None):

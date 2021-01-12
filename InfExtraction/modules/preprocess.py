@@ -6,6 +6,7 @@ import stanza
 import logging
 import time
 from IPython.core.debugger import set_trace
+from InfExtraction.modules import utils
 import torch
 import jieba
 from pprint import pprint
@@ -996,13 +997,7 @@ class Preprocessor:
                 #     spans.extend([spans[-1], spans[-1] + 1])  # whitespace
 
         # merge
-        new_spans = []
-        for pid, pos in enumerate(spans):
-            p = pos if language == "ch" else pos - 1  # en: p - 1
-            if pid == 0 or pid % 2 != 0 or pid % 2 == 0 and p != new_spans[-1]:
-                new_spans.append(pos)
-            elif pid % 2 == 0 and p == new_spans[-1]:
-                new_spans.pop()
+        new_spans = utils.merge_spans(spans, language)
         # seg_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(new_spans, text, language)
         # try:
         #     assert seg_extr == target_seg
