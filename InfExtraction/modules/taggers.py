@@ -10,6 +10,7 @@ from InfExtraction.modules.metrics import MetricsCalculator
 # from InfExtraction.modules.ancient_eval4oie import OIEMetrics
 import logging
 
+
 class Tagger(metaclass=ABCMeta):
     @classmethod
     def additional_preprocess(cls, data, data_type, **kwargs):
@@ -190,8 +191,15 @@ class HandshakingTagger4TPLPlus(Tagger):
                                "OT2ST",  # object tail to subject tail
                                }
 
-        self.filter_by_cliques = kwargs[
-            "filter_by_cliques"] if "filter_by_cliques" in kwargs else None
+        self.add_h2t_n_t2h_links = False
+        if "add_h2t_n_t2h_links" in kwargs and kwargs["add_h2t_n_t2h_links"] is True:
+            self.rel_link_types = self.rel_link_types.union({
+                "SH2OT",  # subject head to object tail
+                "OT2SH",  # object tail to subject head
+                "ST2OH",  # subject tail to object head
+                "OH2ST",  # object head to subject tail
+            })
+            self.add_h2t_n_t2h_links = True
 
         self.classify_entities_by_relation = kwargs["classify_entities_by_relation"]
 
@@ -248,6 +256,13 @@ class HandshakingTagger4TPLPlus(Tagger):
                 else:
                     add_point(
                         (obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "OT2ST"])]))
+
+                if self.add_h2t_n_t2h_links:
+                    add_point((subj_tok_span[0], obj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "SH2OT"])]))
+                    add_point((obj_tok_span[1] - 1, subj_tok_span[0], self.tag2id[self.separator.join([rel, "OT2SH"])]))
+                    add_point((subj_tok_span[1] - 1, obj_tok_span[0], self.tag2id[self.separator.join([rel, "ST2OH"])]))
+                    add_point((obj_tok_span[0], subj_tok_span[1] - 1, self.tag2id[self.separator.join([rel, "OH2ST"])]))
+
         return matrix_points
 
     def decode(self, sample, pred_tags):
@@ -257,14 +272,14 @@ class HandshakingTagger4TPLPlus(Tagger):
         '''
         rel_list, ent_list = [], []
         predicted_shaking_tag = pred_tags[0]
-        matrix_points = Indexer.shaking_seq2points(predicted_shaking_tag)
+        shk_points = Indexer.shaking_seq2points(predicted_shaking_tag)
 
         sample_idx, text = sample["id"], sample["text"]
         tok2char_span = sample["features"]["tok2char_span"]
 
         # entity
         head_ind2entities = {}
-        for sp in matrix_points:
+        for sp in shk_points:
             tag = self.id2tag[sp[2]]
             ent_type, link_type = tag.split(self.separator)
             # for an entity, the start position can not be larger than the end pos.
@@ -289,7 +304,7 @@ class HandshakingTagger4TPLPlus(Tagger):
 
         # tail link
         tail_link_memory_set = set()
-        for sp in matrix_points:
+        for sp in shk_points:
             tag = self.id2tag[sp[2]]
             rel, link_type = tag.split(self.separator)
             if link_type == "ST2OT":
@@ -300,7 +315,7 @@ class HandshakingTagger4TPLPlus(Tagger):
                 tail_link_memory_set.add(tail_link_memory)
 
         # head link
-        for sp in matrix_points:
+        for sp in shk_points:
             tag = self.id2tag[sp[2]]
             rel, link_type = tag.split(self.separator)
 
@@ -339,14 +354,38 @@ class HandshakingTagger4TPLPlus(Tagger):
                     rel_list.append({
                         "subject": subj["text"],
                         "object": obj["text"],
-                        # "subj_type": subj["type"],
-                        # "obj_type": obj["type"],
                         "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
                         "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
                         "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
                         "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
                         "predicate": rel,
                     })
+
+        if self.add_h2t_n_t2h_links:
+            # fitler wrong relations by Head 2 Tail and Tail to Head tags
+            head2tail_link_set = set()
+            tail2head_link_set = set()
+            for pt in shk_points:
+                tag = self.id2tag[pt[2]]
+                rel, link_type = tag.split(self.separator)
+                if link_type == "SH2OT":
+                    head2tail_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
+                elif link_type == "OT2SH":
+                    head2tail_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
+                if link_type == "ST2OH":
+                    tail2head_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
+                elif link_type == "OH2ST":
+                    tail2head_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
+            filtered_rel_list = []
+            for spo in rel_list:
+                subj_tok_span = spo["subj_tok_span"]
+                obj_tok_span = spo["obj_tok_span"]
+                h2t = self.separator.join([spo["predicate"], str(subj_tok_span[0]), str(obj_tok_span[1] - 1)])
+                t2h = self.separator.join([spo["predicate"], str(subj_tok_span[1] - 1), str(obj_tok_span[0])])
+                if h2t not in head2tail_link_set or t2h not in tail2head_link_set:
+                    continue
+                filtered_rel_list.append(spo)
+            rel_list = filtered_rel_list
 
         pred_sample = copy.deepcopy(sample)
         # filter extra relations
@@ -364,16 +403,6 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         :param data: all data, used to generate entity type and relation type dicts
         '''
         super(Tagger4RAIN, self).__init__(data, **kwargs)
-
-        self.add_h2t_n_t2h_links = False
-        if "add_h2t_n_t2h_links" in kwargs and kwargs["add_h2t_n_t2h_links"] is True:
-            self.rel_link_types = self.rel_link_types.union({
-                "SH2OT",  # subject head to object tail
-                "OT2SH",  # object tail to subject head
-                "ST2OH",  # subject tail to object head
-                "OH2ST",  # object head to subject tail
-            })
-            self.add_h2t_n_t2h_links = True
 
         self.rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
         ent_link_types = {"EH2ET"}
@@ -406,7 +435,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         if "entity_list" in sample:
             for ent in sample["entity_list"]:
                 point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
-                             self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
+                         self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
                 ent_matrix_points.append(point)
 
         if "relation_list" in sample:
@@ -417,16 +446,6 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
 
                 if rel not in self.rel2id:
                     continue
-                # if self.filter_by_cliques:
-                #     clique = list(range(*subj_tok_span)) + list(range(*obj_tok_span))
-                #     for i in clique:
-                #         for j in clique:
-                #             if i == j:
-                #                 continue
-                #             point = (i, j, self.rel_tag2id[self.separator.join([rel, "CLI"])])
-                #             rel_matrix_points.append(point)
-                #             # point = (j, i, self.rel_tag2id[self.separator.join([rel, "O2S"])])
-                #             # rel_matrix_points.append(point)
 
                 # add related boundaries
 
@@ -438,11 +457,6 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                     (subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "ST2OT"])]))
                 rel_matrix_points.append(
                     (obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OT2ST"])]))
-
-                # if self.output_ent_length:
-                #     ent_len_sum = subj_tok_span[-1] - subj_tok_span[0] + obj_tok_span[-1] - obj_tok_span[0]
-                #     ent_matrix_points.append(
-                #         (subj_tok_span[0], obj_tok_span[1] - 1, ent_len_sum))
 
                 if self.add_h2t_n_t2h_links:
                     rel_matrix_points.append(
@@ -550,8 +564,6 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                     rel_list.append({
                         "subject": subj["text"],
                         "object": obj["text"],
-                        # "subj_type": subj["type"],
-                        # "obj_type": obj["type"],
                         "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
                         "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
                         "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
@@ -587,11 +599,13 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
 
         pred_sample = copy.deepcopy(sample)
         # filter extra relations
-        pred_sample["relation_list"] = Preprocessor.unique_list([rel for rel in rel_list if "EXT:" not in rel["predicate"]])
+        pred_sample["relation_list"] = Preprocessor.unique_list(
+            [rel for rel in rel_list if "EXT:" not in rel["predicate"]])
         # filter extra entities
         ent_types2filter = {"REL:", "EXT:"}
         ent_filter_pattern = "({})".format("|".join(ent_types2filter))
-        pred_sample["entity_list"] = Preprocessor.unique_list([ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None])
+        pred_sample["entity_list"] = Preprocessor.unique_list(
+            [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None])
 
         # temp_set = {str(dict(sorted(rel.items()))) for rel in sample["relation_list"]}
         # for rel in pred_sample["relation_list"]:
@@ -986,6 +1000,8 @@ def create_rebased_ee_tagger(base_class):
 
 
 import time
+
+
 def create_rebased_tfboys_tagger(base_class):
     class REBasedTFBOYSTagger(base_class):
         def __init__(self, data, *args, **kwargs):
@@ -1021,7 +1037,8 @@ def create_rebased_tfboys_tagger(base_class):
                     for i, arg_i in enumerate(arg_list):
                         fin_ent_list.append({
                             "text": arg_i["text"],
-                            "type": "EE:{}".format(arg_i["type"]),  # "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
+                            "type": "EE:{}".format(arg_i["type"]),
+                            # "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
                             "char_span": arg_i["char_span"],
                             "tok_span": arg_i["tok_span"],
                         })
@@ -1044,7 +1061,8 @@ def create_rebased_tfboys_tagger(base_class):
                                 "object": arg_j["text"],
                                 "obj_char_span": arg_j["char_span"],
                                 "obj_tok_span": arg_j["tok_span"],
-                                "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),  # 01092130 event_type
+                                "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
+                                # 01092130 event_type
                             })
 
                 if "relation_list" in sample:
@@ -1197,7 +1215,7 @@ def create_rebased_tfboys_tagger(base_class):
                             for link in links:
                                 subj_role, obj_role = link.split(separator)
                                 if subj_role not in self.event_type2arg_rols[event_type] or \
-                                    obj_role not in self.event_type2arg_rols[event_type]:
+                                        obj_role not in self.event_type2arg_rols[event_type]:
                                     continue
                                 if subj_offset not in offset2roles:
                                     offset2roles[subj_offset] = set()
@@ -1644,7 +1662,8 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                 new_tok_spans = utils.merge_spans(ent["tok_span"], self.language, "token")
                 new_char_spans = utils.merge_spans(ent["char_span"], self.language, "char")
                 ent_extr_ch = Preprocessor.extract_ent_fr_txt_by_char_sp(new_char_spans, text, self.language)
-                ent_extr_tk = Preprocessor.extract_ent_fr_txt_by_tok_sp(new_tok_spans, tok2char_span, text, self.language)
+                ent_extr_tk = Preprocessor.extract_ent_fr_txt_by_tok_sp(new_tok_spans, tok2char_span, text,
+                                                                        self.language)
                 assert ent_extr_ch == ent_extr_tk == ent["text"]
 
             pred_sample = copy.deepcopy(ori_sample)
@@ -1865,7 +1884,7 @@ def create_rebased_oie_tagger(base_class):
                                     "char_span": char_span,
                                     "tok_span": tok_span,
                                 })
-                    
+
                     # generate spo object
                     spo = {"predicate": {"text": "",
                                          "complete": "",
@@ -1916,6 +1935,7 @@ def create_rebased_oie_tagger(base_class):
             # if auc != 1. or prfc[2] != 1.:
             #     print("1")
             return ori_sample
+
     return REBasedOIETagger
 
 
@@ -2497,7 +2517,6 @@ class Tagger4TFBoysV2(TableFillingTagger):
                 for arg in event["argument_list"]:
                     self.event_type2arg_rols[event_type].add(arg["type"])
 
-
     def _get_tags(self, sample):
         tag_list = []
         event_list = sample["event_list"]
@@ -2650,7 +2669,6 @@ class Tagger4TFBoysV2(TableFillingTagger):
         return pred_sample
 
 
-
 class Tagger4TFBoysV3(TableFillingTagger):
     def __init__(self, data, *args, **kwargs):
         self.sep4trigger_role = "\u2E81"
@@ -2665,7 +2683,6 @@ class Tagger4TFBoysV3(TableFillingTagger):
                 self.event_type2arg_rols[event_type].add(self.sep4trigger_role.join(["Trigger", event_type]))
                 for arg in event["argument_list"]:
                     self.event_type2arg_rols[event_type].add(arg["type"])
-
 
     def _get_tags(self, sample):
         tag_list = []
@@ -2860,7 +2877,7 @@ class NERTagger4RAIN(Tagger):
         if "entity_list" in sample:
             for ent in sample["entity_list"]:
                 point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
-                             self.shk_tag2id[self.separator.join([ent["type"], "EH2ET"])])
+                         self.shk_tag2id[self.separator.join([ent["type"], "EH2ET"])])
                 shk_points.append(point)
                 tok_ids = utils.spans2ids(ent["tok_span"])
                 for i in tok_ids:
