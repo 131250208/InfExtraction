@@ -3142,8 +3142,6 @@ class NERTagger4RAIN(Tagger):
                 cliques = list(nx.find_cliques(nx.induced_subgraph(graph, tok_ids)))
                 cliques = [cli for cli in cliques if tok_ids[0] == min(cli) and tok_ids[-1] == max(cli)]
 
-                if len(cliques) >= 2:
-                    print("1")
                 for cli in cliques:
                     cli = sorted(cli)
                     tok_span = utils.ids2span(cli)
