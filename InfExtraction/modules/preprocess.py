@@ -6,6 +6,7 @@ import stanza
 import logging
 import time
 from IPython.core.debugger import set_trace
+from InfExtraction.modules.utils import MyMatrix
 from InfExtraction.modules import utils
 import torch
 import jieba
@@ -54,25 +55,11 @@ class Indexer:
 
     @staticmethod
     def get_shaking_idx2matrix_idx(matrix_size):
-        '''
-        :param matrix_size:
-        :return: a list mapping shaking sequence points to matrix points
-        '''
-        shaking_idx2matrix_idx = [(ind, end_ind) for ind in range(matrix_size) for end_ind in
-                                  list(range(matrix_size))[ind:]]
-        return shaking_idx2matrix_idx
+        return MyMatrix.get_shaking_idx2matrix_idx(matrix_size)
 
     @staticmethod
     def get_matrix_idx2shaking_idx(matrix_size):
-        '''
-        :param matrix_size:
-        :return: a matrix mapping matrix points to shaking sequence points
-        '''
-        matrix_idx2shaking_idx = [[0 for i in range(matrix_size)] for j in range(matrix_size)]
-        shaking_idx2matrix_idx = Indexer.get_shaking_idx2matrix_idx(matrix_size)
-        for shaking_ind, matrix_ind in enumerate(shaking_idx2matrix_idx):
-            matrix_idx2shaking_idx[matrix_ind[0]][matrix_ind[1]] = shaking_ind
-        return matrix_idx2shaking_idx
+        return MyMatrix.get_matrix_idx2shaking_idx(matrix_size)
 
     @staticmethod
     def points2shaking_seq(points, matrix_size, tag_size):
@@ -916,7 +903,7 @@ class Preprocessor:
         return data
 
     @staticmethod
-    def search_spans_fr_txt(target_seg, text, language):
+    def search_char_spans_fr_txt(target_seg, text, language):
         if target_seg == "" or target_seg is None:
             return [0, 0], ""
         add_text = re.sub("\S", "_", target_seg)
@@ -997,7 +984,7 @@ class Preprocessor:
                 #     spans.extend([spans[-1], spans[-1] + 1])  # whitespace
 
         # merge
-        new_spans = utils.merge_spans(spans, language)
+        new_spans = utils.merge_spans(spans, language, "char")
         # seg_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(new_spans, text, language)
         # try:
         #     assert seg_extr == target_seg

@@ -239,7 +239,7 @@ if __name__ == "__main__":
         tagger_class_name = taggers.create_rebased_ee_tagger(tagger_class_name)
     elif task_type == "re+oie":
         tagger_class_name = taggers.create_rebased_oie_tagger(tagger_class_name)
-    elif task_type == "disc_ner":
+    elif task_type == "re+ner":
         tagger_class_name = taggers.create_rebased_discontinuous_ner_tagger(tagger_class_name)
     elif task_type == "re+tfboys":
         tagger_class_name = taggers.create_rebased_tfboys_tagger(tagger_class_name)

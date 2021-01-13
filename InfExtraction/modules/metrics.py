@@ -370,10 +370,8 @@ class MetricsCalculator:
             pred_ent_list = pred_sample["entity_list"]
             gold_ent_list = gold_sample["entity_list"]
             sent_w_disc = any(len(ent["tok_span"]) > 2 for ent in gold_ent_list)
-            # try:
             MetricsCalculator.cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict, sent_w_disc)
-            # except Exception:
-            #     print("ent error")
+
         return ent_cpg_dict
 
     def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
