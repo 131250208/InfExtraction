@@ -1506,15 +1506,15 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                                 "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
                             })
                             # ============= 共存 0113 ===============
-                            new_rel_list.append({
-                                "subject": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-                                "subj_char_span": seg_j_ch_span,
-                                "subj_tok_span": seg_j_tok_span,
-                                "object": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-                                "obj_char_span": seg_i_ch_span,
-                                "obj_tok_span": seg_i_tok_span,
-                                "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
-                            })
+                            # new_rel_list.append({
+                            #     "subject": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
+                            #     "subj_char_span": seg_j_ch_span,
+                            #     "subj_tok_span": seg_j_tok_span,
+                            #     "object": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
+                            #     "obj_char_span": seg_i_ch_span,
+                            #     "obj_tok_span": seg_i_tok_span,
+                            #     "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
+                            # })
                             # ================================================
                 new_sample["entity_list"] = new_ent_list
                 new_sample["relation_list"] = new_rel_list
@@ -1559,11 +1559,11 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                 rel["predicate"] = rel_tag
                 assert rel_tag == "SAME_ENT"
                 # =========== 共存 0113 ====================
-                subj_tok_span = rel["subj_tok_span"]
-                obj_tok_span = rel["obj_tok_span"]
-                if utils.span_contains(subj_tok_span, obj_tok_span) or \
-                        utils.span_contains(obj_tok_span, subj_tok_span):
-                    continue
+                # subj_tok_span = rel["subj_tok_span"]
+                # obj_tok_span = rel["obj_tok_span"]
+                # if utils.span_contains(subj_tok_span, obj_tok_span) or \
+                #         utils.span_contains(obj_tok_span, subj_tok_span):
+                #     continue
                 # ======================
                 if ent_type in ent_type2anns:
                     ent_type2anns[ent_type]["rel_list"].append(rel)
