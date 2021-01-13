@@ -1,5 +1,4 @@
 import torch
-from InfExtraction.modules.preprocess import Indexer
 import os
 import json
 from torch.utils.data import Dataset
@@ -119,6 +118,28 @@ class MyMaths:
 
 class MyMatrix:
     @staticmethod
+    def get_shaking_idx2matrix_idx(matrix_size):
+        '''
+        :param matrix_size:
+        :return: a list mapping shaking sequence points to matrix points
+        '''
+        shaking_idx2matrix_idx = [(ind, end_ind) for ind in range(matrix_size) for end_ind in
+                                  list(range(matrix_size))[ind:]]
+        return shaking_idx2matrix_idx
+
+    @staticmethod
+    def get_matrix_idx2shaking_idx(matrix_size):
+        '''
+        :param matrix_size:
+        :return: a matrix mapping matrix points to shaking sequence points
+        '''
+        matrix_idx2shaking_idx = [[0 for i in range(matrix_size)] for j in range(matrix_size)]
+        shaking_idx2matrix_idx = MyMatrix.get_shaking_idx2matrix_idx(matrix_size)
+        for shaking_ind, matrix_ind in enumerate(shaking_idx2matrix_idx):
+            matrix_idx2shaking_idx[matrix_ind[0]][matrix_ind[1]] = shaking_ind
+        return matrix_idx2shaking_idx
+
+    @staticmethod
     def mirror(shaking_seq):
         '''
         copy upper region to lower region
@@ -132,7 +153,7 @@ class MyMatrix:
         #     self.cached_mirror_gather_tensor = self.mirror_gather_tensor[None, :, None].repeat(batch_size, 1, hidden_size)
 
         matrix_size = MyMaths.handshaking_len2matrix_size(handshaking_seq_len)
-        map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        map_ = MyMatrix.get_matrix_idx2shaking_idx(matrix_size)
         mirror_select_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
         mirror_select_vec = torch.tensor(mirror_select_ids).to(shaking_seq.device)
 
@@ -162,14 +183,14 @@ class MyMatrix:
     @staticmethod
     def shaking_seq2matrix(sequence):
         '''
-        map sequence to matrix upper region, pad 0 to lower region
+        map sequence tensor to matrix tensor; only upper region has values, pad 0 to the lower region
         :param sequence:
         :return:
         '''
         # sequence: (batch_size, seq_len, hidden_size)
         batch_size, seq_len, hidden_size = sequence.size()
         matrix_size = MyMaths.handshaking_len2matrix_size(seq_len)
-        map_ = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        map_ = MyMatrix.get_matrix_idx2shaking_idx(matrix_size)
         index_ids = [map_[i][j] if i <= j else seq_len for i in range(matrix_size) for j in range(matrix_size)]
         sequence_w_ze = F.pad(sequence, (0, 0, 0, 1), "constant", 0)
         index_tensor = torch.LongTensor(index_ids).to(sequence.device)
