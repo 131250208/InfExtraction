@@ -31,7 +31,7 @@ def spans2ids(spans):
     return ids
 
 
-def merge_spans(spans, language, span_type):
+def merge_spans(spans):
     '''
     :param spans:
     :param language: ch or en
@@ -40,7 +40,7 @@ def merge_spans(spans, language, span_type):
     '''
     new_spans = []
     for pid, pos in enumerate(spans):
-        p = pos if language == "ch" or span_type == "token" else pos - 1  # en: p - 1
+        p = pos
         if pid == 0 or pid % 2 != 0 or pid % 2 == 0 and p != new_spans[-1]:
             new_spans.append(pos)
         elif pid % 2 == 0 and p == new_spans[-1]:
