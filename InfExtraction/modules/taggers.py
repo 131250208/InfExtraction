@@ -1570,10 +1570,6 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                 if ent_type in ent_type2anns:
                     ent_type2anns[ent_type]["rel_list"].append(rel)
 
-            # if ori_sample["id"] == "train_15232":
-            #     print("!")
-            #     print("??")
-
             for ent_type, anns in ent_type2anns.items():
                 for boundary in anns["boundaries"]:
                     bd_span = boundary["tok_span"]
@@ -1618,6 +1614,8 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                                 continue
                             tok_span.extend(sp)
                             last_end = sp[1]
+
+                        tok_span = utils.merge_spans(tok_span)
                         char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
                         new_ent_list.append({
                             "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
@@ -1625,15 +1623,6 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                             "char_span": char_span,
                             "tok_span": tok_span,
                         })
-
-            # merge continuous spans
-            for ent in new_ent_list:
-                new_tok_spans = utils.merge_spans(ent["tok_span"], self.language, "token")
-                new_char_spans = utils.merge_spans(ent["char_span"], self.language, "char")
-                ent_extr_ch = Preprocessor.extract_ent_fr_txt_by_char_sp(new_char_spans, text, self.language)
-                ent_extr_tk = Preprocessor.extract_ent_fr_txt_by_tok_sp(new_tok_spans, tok2char_span, text,
-                                                                        self.language)
-                assert ent_extr_ch == ent_extr_tk == ent["text"]
 
             pred_sample = copy.deepcopy(ori_sample)
             pred_sample["entity_list"] = new_ent_list
