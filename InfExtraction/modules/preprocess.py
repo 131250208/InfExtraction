@@ -624,7 +624,8 @@ class Preprocessor:
             if add_id:
                 normal_sample["id"] = "{}_{}".format(dataset_type, ind)
             else:
-                assert "id" in normal_sample, "miss id in data!"
+                assert "id" in sample, "miss id in data!"
+
                 normal_sample["id"] = sample["id"]
 
             if ori_format == "tplinker":
