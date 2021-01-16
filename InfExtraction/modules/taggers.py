@@ -1453,11 +1453,14 @@ def create_rebased_discontinuous_ner_tagger(base_class):
             super(REBasedDiscontinuousNERTagger, self).__init__(*arg, **kwargs)
             self.language = kwargs["language"]
             self.add_next_link = kwargs["add_next_link"]
+            self.use_bound = kwargs["use_bound"]
 
         @classmethod
         def additional_preprocess(cls, data, data_type, **kwargs):
             if data_type != "train":
                 return data
+
+            use_bound = kwargs["use_bound"]
 
             new_tag_sep = "\u2E82"
             new_data = []
@@ -1472,13 +1475,15 @@ def create_rebased_discontinuous_ner_tagger(base_class):
 
                     ch_sp = [ent["char_span"][0], ent["char_span"][-1]]
                     tok_sp = [ent["tok_span"][0], ent["tok_span"][-1]]
+
                     # boundary
-                    new_ent_list.append({
-                        "text": text[ch_sp[0]:ch_sp[1]],
-                        "type": new_tag_sep.join([ent_type, "BOUNDARY"]),
-                        "char_span": ch_sp,
-                        "tok_span": tok_sp,
-                    })
+                    if use_bound:
+                        new_ent_list.append({
+                            "text": text[ch_sp[0]:ch_sp[1]],
+                            "type": new_tag_sep.join([ent_type, "BOUNDARY"]),
+                            "char_span": ch_sp,
+                            "tok_span": tok_sp,
+                        })
 
                     for idx_i in range(0, len(ent["char_span"]), 2):
                         seg_i_ch_span = [ent["char_span"][idx_i], ent["char_span"][idx_i + 1]]
@@ -1571,14 +1576,19 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                     ent_type2anns[ent_type]["rel_list"].append(rel)
 
             for ent_type, anns in ent_type2anns.items():
-                for boundary in anns["boundaries"]:
-                    bd_span = boundary["tok_span"]
+                # if self.use_bound:
+                #     for boundary in anns["boundaries"]:
+                #         bound_span = boundary["tok_span"]
 
-                    # select nodes and edges in this region
-                    sub_seg_list = [seg for seg in anns["seg_list"] if utils.span_contains(bd_span, seg["tok_span"])]
-                    sub_rel_list = [rel for rel in anns["rel_list"]
-                                    if utils.span_contains(bd_span, rel["subj_tok_span"])
-                                    and utils.span_contains(bd_span, rel["obj_tok_span"])]
+                def extr(bd_span):
+                    sub_seg_list = anns["seg_list"]
+                    sub_rel_list = anns["rel_list"]
+                    if bd_span is not None:
+                        # select nodes and edges in this region
+                        sub_seg_list = [seg for seg in anns["seg_list"] if utils.span_contains(bd_span, seg["tok_span"])]
+                        sub_rel_list = [rel for rel in anns["rel_list"]
+                                        if utils.span_contains(bd_span, rel["subj_tok_span"])
+                                        and utils.span_contains(bd_span, rel["obj_tok_span"])]
 
                     offset2seg_types = {}  # "1,2" -> {B, I}
                     graph = nx.Graph()
@@ -1596,11 +1606,14 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                             graph.add_edge(subj_offset_key, obj_offset_key)  # add an edge between 2 segments
 
                     cliques = []
-                    for cli in nx.find_cliques(graph):  # find all maximal cliques,
-                        # filter invalid ones that do not include boundary tokens
-                        if any(int(n.split(",")[0]) == bd_span[0] for n in cli) and \
-                                any(int(n.split(",")[1]) == bd_span[1] for n in cli):
-                            cliques.append(cli)
+                    if bd_span is not None:
+                        for cli in nx.find_cliques(graph):  # find all maximal cliques,
+                            # filter invalid ones that do not include boundary tokens
+                            if any(int(n.split(",")[0]) == bd_span[0] for n in cli) and \
+                                    any(int(n.split(",")[1]) == bd_span[1] for n in cli):
+                                cliques.append(cli)
+                    else:
+                        cliques = nx.find_cliques(graph)
 
                     for cli in cliques:
                         spans = []
@@ -1623,6 +1636,13 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                             "char_span": char_span,
                             "tok_span": tok_span,
                         })
+
+                if self.use_bound:
+                    for boundary in anns["boundaries"]:
+                        bound_span = boundary["tok_span"]
+                        extr(bound_span)
+                else:
+                    extr(None)
 
             pred_sample = copy.deepcopy(ori_sample)
             pred_sample["entity_list"] = new_ent_list

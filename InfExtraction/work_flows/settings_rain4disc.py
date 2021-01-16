@@ -132,6 +132,7 @@ addtional_preprocessing_config = {
     "add_same_type_relation": False,  # ner
     "add_next_link": True,  # if set to False, can not cover all cases. e.g. ent1: A -> B -> C. ent 2: B -> C,
                              # only ent 1 will be extracted by clique finding
+    "use_bound": False,
 }
 
 # tagger config
@@ -140,6 +141,7 @@ tagger_config = {
     "add_h2t_n_t2h_links": True,
     "language": language,
     "add_next_link": addtional_preprocessing_config["add_next_link"],
+    "use_bound": addtional_preprocessing_config["use_bound"],
 }
 
 # optimizers and schedulers
