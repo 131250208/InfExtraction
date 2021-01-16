@@ -1932,7 +1932,7 @@ class Preprocessor:
         :param data:
         :param key2dict: feature key to dict for indexing
         :param max_seq_len:
-        :param max_char_num_in_tok: max character number in a token, truncate or pad char list to this length
+        :param max_char_num_in_tok: max character number in a token, truncate or pad to this length
         :param pretrained_model_padding: for subword ids padding
         :return:
         '''
