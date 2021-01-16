@@ -1576,9 +1576,6 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                     ent_type2anns[ent_type]["rel_list"].append(rel)
 
             for ent_type, anns in ent_type2anns.items():
-                # if self.use_bound:
-                #     for boundary in anns["boundaries"]:
-                #         bound_span = boundary["tok_span"]
 
                 def extr(bd_span):
                     sub_seg_list = anns["seg_list"]
