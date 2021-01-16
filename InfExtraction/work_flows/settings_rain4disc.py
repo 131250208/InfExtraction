@@ -72,7 +72,7 @@ sliding_len_valid = 100
 sliding_len_test = 100
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
-token_level = "word"  # token is word or subword
+token_level = "subword"  # token is word or subword
 
 # to do an ablation study, you can ablate components by setting it to False
 pos_tag_emb = False
@@ -81,10 +81,10 @@ char_encoder = False
 dep_gcn = False
 
 word_encoder = False
-subwd_encoder = False
+subwd_encoder = True
 use_attns4rel = False  # used only if subwd_encoder (bert) is True
 flair = False
-elmo = True
+elmo = False
 
 # data
 data_in_dir = "../../data/normal_data"
@@ -132,6 +132,7 @@ addtional_preprocessing_config = {
     "add_same_type_relation": False,  # ner
     "add_next_link": True,  # if set to False, can not cover all cases. e.g. ent1: A -> B -> C. ent 2: B -> C,
                              # only ent 1 will be extracted by clique finding
+    "use_bound": False,
 }
 
 # tagger config
@@ -140,6 +141,7 @@ tagger_config = {
     "add_h2t_n_t2h_links": True,
     "language": language,
     "add_next_link": addtional_preprocessing_config["add_next_link"],
+    "use_bound": addtional_preprocessing_config["use_bound"],
 }
 
 # optimizers and schedulers
