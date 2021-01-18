@@ -1553,12 +1553,16 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                         "seg_list": [],
                         "rel_list": [],
                         "boundaries": [],
+                        "continuous_entity_list": [],
                     }
 
                 if ent["type"] == "BOUNDARY":
                     ent_type2anns[ent_type]["boundaries"].append(ent)
-                else:
+                elif ent["type"] in {"B", "I"}:
                     ent_type2anns[ent_type]["seg_list"].append(ent)
+                else:
+                    assert ent["type"] == "S"
+                    ent_type2anns[ent_type]["continuous_entity_list"].append(ent)
 
             # map relations by entity type
             for rel in rel_list:
@@ -1576,11 +1580,11 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                     ent_type2anns[ent_type]["rel_list"].append(rel)
 
             for ent_type, anns in ent_type2anns.items():
-                # if self.use_bound:
-                #     for boundary in anns["boundaries"]:
-                #         bound_span = boundary["tok_span"]
+                for c_ent in anns["continuous_entity_list"]:
+                    c_ent["type"] = ent_type
+                    new_ent_list.append(c_ent)
 
-                def extr(bd_span):
+                def extr_disc(bd_span):
                     sub_seg_list = anns["seg_list"]
                     sub_rel_list = anns["rel_list"]
                     if bd_span is not None:
@@ -1640,9 +1644,9 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                 if self.use_bound:
                     for boundary in anns["boundaries"]:
                         bound_span = boundary["tok_span"]
-                        extr(bound_span)
+                        extr_disc(bound_span)
                 else:
-                    extr(None)
+                    extr_disc(None)
 
             pred_sample = copy.deepcopy(ori_sample)
             pred_sample["entity_list"] = new_ent_list

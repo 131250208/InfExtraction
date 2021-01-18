@@ -192,6 +192,7 @@ if __name__ == "__main__":
     target_run_ids = settings.target_run_ids
     top_k_models = settings.top_k_models
     metric4testing = settings.metric4testing
+    main_test_set_name = settings.main_test_set_name
     cal_scores = settings.cal_scores
 
     # save model
@@ -502,4 +503,9 @@ if __name__ == "__main__":
                         run_id2scores[run_id][model_name][filename] = score_dict
 
         if cal_scores:
+            for run_id, m2scr_dict in run_id2scores.items():
+                if main_test_set_name is None or main_test_set_name not in filename2test_data_loader:
+                    main_test_set_name = list(filename2test_data_loader.keys())[0]
+                sorted_dicts = sorted(m2scr_dict.values(), key=lambda x: x[main_test_set_name][metric4testing])
+                run_id2scores[run_id]["median"] = sorted_dicts[len(sorted_dicts) // 2]
             pprint(run_id2scores)
