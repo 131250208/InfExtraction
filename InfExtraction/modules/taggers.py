@@ -1619,6 +1619,9 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                     else:
                         cliques = nx.find_cliques(graph)
 
+                    # if len(cliques) >= 2:
+                    #     print("1")
+
                     for cli in cliques:
                         spans = []
                         for n in cli:
