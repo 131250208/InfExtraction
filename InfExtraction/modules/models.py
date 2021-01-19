@@ -484,6 +484,7 @@ class RAIN(IEModel):
                  loss_weight_recover_steps=None,
                  loss_weight=.5,
                  init_loss_weight=.5,
+                 pred_threshold=0.,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -493,6 +494,7 @@ class RAIN(IEModel):
         self.metrics_cal = metrics_cal
         self.loss_weight = loss_weight
         self.init_loss_weight = init_loss_weight
+        self.pred_threshold = pred_threshold
 
         self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
         self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
@@ -665,7 +667,7 @@ class RAIN(IEModel):
         return pred_ent_output, pred_rel_output
 
     def pred_output2pred_tag(self, pred_output):
-        return (pred_output > 0.).long()
+        return (pred_output > self.pred_threshold).long()
 
     def get_metrics(self, pred_outputs, gold_tags):
         ent_pred_out, rel_pred_out, ent_gold_tag, rel_gold_tag = pred_outputs[0], pred_outputs[1], gold_tags[0], \
