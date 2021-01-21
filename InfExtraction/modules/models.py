@@ -30,13 +30,13 @@ class IEModel(nn.Module, metaclass=ABCMeta):
     def __init__(self,
                  tagger,
                  metrics_cal,
-                 char_encoder_config=None,
-                 subwd_encoder_config=None,
-                 flair_config=None,
-                 elmo_config=None,
-                 word_encoder_config=None,
                  ner_tag_emb_config=None,
                  pos_tag_emb_config=None,
+                 char_encoder_config=None,
+                 word_encoder_config=None,
+                 flair_config=None,
+                 elmo_config=None,
+                 subwd_encoder_config=None,
                  dep_config=None
                  ):
         super().__init__()
@@ -474,6 +474,7 @@ class RAIN(IEModel):
     def __init__(self,
                  tagger,
                  metrics_cal,
+                 top_multi_attn_config=None,
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  rel_dim=None,
@@ -496,8 +497,23 @@ class RAIN(IEModel):
         self.init_loss_weight = init_loss_weight
         self.pred_threshold = pred_threshold
 
-        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
-        self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
+        inp_dim = self.cat_hidden_size
+        # top multi-head attentions
+        self.top_multi_attn_config = top_multi_attn_config
+        if top_multi_attn_config is not None:
+            num_heads = top_multi_attn_config["num_heads"]
+            pos_emb_dim = top_multi_attn_config["pos_emb_dim"]
+            fusion_dim = top_multi_attn_config["fusion_dim"]
+            multi_attn_layers = top_multi_attn_config["layers"]
+            self.position_emb4top_multi_attn = nn.Embedding(512, pos_emb_dim)
+            self.fusion_fc4top_multi_attn = nn.Linear(self.cat_hidden_size + pos_emb_dim, fusion_dim)
+            self.top_multi_attn_layers = nn.ModuleList()
+            for _ in range(multi_attn_layers):
+                self.top_multi_attn_layers.append(nn.MultiheadAttention(fusion_dim, num_heads))
+            inp_dim = fusion_dim
+
+        self.aggr_fc4ent_hsk = nn.Linear(inp_dim, ent_dim)
+        self.aggr_fc4rel_hsk = nn.Linear(inp_dim, rel_dim)
 
         # handshaking kernel
         ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
@@ -620,12 +636,19 @@ class RAIN(IEModel):
         super(RAIN, self).forward()
         ent_class_guide = kwargs["golden_ent_class_guide"]
         del kwargs["golden_ent_class_guide"]
-        cat_hiddens = self._cat_features(**kwargs)
+        inp_hiddens = self._cat_features(**kwargs)
+        batch_size, seq_len, _ = inp_hiddens.size()
 
-        batch_size, seq_len, _ = cat_hiddens.size()
+        if self.top_multi_attn_config is not None:
+            position_idx = torch.arange(0, seq_len).to(inp_hiddens.device)[None, :].repeat(batch_size, 1)
+            pos_emb = self.position_emb4top_multi_attn(position_idx)
+            inp_hiddens = self.fusion_fc4top_multi_attn(torch.cat([inp_hiddens, pos_emb], dim=-1)).permute(1, 0, 2)
+            for multi_attn in self.top_multi_attn_layers:
+                inp_hiddens, _ = multi_attn(inp_hiddens, inp_hiddens, inp_hiddens)
+            inp_hiddens = inp_hiddens.permute(1, 0, 2)
 
-        ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
-        rel_hiddens = self.aggr_fc4rel_hsk(cat_hiddens)
+        ent_hiddens = self.aggr_fc4ent_hsk(inp_hiddens)
+        rel_hiddens = self.aggr_fc4rel_hsk(inp_hiddens)
 
         # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # rel_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
