@@ -1489,9 +1489,15 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                         seg_i_ch_span = [ent["char_span"][idx_i], ent["char_span"][idx_i + 1]]
                         seg_i_tok_span = [ent["tok_span"][idx_i], ent["tok_span"][idx_i + 1]]
 
-                        position_tag = "B" if idx_i == 0 else "I"
+                        if idx_i == 0:
+                            position_tag = "B"
+                        elif idx_i == len(ent["char_span"]) - 2:
+                            position_tag = "E"
+                        else:
+                            position_tag = "I"
                         if len(ent["char_span"]) == 2:
                             position_tag = "S"
+
                         new_ent_type = "{}{}{}".format(ent_type, new_tag_sep, position_tag)
 
                         new_ent_list.append({
@@ -1558,7 +1564,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
 
                 if ent["type"] == "BOUNDARY":
                     ent_type2anns[ent_type]["boundaries"].append(ent)
-                elif ent["type"] in {"B", "I"}:
+                elif ent["type"] in {"B", "I", "E"}:
                     ent_type2anns[ent_type]["seg_list"].append(ent)
                 else:
                     assert ent["type"] == "S"
@@ -1580,6 +1586,8 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                     ent_type2anns[ent_type]["rel_list"].append(rel)
 
             for ent_type, anns in ent_type2anns.items():
+                # if any(s["type"] == "I" for s in anns["seg_list"]):
+                #     print("1")
                 for c_ent in anns["continuous_entity_list"]:
                     c_ent["type"] = ent_type
                     new_ent_list.append(c_ent)
@@ -1594,7 +1602,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                                         if utils.span_contains(bd_span, rel["subj_tok_span"])
                                         and utils.span_contains(bd_span, rel["obj_tok_span"])]
 
-                    offset2seg_types = {}  # "1,2" -> {B, I}
+                    offset2seg_types = {}
                     graph = nx.Graph()
                     for seg in sub_seg_list:
                         offset_key = "{},{}".format(*seg["tok_span"])

@@ -2,6 +2,7 @@ import torch
 import re
 import copy
 from IPython.core.debugger import set_trace
+from InfExtraction.modules import utils
 
 class MetricsCalculator:
     def __init__(self,
@@ -187,7 +188,7 @@ class MetricsCalculator:
         disc_ent_exact_text_set, \
         ent_exact_offset_on_sents_w_disc_set, \
         ent_exact_text_on_sents_w_disc_set = set(), set(), set(), set(), set(), set(), set(), set()
-        # tmp = [0, 0]
+
         for ent in ent_list:
             part_ent = MetricsCalculator.get_partial_ent(ent["text"])
             ent_partial_text_set.add(str([part_ent, ent["type"]]))
@@ -198,11 +199,11 @@ class MetricsCalculator:
             if sent_w_disc:
                 ent_exact_offset_on_sents_w_disc_set.add(str([ent["type"]] + ent["tok_span"]))
                 ent_exact_text_on_sents_w_disc_set.add(str([ent["text"], ent["type"]]))
-                # tmp[0] += 1
+
             if len(ent["tok_span"]) > 2:
                 disc_ent_exact_offset_set.add(str([ent["type"]] + ent["tok_span"]))
                 disc_ent_exact_text_set.add(str([ent["text"], ent["type"]]))
-                # tmp[1] += 1
+
         return {
             "ent_partial_text": ent_partial_text_set,
             "ent_partial_offset": ent_partial_offset_set,
@@ -212,7 +213,7 @@ class MetricsCalculator:
             "disc_ent_exact_text": disc_ent_exact_text_set,
             "ent_exact_offset_on_sents_w_disc": ent_exact_offset_on_sents_w_disc_set,
             "ent_exact_text_on_sents_w_disc": ent_exact_text_on_sents_w_disc_set,
-        }  #, tmp
+        }
     
     @staticmethod
     def get_mark_sets_rel(rel_list):
@@ -253,6 +254,94 @@ class MetricsCalculator:
 
         # if len(pred_set) != len(gold_set):
         #     raise Exception("debug")
+
+    @staticmethod
+    def get_mark_sets4disc_ent_analysis(ent_list):
+        keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap",
+                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9", "span_len: 10+",
+                "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
+        mark_set_dict = {k: set() for k in keys}
+
+        tok_id2occur_num = {}
+        for ent in ent_list:
+            tok_span = ent["tok_span"]
+            # if len(tok_span) == 2:
+            #     continue
+            tok_ids = utils.spans2ids(tok_span)
+            for tok_idx in tok_ids:
+                tok_id2occur_num[tok_idx] = tok_id2occur_num.get(tok_idx, 0) + 1
+
+        for ent in ent_list:
+            mark = str([ent["type"]] + ent["tok_span"])
+            tok_span = ent["tok_span"]
+            if len(tok_span) == 2:
+                continue
+
+            # length analysis
+            span_len = tok_span[-1] - tok_span[0]
+            interval_len = 0
+            for i in range(1, len(tok_span), 2):
+                if i == len(tok_span) - 1:
+                    break
+                interval_len += (tok_span[i + 1] - tok_span[i])
+            span_len_str = "10+" if span_len >= 10 else str(span_len)
+            interval_len_str = "7+" if interval_len >= 7 else str(interval_len)
+            mark_set_dict["span_len: {}".format(span_len_str)].add(mark)
+            mark_set_dict["interval_len: {}".format(interval_len_str)].add(mark)
+
+            # overlap analysis
+            tok_ids = utils.spans2ids(tok_span)
+            left_overlap, right_overlap, inner_overlap = 0, 0, 0
+            for idx, tok_pos in enumerate(tok_ids):
+                if tok_id2occur_num[tok_pos] > 1:
+                    if idx == 0:
+                        left_overlap = 1
+                    elif idx == len(tok_ids) - 1:
+                        right_overlap = 1
+                    elif tok_id2occur_num[tok_ids[0]] == 1 and tok_id2occur_num[tok_ids[-1]] == 1:
+                        inner_overlap = 1
+            # for idx in range(0, len(tok_span), 2):
+            #     sp = [tok_span[idx], tok_span[idx + 1]]
+            #     tok_ids = utils.spans2ids(sp)
+            #     if any(tok_id2occur_num[tok_pos] > 1 for tok_pos in tok_ids):
+            #         if idx == 0:
+            #             left_overlap = 1
+            #         elif idx == len(tok_span) - 2:
+            #             right_overlap = 1
+            #         else:
+            #             inner_overlap = 1
+
+            if left_overlap + right_overlap + inner_overlap > 1:
+                mark_set_dict["multi_overlap"].add(mark)
+            else:
+                if left_overlap == 1:
+                    mark_set_dict["left_overlap"].add(mark)
+                elif right_overlap == 1:
+                    mark_set_dict["right_overlap"].add(mark)
+                elif inner_overlap == 1:
+                    mark_set_dict["inner_overlap"].add(mark)
+                else:
+                    mark_set_dict["no_overlap"].add(mark)
+
+        return mark_set_dict
+
+    count = 0
+    @staticmethod
+    def cal_cpg4disc_ent_add_analysis(pred_ent_list, gold_ent_list, cpg_dict):
+        '''
+        keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap",
+                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9", "span_len: 10+",
+                "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
+        '''
+        pred_set_dict = MetricsCalculator.get_mark_sets4disc_ent_analysis(pred_ent_list)
+        gold_set_dict = MetricsCalculator.get_mark_sets4disc_ent_analysis(gold_ent_list)
+
+        for key in cpg_dict.keys():
+            pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
+            # if len(gold_set) > 0 and key == "span_len: 3":
+            #     MetricsCalculator.count += len(gold_set)
+            #     print(MetricsCalculator.count)
+            MetricsCalculator.cal_cpg(pred_set, gold_set, cpg_dict[key])
 
     @staticmethod
     def cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict, sent_w_disc=False):
@@ -377,6 +466,26 @@ class MetricsCalculator:
 
         return ent_cpg_dict
 
+    @staticmethod
+    def do_additonal_analysis4disc_ent(pred_sample_list, golden_sample_list):
+        keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap", 
+                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9", "span_len: 10+",
+                "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
+        cpg_dict = {k: [0, 0, 0] for k in keys}
+
+        for idx, pred_sample in enumerate(pred_sample_list):
+            gold_sample = golden_sample_list[idx]
+            pred_ent_list = pred_sample["entity_list"]
+            gold_ent_list = gold_sample["entity_list"]
+            MetricsCalculator.cal_cpg4disc_ent_add_analysis(pred_ent_list, gold_ent_list, cpg_dict)
+
+        prf_dict = {}
+        statistics = {}
+        for k, cpg in cpg_dict.items():
+            statistics[k] = cpg[2]
+            prf_dict[k] = MetricsCalculator.get_prf_scores(*cpg)
+        return prf_dict, statistics
+
     def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
         from InfExtraction.modules.ancient_eval4oie import OIEMetrics
         auc, prfc, _ = OIEMetrics.compare(pred_sample_list,
@@ -391,7 +500,8 @@ class MetricsCalculator:
             "confidence_threshold": prfc[3],
         }
 
-    def get_prf_scores(self, correct_num, pred_num, gold_num):
+    @staticmethod
+    def get_prf_scores(correct_num, pred_num, gold_num):
         '''
         get precision, recall, and F1 score
         :param correct_num:
@@ -399,11 +509,14 @@ class MetricsCalculator:
         :param gold_num:
         :return:
         '''
+        if correct_num == pred_num == gold_num == 0:
+            return 1.2333, 1.2333, 1.2333  # highlight this info by illegal outputs instead of outputting 0.
+
         minimum = 1e-20
         precision = correct_num / (pred_num + minimum)
         recall = correct_num / (gold_num + minimum)
         f1 = 2 * precision * recall / (precision + recall + minimum)
-        return precision, recall, f1
+        return round(precision, 5), round(recall, 5), round(f1, 5)
 
     def score(self, pred_data, golden_data, data_filename=""):
         if data_filename != "":
