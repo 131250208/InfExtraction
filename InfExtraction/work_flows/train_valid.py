@@ -265,9 +265,7 @@ if __name__ == "__main__":
     tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
 
     # metrics_calculator
-    metrics_cal = MetricsCalculator(task_type,
-                                    language,
-                                    use_ghm)
+    metrics_cal = MetricsCalculator(use_ghm)
 
     # model
     print("init model...")

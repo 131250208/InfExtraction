@@ -1999,7 +1999,7 @@ class Preprocessor:
 
 if __name__ == "__main__":
     bert = BertTokenizerFast.from_pretrained("../../data/pretrained_models/bert-base-uncased")
-    text = "type1; type2; type3[SEP]FSAN jkfsn"
+    text = "type1; type2; type3[SEP]FSAN jkfsn [PAD]"
     codes = bert.encode_plus(text, return_offsets_mapping=True)
     print(bert.tokenize(text))
     print(codes["offset_mapping"])

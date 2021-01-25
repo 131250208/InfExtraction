@@ -3,14 +3,12 @@ import re
 import copy
 from IPython.core.debugger import set_trace
 from InfExtraction.modules import utils
+from torch import nn
+
 
 class MetricsCalculator:
     def __init__(self,
-                 task_type,
-                 language="en",
                  use_ghm=False):
-        self.task_type = task_type  # for scoring
-        self.sep = " " if language == "en" else ""
 
         # for multilabel_categorical_crossentropy
         self.use_ghm = use_ghm
@@ -62,8 +60,8 @@ class MetricsCalculator:
         This function is a loss function for multi-label learning
         ref: https://kexue.fm/archives/7359
 
-        y_pred: (batch_size_train, shaking_seq_len, type_size)
-        y_true: (batch_size_train, shaking_seq_len, type_size)
+        y_pred: (batch_size_train, ... , type_size)
+        y_true: (batch_size_train, ... , type_size)
         y_true and y_pred have the same shape，elements in y_true are either 0 or 1，
              1 tags positive classes，0 tags negtive classes(means tok-pair does not have this type of link).
         """
@@ -80,6 +78,16 @@ class MetricsCalculator:
             return (self.GHM(neg_loss + pos_loss, bins=1000)).sum()
         else:
             return (neg_loss + pos_loss).mean()
+
+    def bce_loss(self, y_pred, y_true):
+        '''
+        y_pred: (batch_size_train, ... , type_size)
+        y_true: (batch_size_train, ... , type_size)
+        :return: loss
+        '''
+        loss_func = nn.BCELoss()
+        loss = loss_func(nn.Sigmoid()(y_pred), y_true)
+        return loss
 
     def get_tag_seq_accuracy(self, pred, truth):
         '''
