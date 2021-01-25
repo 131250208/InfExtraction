@@ -483,11 +483,11 @@ class RAIN(IEModel):
                  do_span_len_emb=False,
                  emb_ent_info2rel=False,
                  golden_ent_cla_guide=False,
-                 loss_func="bce_loss",
+                 loss_func="bce_loss",  # mce_loss, pred_threshold=0.
                  loss_weight_recover_steps=None,
                  loss_weight=.5,
                  init_loss_weight=.5,
-                 pred_threshold=0.,
+                 pred_threshold=0.5,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
