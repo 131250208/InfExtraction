@@ -1491,8 +1491,8 @@ def create_rebased_discontinuous_ner_tagger(base_class):
 
                         if idx_i == 0:
                             position_tag = "B"
-                        elif idx_i == len(ent["char_span"]) - 2:
-                            position_tag = "E"
+                        # elif idx_i == len(ent["char_span"]) - 2:
+                        #     position_tag = "E"
                         else:
                             position_tag = "I"
                         if len(ent["char_span"]) == 2:
@@ -1564,7 +1564,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
 
                 if ent["type"] == "BOUNDARY":
                     ent_type2anns[ent_type]["boundaries"].append(ent)
-                elif ent["type"] in {"B", "I", "E"}:
+                elif ent["type"] in {"B", "I"}:
                     ent_type2anns[ent_type]["seg_list"].append(ent)
                 else:
                     assert ent["type"] == "S"

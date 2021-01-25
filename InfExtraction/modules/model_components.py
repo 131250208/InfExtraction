@@ -183,11 +183,8 @@ class SingleSourceHandshakingKernel(nn.Module):
 
         guide = seq_hiddens[:, :, None, :].repeat(1, 1, seq_len, 1)
         visible = guide.permute(0, 2, 1, 3)
-
         shaking_pre = None
-
-        # pre_num = 0
-
+        
         def add_presentation(all_prst, prst):
             if all_prst is None:
                 all_prst = prst
@@ -210,7 +207,6 @@ class SingleSourceHandshakingKernel(nn.Module):
                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
                 span_pre = MyMatrix.upper_reg2seq(span_pre)
                 shaking_pre = add_presentation(shaking_pre, span_pre)
-                # pre_num += 1
 
             # guide, visible: (batch_size, shaking_seq_len, hidden_size)
             guide = MyMatrix.upper_reg2seq(guide)
@@ -220,19 +216,16 @@ class SingleSourceHandshakingKernel(nn.Module):
             tp_cat_pre = torch.cat([guide, visible], dim=-1)
             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
             shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
-            # pre_num += 1
 
         if "cln" in self.shaking_type:
             tp_cln_pre = self.tp_cln(visible, guide)
             shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
-            # pre_num += 1
 
         if "biaffine" in self.shaking_type:
             set_trace()
             biaffine_pre = self.biaffine(guide, visible)
             biaffine_pre = torch.relu(biaffine_pre)
             shaking_pre = add_presentation(shaking_pre, biaffine_pre)
-            # pre_num += 1
 
         return shaking_pre
 

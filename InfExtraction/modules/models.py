@@ -26,6 +26,7 @@ from flair import embeddings as flair_embeddings
 from flair.tokenization import SpaceTokenizer
 from allennlp.modules.elmo import Elmo, batch_to_ids
 
+
 class IEModel(nn.Module, metaclass=ABCMeta):
     def __init__(self,
                  tagger,
@@ -482,6 +483,7 @@ class RAIN(IEModel):
                  do_span_len_emb=False,
                  emb_ent_info2rel=False,
                  golden_ent_cla_guide=False,
+                 loss_func="bce_loss",
                  loss_weight_recover_steps=None,
                  loss_weight=.5,
                  init_loss_weight=.5,
@@ -491,6 +493,7 @@ class RAIN(IEModel):
         super().__init__(tagger, metrics_cal, **kwargs)
 
         self.ent_tag_size, self.rel_tag_size = tagger.get_tag_size()
+        self.loss_func = loss_func
         self.loss_weight_recover_steps = loss_weight_recover_steps
         self.metrics_cal = metrics_cal
         self.loss_weight = loss_weight
@@ -682,7 +685,7 @@ class RAIN(IEModel):
         if self.emb_ent_info2rel:
             # ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
             if not self.training or not self.golden_ent_cla_guide:
-                ent_class_guide = (pred_ent_output > 0.).long()
+                ent_class_guide = self.pred_output2pred_tag(pred_ent_output)
             boundary_tok_inter_pre = self.get_rel_guide(ent_hs_hiddens, ent_class_guide)
             rel_hs_hiddens = self.cln4rel_guide(rel_hs_hiddens, boundary_tok_inter_pre)
 
@@ -698,6 +701,7 @@ class RAIN(IEModel):
         ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
         rel_pred_tag = self.pred_output2pred_tag(rel_pred_out)
 
+        # weights
         total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
         current_step = self.bp_steps
 
@@ -717,12 +721,18 @@ class RAIN(IEModel):
             w_rel = max(init_rel_w - step_weight, stable_rel_w)
 
         # print("ent_w: {}, rel_w: {}".format(w_ent, w_rel))
-        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
-                                                                            ent_gold_tag,
-                                                                            self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out,
-                                                                            rel_gold_tag,
-                                                                            self.bp_steps)
+
+        # loss function
+        loss_func = None
+        if self.loss_func == "bce_loss":
+            loss_func = self.metrics_cal.bce_loss
+        elif self.loss_func == "mce_loss":
+            loss_func = lambda pred_out, gold_tag: self.metrics_cal.multilabel_categorical_crossentropy(pred_out,
+                                                                                                        gold_tag,
+                                                                                                        self.bp_steps)
+
+        loss = w_ent * loss_func(ent_pred_out, ent_gold_tag) + \
+               w_rel * loss_func(rel_pred_out, rel_gold_tag)
 
         return {
             "loss": loss,
