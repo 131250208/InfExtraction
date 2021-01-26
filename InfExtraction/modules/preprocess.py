@@ -1423,12 +1423,13 @@ class Preprocessor:
         return data
 
     @staticmethod
-    def choose_spans_by_token_level(data, token_level):
+    def choose_spans_by_token_level(ori_data, token_level):
         '''
         :param data:
         :param token_level: "subword" or "word"
         :return:
         '''
+        data = copy.deepcopy(ori_data)
         for sample in data:
             if "entity_list" in sample:
                 for ent in sample["entity_list"]:
@@ -1479,8 +1480,8 @@ class Preprocessor:
                 subj_tok_span = rel["subj_tok_span"]
                 obj_tok_span = rel["obj_tok_span"]
                 # if subject and object are both in this subtext, add this spo to new sample
-                if subj_tok_span[0] >= start_ind and subj_tok_span[1] <= end_ind \
-                        and obj_tok_span[0] >= start_ind and obj_tok_span[1] <= end_ind:
+                if subj_tok_span[0] >= start_ind and subj_tok_span[-1] <= end_ind \
+                        and obj_tok_span[0] >= start_ind and obj_tok_span[-1] <= end_ind:
                     rel_cp = copy.deepcopy(rel)
                     sub_rel_list.append(rel_cp)
             new_sample["relation_list"] = sub_rel_list
@@ -1491,7 +1492,7 @@ class Preprocessor:
             for ent in sample["entity_list"]:
                 tok_span = ent["tok_span"]
                 # if entity in this subtext, add the entity to new sample
-                if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
+                if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
                     ent_cp = copy.deepcopy(ent)
                     sub_ent_list.append(ent_cp)
             new_sample["entity_list"] = sub_ent_list
@@ -1502,13 +1503,13 @@ class Preprocessor:
             for event in sample["event_list"]:
                 if "trigger" in event:
                     trigger_tok_span = event["trigger_tok_span"]
-                    if trigger_tok_span[1] > end_ind or trigger_tok_span[0] < start_ind:
+                    if trigger_tok_span[-1] > end_ind or trigger_tok_span[0] < start_ind:
                         continue
                 event_cp = copy.deepcopy(event)
                 new_arg_list = []
                 for arg in event_cp["argument_list"]:
                     tok_span = arg["tok_span"]
-                    if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
+                    if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
                         arg_cp = copy.deepcopy(arg)
                         new_arg_list.append(arg_cp)
                 event_cp["argument_list"] = new_arg_list
