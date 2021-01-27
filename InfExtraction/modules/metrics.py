@@ -85,10 +85,12 @@ class MetricsCalculator:
         y_true: (batch_size_train, ... , type_size)
         :return: loss
         '''
+
         # loss_func = nn.BCELoss()
         def loss_func(pred, gold):
-            return torch.sum(- (gold * torch.log(pred) + (1 - gold) * torch.log(1 - pred)))
-        set_trace()
+            return torch.mean(- (gold * torch.clamp(torch.log(pred), min=-100) +
+                                 (1 - gold) * torch.clamp(torch.log(1 - pred), min=-100)))
+
         y_pred = nn.Sigmoid()(y_pred)
         loss = loss_func(y_pred, y_true.float())
         return loss
