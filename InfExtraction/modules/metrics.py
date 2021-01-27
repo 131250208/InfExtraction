@@ -90,10 +90,11 @@ class MetricsCalculator:
         def loss_func(pred, gold):
             return torch.mean(- (gold * torch.clamp(torch.log(pred), min=-100) +
                                  (1 - gold) * torch.clamp(torch.log(1 - pred), min=-100)))
-        # set_trace()
-        y_pred = nn.Sigmoid()(y_pred)
-        loss = loss_func(y_pred, y_true.float())
+
+        y_pred_ = nn.Sigmoid()(y_pred)
+        loss = loss_func(y_pred_, y_true.float())
         print(loss)
+        set_trace()
         return loss
 
     def get_tag_seq_accuracy(self, pred, truth):
