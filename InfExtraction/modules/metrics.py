@@ -93,6 +93,7 @@ class MetricsCalculator:
         set_trace()
         y_pred = nn.Sigmoid()(y_pred)
         loss = loss_func(y_pred, y_true.float())
+        print(loss)
         return loss
 
     def get_tag_seq_accuracy(self, pred, truth):
