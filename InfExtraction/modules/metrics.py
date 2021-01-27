@@ -86,7 +86,7 @@ class MetricsCalculator:
         :return: loss
         '''
         loss_func = nn.BCELoss()
-        # y_pred = nn.Sigmoid()(y_pred)
+        y_pred = nn.Sigmoid()(y_pred)
         loss = loss_func(y_pred, y_true.float())
         return loss
 
