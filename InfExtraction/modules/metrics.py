@@ -87,7 +87,7 @@ class MetricsCalculator:
         '''
         # loss_func = nn.BCELoss()
         def loss_func(pred, gold):
-            return gold * torch.log(pred) + (1 - gold) * torch.log(1 - pred)
+            return - torch.mean(gold * torch.log(pred) + (1 - gold) * torch.log(1 - pred))
         y_pred = nn.Sigmoid()(y_pred)
         loss = loss_func(y_pred, y_true.float())
         return loss
