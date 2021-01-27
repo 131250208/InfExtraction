@@ -85,8 +85,10 @@ class MetricsCalculator:
         y_true: (batch_size_train, ... , type_size)
         :return: loss
         '''
-        loss_func = nn.BCELoss()
-        y_pred = nn.Sigmoid()(y_pred)
+        # loss_func = nn.BCELoss()
+        def loss_func(pred, gold):
+            return gold * torch.log(pred) + (1 - gold) * torch.log(1 - pred)
+        # y_pred = nn.Sigmoid()(y_pred)
         loss = loss_func(y_pred, y_true.float())
         return loss
 
@@ -223,7 +225,7 @@ class MetricsCalculator:
             "ent_exact_offset_on_sents_w_disc": ent_exact_offset_on_sents_w_disc_set,
             "ent_exact_text_on_sents_w_disc": ent_exact_text_on_sents_w_disc_set,
         }
-    
+
     @staticmethod
     def get_mark_sets_rel(rel_list):
         rel_partial_text_set, \
@@ -267,8 +269,10 @@ class MetricsCalculator:
     @staticmethod
     def get_mark_sets4disc_ent_analysis(ent_list):
         keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap",
-                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9+",
-                "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
+                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8",
+                "span_len: 9+",
+                "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5",
+                "interval_len: 6", "interval_len: 7+"}
         mark_set_dict = {k: set() for k in keys}
 
         tok_id2occur_num = {}
@@ -335,6 +339,7 @@ class MetricsCalculator:
         return mark_set_dict
 
     count = 0
+
     @staticmethod
     def cal_cpg4disc_ent_add_analysis(pred_ent_list, gold_ent_list, cpg_dict):
         '''
@@ -477,9 +482,11 @@ class MetricsCalculator:
 
     @staticmethod
     def do_additonal_analysis4disc_ent(pred_sample_list, golden_sample_list):
-        keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap", 
-                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9+",
-                "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
+        keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap",
+                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8",
+                "span_len: 9+",
+                "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5",
+                "interval_len: 6", "interval_len: 7+"}
         cpg_dict = {k: [0, 0, 0] for k in keys}
 
         for idx, pred_sample in enumerate(pred_sample_list):
