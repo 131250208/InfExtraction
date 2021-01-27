@@ -86,7 +86,8 @@ class MetricsCalculator:
         :return: loss
         '''
         loss_func = nn.BCELoss()
-        loss = loss_func(nn.Sigmoid()(y_pred), y_true.float())
+        # y_pred = nn.Sigmoid()(y_pred)
+        loss = loss_func(y_pred, y_true.float())
         return loss
 
     def get_tag_seq_accuracy(self, pred, truth):
