@@ -266,7 +266,7 @@ class MetricsCalculator:
     @staticmethod
     def get_mark_sets4disc_ent_analysis(ent_list):
         keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap",
-                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9", "span_len: 10+",
+                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9+",
                 "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
         mark_set_dict = {k: set() for k in keys}
 
@@ -292,7 +292,7 @@ class MetricsCalculator:
                 if i == len(tok_span) - 1:
                     break
                 interval_len += (tok_span[i + 1] - tok_span[i])
-            span_len_str = "10+" if span_len >= 10 else str(span_len)
+            span_len_str = "9+" if span_len >= 9 else str(span_len)
             interval_len_str = "7+" if interval_len >= 7 else str(interval_len)
             mark_set_dict["span_len: {}".format(span_len_str)].add(mark)
             mark_set_dict["interval_len: {}".format(interval_len_str)].add(mark)
@@ -338,7 +338,7 @@ class MetricsCalculator:
     def cal_cpg4disc_ent_add_analysis(pred_ent_list, gold_ent_list, cpg_dict):
         '''
         keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap",
-                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9", "span_len: 10+",
+                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9+"
                 "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
         '''
         pred_set_dict = MetricsCalculator.get_mark_sets4disc_ent_analysis(pred_ent_list)
@@ -477,7 +477,7 @@ class MetricsCalculator:
     @staticmethod
     def do_additonal_analysis4disc_ent(pred_sample_list, golden_sample_list):
         keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap", 
-                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9", "span_len: 10+",
+                "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9+",
                 "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
         cpg_dict = {k: [0, 0, 0] for k in keys}
 
