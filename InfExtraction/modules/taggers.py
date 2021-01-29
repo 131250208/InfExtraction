@@ -1631,7 +1631,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                     #     print("1")
 
                     for cli in cliques:
-                        if not any("B" in offset2seg_types[n] for n in cli):
+                        if not any(n in offset2seg_types and "B" in offset2seg_types[n] for n in cli):
                             continue
                         spans = []
                         for n in cli:
