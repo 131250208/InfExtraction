@@ -221,10 +221,10 @@ class MetricsCalculator:
                 disc_ent_exact_text_set.add(str([ent["text"], ent["type"]]))
 
         return {
-            "ent_partial_text": ent_partial_text_set,
-            "ent_partial_offset": ent_partial_offset_set,
-            "ent_exact_text": ent_exact_text_set,
-            "ent_exact_offset": ent_exact_offset_set,
+            "total_ent_partial_text": ent_partial_text_set,
+            "total_ent_partial_offset": ent_partial_offset_set,
+            "total_ent_exact_text": ent_exact_text_set,
+            "total_ent_exact_offset": ent_exact_offset_set,
             "disc_ent_exact_offset": disc_ent_exact_offset_set,
             "disc_ent_exact_text": disc_ent_exact_text_set,
             "ent_exact_offset_on_sents_w_disc": ent_exact_offset_on_sents_w_disc_set,
@@ -366,10 +366,10 @@ class MetricsCalculator:
     def cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict, sent_w_disc=False):
         '''
         ent_cpg_dict = {
-            "ent_partial_text": [0, 0, 0],
-            "ent_partial_offset": [0, 0, 0],
-            "ent_exact_text": [0, 0, 0],
-            "ent_exact_offset": [0, 0, 0],
+            "total_ent_partial_text": [0, 0, 0],
+            "total_ent_partial_offset": [0, 0, 0],
+            "total_ent_exact_text": [0, 0, 0],
+            "total_ent_exact_offset": [0, 0, 0],
         }
         if compute disc:
         ent_cpg_dict["disc_ent_exact_offset"] = [0, 0, 0]
@@ -461,10 +461,10 @@ class MetricsCalculator:
     @staticmethod
     def get_ent_cpg_dict(pred_sample_list, golden_sample_list):
         ent_cpg_dict = {
-            "ent_partial_text": [0, 0, 0],
-            "ent_partial_offset": [0, 0, 0],
-            "ent_exact_text": [0, 0, 0],
-            "ent_exact_offset": [0, 0, 0],
+            "total_ent_partial_text": [0, 0, 0],
+            "total_ent_partial_offset": [0, 0, 0],
+            "total_ent_exact_text": [0, 0, 0],
+            "total_ent_exact_offset": [0, 0, 0],
         }
 
         if any(len(ent["char_span"]) > 2 for sample in golden_sample_list for ent in sample["entity_list"]):
