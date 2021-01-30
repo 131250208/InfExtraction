@@ -277,7 +277,8 @@ class MetricsCalculator:
                 "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8",
                 "span_len: 9+",
                 "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5",
-                "interval_len: 6", "interval_len: 7+"}
+                "interval_len: 6", "interval_len: 7+",
+                "discontinuous"}
         mark_set_dict = {k: set() for k in keys}
 
         tok_id2occur_num = {}
@@ -294,6 +295,7 @@ class MetricsCalculator:
             tok_span = ent["tok_span"]
             if len(tok_span) == 2:
                 continue
+            mark_set_dict["discontinuous"].add(mark)
 
             # length analysis
             span_len = tok_span[-1] - tok_span[0]
@@ -348,7 +350,8 @@ class MetricsCalculator:
     @staticmethod
     def cal_cpg4disc_ent_add_analysis(pred_ent_list, gold_ent_list, cpg_dict):
         '''
-        keys = {"no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap",
+        keys = {"discontinuous",
+        "no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap",
                 "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9+"
                 "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
         '''
@@ -491,7 +494,8 @@ class MetricsCalculator:
                 "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8",
                 "span_len: 9+",
                 "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5",
-                "interval_len: 6", "interval_len: 7+"}
+                "interval_len: 6", "interval_len: 7+",
+                "discontinuous"}
         cpg_dict = {k: [0, 0, 0] for k in keys}
 
         for idx, pred_sample in enumerate(pred_sample_list):
@@ -505,6 +509,7 @@ class MetricsCalculator:
         for k, cpg in cpg_dict.items():
             statistics[k] = cpg[2]
             prf_dict[k] = MetricsCalculator.get_prf_scores(*cpg)
+
         return prf_dict, statistics
 
     def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
