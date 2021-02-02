@@ -1,4 +1,6 @@
 # Information Extraction
-version control
-version control1
+
+```
+python train_valid.py -s settings_rain4disc
+```
 
