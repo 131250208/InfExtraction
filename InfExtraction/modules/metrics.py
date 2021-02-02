@@ -278,7 +278,7 @@ class MetricsCalculator:
                 "span_len: 9+",
                 "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5",
                 "interval_len: 6", "interval_len: 7+",
-                "discontinuous"}
+                "discontinuous", "mentions"}
         mark_set_dict = {k: set() for k in keys}
 
         tok_id2occur_num = {}
@@ -293,6 +293,9 @@ class MetricsCalculator:
         for ent in ent_list:
             mark = str([ent["type"]] + ent["tok_span"])
             tok_span = ent["tok_span"]
+            if len(tok_span) > 0:
+                mark_set_dict["mentions"].add(mark)
+
             if len(tok_span) == 2:
                 continue
             mark_set_dict["discontinuous"].add(mark)
@@ -350,7 +353,7 @@ class MetricsCalculator:
     @staticmethod
     def cal_cpg4disc_ent_add_analysis(pred_ent_list, gold_ent_list, cpg_dict):
         '''
-        keys = {"discontinuous",
+        keys = {"discontinuous", "mentions",
         "no_overlap", "left_overlap", "right_overlap", "inner_overlap", "multi_overlap",
                 "span_len: 3", "span_len: 4", "span_len: 5", "span_len: 6", "span_len: 7", "span_len: 8", "span_len: 9+"
                 "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5", "interval_len: 6", "interval_len: 7+"}
@@ -495,7 +498,7 @@ class MetricsCalculator:
                 "span_len: 9+",
                 "interval_len: 4", "interval_len: 3", "interval_len: 2", "interval_len: 1", "interval_len: 5",
                 "interval_len: 6", "interval_len: 7+",
-                "discontinuous"}
+                "discontinuous", "mentions"}
         cpg_dict = {k: [0, 0, 0] for k in keys}
 
         for idx, pred_sample in enumerate(pred_sample_list):

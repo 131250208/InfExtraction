@@ -397,14 +397,13 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         super(Tagger4RAIN, self).__init__(data, **kwargs)
 
         self.rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
-        ent_link_types = {"EH2ET"}
-
-        self.ent_tags = {self.separator.join([ent, lt]) for ent in self.ent2id.keys() for lt in ent_link_types}
-
         self.rel_tag2id = {t: idx for idx, t in enumerate(sorted(self.rel_tags))}
         self.id2rel_tag = {idx: t for t, idx in self.rel_tag2id.items()}
 
-        self.ent_tag2id = {t: idx for idx, t in enumerate(sorted(self.ent_tags))}
+        # ent_link_types = {"EH2ET"}
+        # self.ent_tags = {self.separator.join([ent, lt]) for ent in self.ent2id.keys() for lt in ent_link_types}
+        # self.ent_tag2id = {t: idx for idx, t in enumerate(sorted(self.ent_tags))}
+        self.ent_tag2id = self.ent2id
         self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
 
     def get_tag_size(self):
@@ -426,8 +425,11 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         #     len_matrix_points = []
         if "entity_list" in sample:
             for ent in sample["entity_list"]:
+                # tag = self.separator.join([ent["type"], "EH2ET"])
+                tag = ent["type"]
                 point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
-                         self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
+                         self.ent_tag2id[tag],
+                         )
                 ent_matrix_points.append(point)
 
         if "relation_list" in sample:
@@ -444,23 +446,163 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 rel_matrix_points.append(
                     (subj_tok_span[0], obj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "SH2OH"])]))
                 rel_matrix_points.append(
-                    (obj_tok_span[0], subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OH2SH"])]))
-                rel_matrix_points.append(
                     (subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "ST2OT"])]))
-                rel_matrix_points.append(
-                    (obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OT2ST"])]))
+                # rel_matrix_points.append(
+                #     (obj_tok_span[0], subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OH2SH"])]))
+                # rel_matrix_points.append(
+                #     (obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OT2ST"])]))
 
                 if self.add_h2t_n_t2h_links:
                     rel_matrix_points.append(
                         (subj_tok_span[0], obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "SH2OT"])]))
                     rel_matrix_points.append(
-                        (obj_tok_span[1] - 1, subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OT2SH"])]))
-                    rel_matrix_points.append(
                         (subj_tok_span[1] - 1, obj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "ST2OH"])]))
-                    rel_matrix_points.append(
-                        (obj_tok_span[0], subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OH2ST"])]))
+                    # rel_matrix_points.append(
+                    #     (obj_tok_span[1] - 1, subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OT2SH"])]))
+                    # rel_matrix_points.append(
+                    #     (obj_tok_span[0], subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OH2ST"])]))
 
         return Preprocessor.unique_list(ent_matrix_points), Preprocessor.unique_list(rel_matrix_points)
+
+    # def decode(self, sample, pred_tags):
+    #     '''
+    #     sample: to provide tok2char_span map and text
+    #     pred_tags: predicted tags
+    #     '''
+    #     rel_list, ent_list = [], []
+    #     pred_ent_tag, pred_rel_tag = pred_tags[0], pred_tags[1]
+    #     ent_points = Indexer.shaking_seq2points(pred_ent_tag)
+    #     rel_points = Indexer.matrix2points(pred_rel_tag)
+    #
+    #     sample_idx, text = sample["id"], sample["text"]
+    #     tok2char_span = sample["features"]["tok2char_span"]
+    #
+    #     # entity
+    #     head_ind2entities = {}
+    #     for pt in ent_points:
+    #         ent_tag = self.id2ent_tag[pt[2]]
+    #         # ent_type, link_type = ent_tag.split(self.separator)
+    #         # for an entity, the start position can not be larger than the end pos.
+    #         # assert link_type == "EH2ET" and pt[0] <= pt[1]
+    #         # if link_type == "EH2ET":
+    #         ent_type = ent_tag
+    #         tok_sp = [pt[0], pt[1] + 1]
+    #         char_span_list = tok2char_span[tok_sp[0]:tok_sp[1]]
+    #         char_sp = [char_span_list[0][0], char_span_list[-1][1]]
+    #         ent_text = text[char_sp[0]:char_sp[1]]
+    #
+    #         entity = {
+    #             "type": ent_type,
+    #             "text": ent_text,
+    #             "tok_span": tok_sp,
+    #             "char_span": char_sp,
+    #         }
+    #         ent_list.append(entity)
+    #
+    #         head_key = "{},{}".format(ent_type, str(pt[0])) if self.classify_entities_by_relation else str(pt[0])
+    #         if head_key not in head_ind2entities:
+    #             head_ind2entities[head_key] = []
+    #         head_ind2entities[head_key].append(entity)
+    #
+    #     # tail link
+    #     tail_link_memory_set = set()
+    #     for pt in rel_points:
+    #         tag = self.id2rel_tag[pt[2]]
+    #         rel, link_type = tag.split(self.separator)
+    #
+    #         if link_type == "ST2OT":
+    #             tail_link_memory = self.separator.join([rel, str(pt[0]), str(pt[1])])
+    #             tail_link_memory_set.add(tail_link_memory)
+    #         elif link_type == "OT2ST":
+    #             tail_link_memory = self.separator.join([rel, str(pt[1]), str(pt[0])])
+    #             tail_link_memory_set.add(tail_link_memory)
+    #         else:
+    #             continue
+    #
+    #     # head link
+    #     for pt in rel_points:
+    #         tag = self.id2rel_tag[pt[2]]
+    #         rel, link_type = tag.split(self.separator)
+    #
+    #         if link_type == "SH2OH":
+    #             if self.classify_entities_by_relation:
+    #                 subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[0])), "REL:{},{}".format(rel,
+    #                                                                                                       str(pt[1]))
+    #             else:
+    #                 subj_head_key, obj_head_key = str(pt[0]), str(pt[1])
+    #         elif link_type == "OH2SH":
+    #             if self.classify_entities_by_relation:
+    #                 subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[1])), "REL:{},{}".format(rel,
+    #                                                                                                       str(pt[0]))
+    #             else:
+    #                 subj_head_key, obj_head_key = str(pt[1]), str(pt[0])
+    #         else:
+    #             continue
+    #
+    #         if subj_head_key not in head_ind2entities or obj_head_key not in head_ind2entities:
+    #             # no entity start with subj_head_key or obj_head_key
+    #             continue
+    #
+    #         # all entities start with this subject head
+    #         subj_list = Preprocessor.unique_list(head_ind2entities[subj_head_key])
+    #         # all entities start with this object head
+    #         obj_list = Preprocessor.unique_list(head_ind2entities[obj_head_key])
+    #
+    #         # go over all subj-obj pair to check whether the tail link exists
+    #         for subj in subj_list:
+    #             for obj in obj_list:
+    #                 tail_link_memory = self.separator.join(
+    #                     [rel, str(subj["tok_span"][1] - 1), str(obj["tok_span"][1] - 1)])
+    #                 if tail_link_memory not in tail_link_memory_set:
+    #                     # no such relation
+    #                     continue
+    #                 rel_list.append({
+    #                     "subject": subj["text"],
+    #                     "object": obj["text"],
+    #                     "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
+    #                     "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
+    #                     "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
+    #                     "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
+    #                     "predicate": rel,
+    #                 })
+    #
+    #     if self.add_h2t_n_t2h_links:
+    #         # fitler wrong relations by Head 2 Tail and Tail to Head tags
+    #         head2tail_link_set = set()
+    #         tail2head_link_set = set()
+    #         for pt in rel_points:
+    #             tag = self.id2rel_tag[pt[2]]
+    #             rel, link_type = tag.split(self.separator)
+    #             if link_type == "SH2OT":
+    #                 head2tail_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
+    #             elif link_type == "OT2SH":
+    #                 head2tail_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
+    #             if link_type == "ST2OH":
+    #                 tail2head_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
+    #             elif link_type == "OH2ST":
+    #                 tail2head_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
+    #         filtered_rel_list = []
+    #         for spo in rel_list:
+    #             subj_tok_span = spo["subj_tok_span"]
+    #             obj_tok_span = spo["obj_tok_span"]
+    #             h2t = self.separator.join([spo["predicate"], str(subj_tok_span[0]), str(obj_tok_span[1] - 1)])
+    #             t2h = self.separator.join([spo["predicate"], str(subj_tok_span[1] - 1), str(obj_tok_span[0])])
+    #             if h2t not in head2tail_link_set or t2h not in tail2head_link_set:
+    #                 continue
+    #             filtered_rel_list.append(spo)
+    #         rel_list = filtered_rel_list
+    #
+    #     pred_sample = copy.deepcopy(sample)
+    #     # filter extra relations
+    #     pred_sample["relation_list"] = Preprocessor.unique_list(
+    #         [rel for rel in rel_list if "EXT:" not in rel["predicate"]])
+    #     # filter extra entities
+    #     ent_types2filter = {"REL:", "EXT:"}
+    #     ent_filter_pattern = "({})".format("|".join(ent_types2filter))
+    #     pred_sample["entity_list"] = Preprocessor.unique_list(
+    #         [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None])
+    #
+    #     return pred_sample
 
     def decode(self, sample, pred_tags):
         '''
@@ -479,115 +621,69 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         head_ind2entities = {}
         for pt in ent_points:
             ent_tag = self.id2ent_tag[pt[2]]
-            ent_type, link_type = ent_tag.split(self.separator)
-            # for an entity, the start position can not be larger than the end pos.
-            assert link_type == "EH2ET" and pt[0] <= pt[1]
-            if link_type == "EH2ET":
-                tok_sp = [pt[0], pt[1] + 1]
-                char_span_list = tok2char_span[tok_sp[0]:tok_sp[1]]
-                char_sp = [char_span_list[0][0], char_span_list[-1][1]]
-                ent_text = text[char_sp[0]:char_sp[1]]
+            ent_type = ent_tag
+            tok_sp = [pt[0], pt[1] + 1]
+            char_span_list = tok2char_span[tok_sp[0]:tok_sp[1]]
+            char_sp = [char_span_list[0][0], char_span_list[-1][1]]
+            ent_text = text[char_sp[0]:char_sp[1]]
 
-                entity = {
-                    "type": ent_type,
-                    "text": ent_text,
-                    "tok_span": tok_sp,
-                    "char_span": char_sp,
-                }
-                ent_list.append(entity)
+            entity = {
+                "type": ent_type,
+                "text": ent_text,
+                "tok_span": tok_sp,
+                "char_span": char_sp,
+            }
+            ent_list.append(entity)
 
-                head_key = "{},{}".format(ent_type, str(pt[0])) if self.classify_entities_by_relation else str(pt[0])
-                if head_key not in head_ind2entities:
-                    head_ind2entities[head_key] = []
-                head_ind2entities[head_key].append(entity)
+        cand_ent_list4rel = []
+        for ent in ent_list:
+            if self.classify_entities_by_relation and "REL:" in ent["type"]:
+                new_ent = copy.deepcopy(ent)
+                new_ent["type"] = re.sub("REL:", "", new_ent["type"])
+                cand_ent_list4rel.append(new_ent)
+            else:
+                cand_ent_list4rel.append(ent)
 
-        # tail link
-        tail_link_memory_set = set()
+        rel2link_type_map = {}
         for pt in rel_points:
             tag = self.id2rel_tag[pt[2]]
             rel, link_type = tag.split(self.separator)
+            if rel not in rel2link_type_map:
+                rel2link_type_map[rel] = {}
+            index_pair = "{},{}".format(pt[0], pt[1])
+            if index_pair not in rel2link_type_map[rel]:
+                rel2link_type_map[rel][index_pair] = set()
+            rel2link_type_map[rel][index_pair].add(link_type)
 
-            if link_type == "ST2OT":
-                tail_link_memory = self.separator.join([rel, str(pt[0]), str(pt[1])])
-                tail_link_memory_set.add(tail_link_memory)
-            elif link_type == "OT2ST":
-                tail_link_memory = self.separator.join([rel, str(pt[1]), str(pt[0])])
-                tail_link_memory_set.add(tail_link_memory)
-            else:
-                continue
+        for rel, link_type_map in rel2link_type_map.items():
+            for subj in cand_ent_list4rel:
+                for obj in cand_ent_list4rel:
+                    h2h_ids = "{},{}".format(subj["tok_span"][0], obj["tok_span"][0])
+                    t2t_ids = "{},{}".format(subj["tok_span"][1] - 1, obj["tok_span"][1] - 1)
+                    h2t_ids = "{},{}".format(subj["tok_span"][0], obj["tok_span"][1] - 1)
+                    t2h_ids = "{},{}".format(subj["tok_span"][1] - 1, obj["tok_span"][0])
 
-        # head link
-        for pt in rel_points:
-            tag = self.id2rel_tag[pt[2]]
-            rel, link_type = tag.split(self.separator)
-
-            if link_type == "SH2OH":
-                if self.classify_entities_by_relation:
-                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[0])), "REL:{},{}".format(rel,
-                                                                                                          str(pt[1]))
-                else:
-                    subj_head_key, obj_head_key = str(pt[0]), str(pt[1])
-            elif link_type == "OH2SH":
-                if self.classify_entities_by_relation:
-                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[1])), "REL:{},{}".format(rel,
-                                                                                                          str(pt[0]))
-                else:
-                    subj_head_key, obj_head_key = str(pt[1]), str(pt[0])
-            else:
-                continue
-
-            if subj_head_key not in head_ind2entities or obj_head_key not in head_ind2entities:
-                # no entity start with subj_head_key or obj_head_key
-                continue
-
-            # all entities start with this subject head
-            subj_list = Preprocessor.unique_list(head_ind2entities[subj_head_key])
-            # all entities start with this object head
-            obj_list = Preprocessor.unique_list(head_ind2entities[obj_head_key])
-
-            # go over all subj-obj pair to check whether the tail link exists
-            for subj in subj_list:
-                for obj in obj_list:
-                    tail_link_memory = self.separator.join(
-                        [rel, str(subj["tok_span"][1] - 1), str(obj["tok_span"][1] - 1)])
-                    if tail_link_memory not in tail_link_memory_set:
-                        # no such relation
-                        continue
-                    rel_list.append({
-                        "subject": subj["text"],
-                        "object": obj["text"],
-                        "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
-                        "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
-                        "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
-                        "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
-                        "predicate": rel,
-                    })
-
-        if self.add_h2t_n_t2h_links:
-            # fitler wrong relations by Head 2 Tail and Tail to Head tags
-            head2tail_link_set = set()
-            tail2head_link_set = set()
-            for pt in rel_points:
-                tag = self.id2rel_tag[pt[2]]
-                rel, link_type = tag.split(self.separator)
-                if link_type == "SH2OT":
-                    head2tail_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
-                elif link_type == "OT2SH":
-                    head2tail_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
-                if link_type == "ST2OH":
-                    tail2head_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
-                elif link_type == "OH2ST":
-                    tail2head_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
-            filtered_rel_list = []
-            for spo in rel_list:
-                subj_tok_span = spo["subj_tok_span"]
-                obj_tok_span = spo["obj_tok_span"]
-                h2t = self.separator.join([spo["predicate"], str(subj_tok_span[0]), str(obj_tok_span[1] - 1)])
-                t2h = self.separator.join([spo["predicate"], str(subj_tok_span[1] - 1), str(obj_tok_span[0])])
-                if h2t not in head2tail_link_set or t2h not in tail2head_link_set:
-                    continue
-                filtered_rel_list.append(spo)
-            rel_list = filtered_rel_list
+                    rel_exist = False
+                    if self.add_h2t_n_t2h_links:
+                        if h2h_ids in link_type_map and "SH2OH" in link_type_map[h2h_ids] and \
+                            t2t_ids in link_type_map and "ST2OT" in link_type_map[t2t_ids] and \
+                            h2t_ids in link_type_map and "SH2OT" in link_type_map[h2t_ids] and \
+                            t2h_ids in link_type_map and "ST2OH" in link_type_map[t2h_ids]:
+                            rel_exist = True
+                    else:
+                        if h2h_ids in link_type_map and "SH2OH" in link_type_map[h2h_ids] and \
+                            t2t_ids in link_type_map and "ST2OT" in link_type_map[t2t_ids]:
+                            rel_exist = True
+                    if rel_exist:
+                        rel_list.append({
+                            "subject": subj["text"],
+                            "object": obj["text"],
+                            "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
+                            "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
+                            "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
+                            "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
+                            "predicate": rel,
+                        })
 
         pred_sample = copy.deepcopy(sample)
         # filter extra relations
@@ -599,198 +695,194 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         pred_sample["entity_list"] = Preprocessor.unique_list(
             [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None])
 
-        # temp_set = {str(dict(sorted(rel.items()))) for rel in sample["relation_list"]}
-        # for rel in pred_sample["relation_list"]:
-        #     if str(dict(sorted(rel.items()))) not in temp_set:
-        #         print("!")  # TPLinker的解码缺陷，[[1, 2][3, 4]] -> [7, 8]，想办法输出个span长度解决一下
         return pred_sample
 
 
-class Tagger4TPL3(HandshakingTagger4TPLPlus):
-    def __init__(self, data, **kwargs):
-        '''
-        :param data: all data, used to generate entity type and relation type dicts
-        '''
-        super(Tagger4TPL3, self).__init__(data, **kwargs)
-        self.head_rel_link_types = {
-            "SH2OH",  # subject head to object head
-            "OH2SH",  # object head to subject head
-        }
-        self.tail_rel_link_types = {
-            "ST2OT",  # subject tail to object tail
-            "OT2ST",  # object tail to subject tail
-        }
-
-        self.head_rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in
-                              self.head_rel_link_types}
-        self.tail_rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in
-                              self.tail_rel_link_types}
-        self.ent_tags = {self.separator.join([ent, "EH2ET"]) for ent in self.ent2id.keys()}
-
-        self.head_rel_tag2id = {t: idx for idx, t in enumerate(sorted(self.head_rel_tags))}
-        self.tail_rel_tag2id = {t: idx for idx, t in enumerate(sorted(self.tail_rel_tags))}
-        self.id2head_rel_tag = {idx: t for t, idx in self.head_rel_tag2id.items()}
-        self.id2tail_rel_tag = {idx: t for t, idx in self.tail_rel_tag2id.items()}
-
-        self.ent_tag2id = {t: idx for idx, t in enumerate(sorted(self.ent_tags))}
-        self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
-
-    def get_tag_size(self):
-        return len(self.ent_tag2id), len(self.head_rel_tag2id), len(self.tail_rel_tag2id)
-
-    def tag(self, data):
-        for sample in tqdm(data, desc="tagging"):
-            ent_points, head_rel_points, tail_rel_points = self.get_tag_points(sample)
-            sample["ent_points"] = ent_points
-            sample["head_rel_points"] = head_rel_points
-            sample["tail_rel_points"] = tail_rel_points
-        return data
-
-    def get_tag_points(self, sample):
-        '''
-        matrix_points: [(tok_pos1, tok_pos2, tag_id), ]
-        '''
-        ent_matrix_points, head_rel_matrix_points, tail_rel_matrix_points = [], [], []
-
-        if "entity_list" in sample:
-            for ent in sample["entity_list"]:
-                point = (ent["tok_span"][0], ent["tok_span"][1] - 1,
-                         self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
-                ent_matrix_points.append(point)
-
-        if "relation_list" in sample:
-            for rel in sample["relation_list"]:
-                subj_tok_span = rel["subj_tok_span"]
-                obj_tok_span = rel["obj_tok_span"]
-                rel = rel["predicate"]
-
-                # add related boundaries
-                head_rel_matrix_points.append(
-                    (subj_tok_span[0], obj_tok_span[0], self.head_rel_tag2id[self.separator.join([rel, "SH2OH"])]))
-                head_rel_matrix_points.append(
-                    (obj_tok_span[0], subj_tok_span[0], self.head_rel_tag2id[self.separator.join([rel, "OH2SH"])]))
-                tail_rel_matrix_points.append(
-                    (subj_tok_span[1] - 1, obj_tok_span[1] - 1,
-                     self.tail_rel_tag2id[self.separator.join([rel, "ST2OT"])]))
-                tail_rel_matrix_points.append(
-                    (obj_tok_span[1] - 1, subj_tok_span[1] - 1,
-                     self.tail_rel_tag2id[self.separator.join([rel, "OT2ST"])]))
-
-        return Preprocessor.unique_list(ent_matrix_points), \
-               Preprocessor.unique_list(head_rel_matrix_points), \
-               Preprocessor.unique_list(tail_rel_matrix_points)
-
-    def decode(self, sample, pred_tags):
-        '''
-        sample: to provide tok2char_span map and text
-        pred_tags: predicted tags
-        '''
-        rel_list, ent_list = [], []
-        pred_ent_tag, pred_head_rel_tag, pred_tail_rel_tag = pred_tags[0], pred_tags[1], pred_tags[2]
-        ent_points = Indexer.shaking_seq2points(pred_ent_tag)
-        head_rel_points = Indexer.matrix2points(pred_head_rel_tag)
-        tail_rel_points = Indexer.matrix2points(pred_tail_rel_tag)
-
-        sample_idx, text = sample["id"], sample["text"]
-        tok2char_span = sample["features"]["tok2char_span"]
-
-        # entity
-        head_ind2entities = {}
-        for pt in ent_points:
-            ent_tag = self.id2ent_tag[pt[2]]
-            ent_type, link_type = ent_tag.split(self.separator)
-            # for an entity, the start position can not be larger than the end pos.
-            assert link_type == "EH2ET" and pt[0] <= pt[1]
-
-            char_span_list = tok2char_span[pt[0]:pt[1] + 1]
-            char_sp = [char_span_list[0][0], char_span_list[-1][1]]
-            ent_text = text[char_sp[0]:char_sp[1]]
-            entity = {
-                "type": ent_type,
-                "text": ent_text,
-                "tok_span": [pt[0], pt[1] + 1],
-                "char_span": char_sp,
-            }
-            ent_list.append(entity)
-
-            head_key = "{},{}".format(ent_type, str(pt[0])) if self.classify_entities_by_relation else str(pt[0])
-            if head_key not in head_ind2entities:
-                head_ind2entities[head_key] = []
-            head_ind2entities[head_key].append(entity)
-
-        # tail link
-        tail_link_memory_set = set()
-        for pt in tail_rel_points:
-            tag = self.id2tail_rel_tag[pt[2]]
-            rel, link_type = tag.split(self.separator)
-
-            if link_type == "ST2OT":
-                tail_link_memory = self.separator.join([rel, str(pt[0]), str(pt[1])])
-                tail_link_memory_set.add(tail_link_memory)
-            elif link_type == "OT2ST":
-                tail_link_memory = self.separator.join([rel, str(pt[1]), str(pt[0])])
-                tail_link_memory_set.add(tail_link_memory)
-            else:
-                continue
-
-        # head link
-        for pt in head_rel_points:
-            tag = self.id2head_rel_tag[pt[2]]
-            rel, link_type = tag.split(self.separator)
-
-            if link_type == "SH2OH":
-                if self.classify_entities_by_relation:
-                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[0])), "REL:{},{}".format(rel,
-                                                                                                          str(pt[1]))
-                else:
-                    subj_head_key, obj_head_key = str(pt[0]), str(pt[1])
-            elif link_type == "OH2SH":
-                if self.classify_entities_by_relation:
-                    subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[1])), "REL:{},{}".format(rel,
-                                                                                                          str(pt[0]))
-                else:
-                    subj_head_key, obj_head_key = str(pt[1]), str(pt[0])
-            else:
-                continue
-
-            if subj_head_key not in head_ind2entities or obj_head_key not in head_ind2entities:
-                # no entity start with subj_head_key or obj_head_key
-                continue
-
-            # all entities start with this subject head
-            subj_list = Preprocessor.unique_list(head_ind2entities[subj_head_key])
-            # all entities start with this object head
-            obj_list = Preprocessor.unique_list(head_ind2entities[obj_head_key])
-
-            # go over all subj-obj pair to check whether the tail link exists
-            for subj in subj_list:
-                for obj in obj_list:
-                    tail_link_memory = self.separator.join(
-                        [rel, str(subj["tok_span"][1] - 1), str(obj["tok_span"][1] - 1)])
-                    if tail_link_memory not in tail_link_memory_set:
-                        # no such relation
-                        continue
-                    rel_list.append({
-                        "subject": subj["text"],
-                        "object": obj["text"],
-                        # "subj_type": subj["type"],
-                        # "obj_type": obj["type"],
-                        "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
-                        "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
-                        "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
-                        "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
-                        "predicate": rel,
-                    })
-
-        pred_sample = copy.deepcopy(sample)
-
-        # filter extra relations
-        pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
-        # filter extra entities
-        ent_types2filter = {"REL:", "EXT:"}
-        ent_filter_pattern = "({})".format("|".join(ent_types2filter))
-        pred_sample["entity_list"] = [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None]
-        return pred_sample
+# class Tagger4TPL3(HandshakingTagger4TPLPlus):
+#     def __init__(self, data, **kwargs):
+#         '''
+#         :param data: all data, used to generate entity type and relation type dicts
+#         '''
+#         super(Tagger4TPL3, self).__init__(data, **kwargs)
+#         self.head_rel_link_types = {
+#             "SH2OH",  # subject head to object head
+#             "OH2SH",  # object head to subject head
+#         }
+#         self.tail_rel_link_types = {
+#             "ST2OT",  # subject tail to object tail
+#             "OT2ST",  # object tail to subject tail
+#         }
+#
+#         self.head_rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in
+#                               self.head_rel_link_types}
+#         self.tail_rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in
+#                               self.tail_rel_link_types}
+#         self.ent_tags = {self.separator.join([ent, "EH2ET"]) for ent in self.ent2id.keys()}
+#
+#         self.head_rel_tag2id = {t: idx for idx, t in enumerate(sorted(self.head_rel_tags))}
+#         self.tail_rel_tag2id = {t: idx for idx, t in enumerate(sorted(self.tail_rel_tags))}
+#         self.id2head_rel_tag = {idx: t for t, idx in self.head_rel_tag2id.items()}
+#         self.id2tail_rel_tag = {idx: t for t, idx in self.tail_rel_tag2id.items()}
+#
+#         self.ent_tag2id = {t: idx for idx, t in enumerate(sorted(self.ent_tags))}
+#         self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
+#
+#     def get_tag_size(self):
+#         return len(self.ent_tag2id), len(self.head_rel_tag2id), len(self.tail_rel_tag2id)
+#
+#     def tag(self, data):
+#         for sample in tqdm(data, desc="tagging"):
+#             ent_points, head_rel_points, tail_rel_points = self.get_tag_points(sample)
+#             sample["ent_points"] = ent_points
+#             sample["head_rel_points"] = head_rel_points
+#             sample["tail_rel_points"] = tail_rel_points
+#         return data
+#
+#     def get_tag_points(self, sample):
+#         '''
+#         matrix_points: [(tok_pos1, tok_pos2, tag_id), ]
+#         '''
+#         ent_matrix_points, head_rel_matrix_points, tail_rel_matrix_points = [], [], []
+#
+#         if "entity_list" in sample:
+#             for ent in sample["entity_list"]:
+#                 point = (ent["tok_span"][0], ent["tok_span"][1] - 1,
+#                          self.ent_tag2id[self.separator.join([ent["type"], "EH2ET"])])
+#                 ent_matrix_points.append(point)
+#
+#         if "relation_list" in sample:
+#             for rel in sample["relation_list"]:
+#                 subj_tok_span = rel["subj_tok_span"]
+#                 obj_tok_span = rel["obj_tok_span"]
+#                 rel = rel["predicate"]
+#
+#                 # add related boundaries
+#                 head_rel_matrix_points.append(
+#                     (subj_tok_span[0], obj_tok_span[0], self.head_rel_tag2id[self.separator.join([rel, "SH2OH"])]))
+#                 head_rel_matrix_points.append(
+#                     (obj_tok_span[0], subj_tok_span[0], self.head_rel_tag2id[self.separator.join([rel, "OH2SH"])]))
+#                 tail_rel_matrix_points.append(
+#                     (subj_tok_span[1] - 1, obj_tok_span[1] - 1,
+#                      self.tail_rel_tag2id[self.separator.join([rel, "ST2OT"])]))
+#                 tail_rel_matrix_points.append(
+#                     (obj_tok_span[1] - 1, subj_tok_span[1] - 1,
+#                      self.tail_rel_tag2id[self.separator.join([rel, "OT2ST"])]))
+#
+#         return Preprocessor.unique_list(ent_matrix_points), \
+#                Preprocessor.unique_list(head_rel_matrix_points), \
+#                Preprocessor.unique_list(tail_rel_matrix_points)
+#
+#     def decode(self, sample, pred_tags):
+#         '''
+#         sample: to provide tok2char_span map and text
+#         pred_tags: predicted tags
+#         '''
+#         rel_list, ent_list = [], []
+#         pred_ent_tag, pred_head_rel_tag, pred_tail_rel_tag = pred_tags[0], pred_tags[1], pred_tags[2]
+#         ent_points = Indexer.shaking_seq2points(pred_ent_tag)
+#         head_rel_points = Indexer.matrix2points(pred_head_rel_tag)
+#         tail_rel_points = Indexer.matrix2points(pred_tail_rel_tag)
+#
+#         sample_idx, text = sample["id"], sample["text"]
+#         tok2char_span = sample["features"]["tok2char_span"]
+#
+#         # entity
+#         head_ind2entities = {}
+#         for pt in ent_points:
+#             ent_tag = self.id2ent_tag[pt[2]]
+#             ent_type, link_type = ent_tag.split(self.separator)
+#             # for an entity, the start position can not be larger than the end pos.
+#             assert link_type == "EH2ET" and pt[0] <= pt[1]
+#
+#             char_span_list = tok2char_span[pt[0]:pt[1] + 1]
+#             char_sp = [char_span_list[0][0], char_span_list[-1][1]]
+#             ent_text = text[char_sp[0]:char_sp[1]]
+#             entity = {
+#                 "type": ent_type,
+#                 "text": ent_text,
+#                 "tok_span": [pt[0], pt[1] + 1],
+#                 "char_span": char_sp,
+#             }
+#             ent_list.append(entity)
+#
+#             head_key = "{},{}".format(ent_type, str(pt[0])) if self.classify_entities_by_relation else str(pt[0])
+#             if head_key not in head_ind2entities:
+#                 head_ind2entities[head_key] = []
+#             head_ind2entities[head_key].append(entity)
+#
+#         # tail link
+#         tail_link_memory_set = set()
+#         for pt in tail_rel_points:
+#             tag = self.id2tail_rel_tag[pt[2]]
+#             rel, link_type = tag.split(self.separator)
+#
+#             if link_type == "ST2OT":
+#                 tail_link_memory = self.separator.join([rel, str(pt[0]), str(pt[1])])
+#                 tail_link_memory_set.add(tail_link_memory)
+#             elif link_type == "OT2ST":
+#                 tail_link_memory = self.separator.join([rel, str(pt[1]), str(pt[0])])
+#                 tail_link_memory_set.add(tail_link_memory)
+#             else:
+#                 continue
+#
+#         # head link
+#         for pt in head_rel_points:
+#             tag = self.id2head_rel_tag[pt[2]]
+#             rel, link_type = tag.split(self.separator)
+#
+#             if link_type == "SH2OH":
+#                 if self.classify_entities_by_relation:
+#                     subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[0])), "REL:{},{}".format(rel,
+#                                                                                                           str(pt[1]))
+#                 else:
+#                     subj_head_key, obj_head_key = str(pt[0]), str(pt[1])
+#             elif link_type == "OH2SH":
+#                 if self.classify_entities_by_relation:
+#                     subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[1])), "REL:{},{}".format(rel,
+#                                                                                                           str(pt[0]))
+#                 else:
+#                     subj_head_key, obj_head_key = str(pt[1]), str(pt[0])
+#             else:
+#                 continue
+#
+#             if subj_head_key not in head_ind2entities or obj_head_key not in head_ind2entities:
+#                 # no entity start with subj_head_key or obj_head_key
+#                 continue
+#
+#             # all entities start with this subject head
+#             subj_list = Preprocessor.unique_list(head_ind2entities[subj_head_key])
+#             # all entities start with this object head
+#             obj_list = Preprocessor.unique_list(head_ind2entities[obj_head_key])
+#
+#             # go over all subj-obj pair to check whether the tail link exists
+#             for subj in subj_list:
+#                 for obj in obj_list:
+#                     tail_link_memory = self.separator.join(
+#                         [rel, str(subj["tok_span"][1] - 1), str(obj["tok_span"][1] - 1)])
+#                     if tail_link_memory not in tail_link_memory_set:
+#                         # no such relation
+#                         continue
+#                     rel_list.append({
+#                         "subject": subj["text"],
+#                         "object": obj["text"],
+#                         # "subj_type": subj["type"],
+#                         # "obj_type": obj["type"],
+#                         "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
+#                         "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
+#                         "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
+#                         "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
+#                         "predicate": rel,
+#                     })
+#
+#         pred_sample = copy.deepcopy(sample)
+#
+#         # filter extra relations
+#         pred_sample["relation_list"] = [rel for rel in rel_list if "EXT:" not in rel["predicate"]]
+#         # filter extra entities
+#         ent_types2filter = {"REL:", "EXT:"}
+#         ent_filter_pattern = "({})".format("|".join(ent_types2filter))
+#         pred_sample["entity_list"] = [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None]
+#         return pred_sample
 
 
 def create_rebased_ee_tagger(base_class):
@@ -1252,202 +1344,6 @@ def create_rebased_tfboys_tagger(base_class):
 
 
 def create_rebased_discontinuous_ner_tagger(base_class):
-    # class REBasedDiscontinuousNERTagger(base_class):
-    #     def __init__(self, *arg, **kwargs):
-    #         super(REBasedDiscontinuousNERTagger, self).__init__(*arg, **kwargs)
-    #         self.language = kwargs["language"]
-    #         self.add_next_link = kwargs["add_next_link"]
-    #
-    #     @classmethod
-    #     def additional_preprocess(cls, data, data_type, **kwargs):
-    #         if data_type != "train":
-    #             return data
-    #
-    #         add_next_link = kwargs["add_next_link"]
-    #         new_tag_sep = "\u2E82"
-    #         new_data = []
-    #         for sample in data:
-    #             new_sample = copy.deepcopy(sample)
-    #             text = sample["text"]
-    #             new_ent_list = []
-    #             new_rel_list = []
-    #             for ent in sample["entity_list"]:
-    #                 assert len(ent["char_span"]) == len(ent["tok_span"])
-    #                 ent_type = ent["type"]
-    #                 for idx_i in range(0, len(ent["char_span"]), 2):
-    #                     seg_i_ch_span = [ent["char_span"][idx_i], ent["char_span"][idx_i + 1]]
-    #                     seg_i_tok_span = [ent["tok_span"][idx_i], ent["tok_span"][idx_i + 1]]
-    #                     if add_next_link:
-    #                         position_tag = "B" if idx_i == 0 else "I"
-    #                         new_ent_type = "{}{}{}".format(ent_type, new_tag_sep, position_tag)
-    #                     else:
-    #                         new_ent_type = ent_type
-    #
-    #                     new_ent_list.append({
-    #                         "text": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                         "type": new_ent_type,
-    #                         "char_span": seg_i_ch_span,
-    #                         "tok_span": seg_i_tok_span,
-    #                     })
-    #                     for idx_j in range(idx_i + 2, len(ent["char_span"]), 2):
-    #                         seg_j_ch_span = [ent["char_span"][idx_j], ent["char_span"][idx_j + 1]]
-    #                         seg_j_tok_span = [ent["tok_span"][idx_j], ent["tok_span"][idx_j + 1]]
-    #                         if add_next_link and idx_j == idx_i + 2:
-    #                             new_rel_list.append({
-    #                                 "subject": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                                 "subj_char_span": seg_i_ch_span,
-    #                                 "subj_tok_span": seg_i_tok_span,
-    #                                 "object": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-    #                                 "obj_char_span": seg_j_ch_span,
-    #                                 "obj_tok_span": seg_j_tok_span,
-    #                                 "predicate": "{}{}{}".format(ent_type, new_tag_sep, "NEXT"),
-    #                             })
-    #                         new_rel_list.append({
-    #                             "subject": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                             "subj_char_span": seg_i_ch_span,
-    #                             "subj_tok_span": seg_i_tok_span,
-    #                             "object": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-    #                             "obj_char_span": seg_j_ch_span,
-    #                             "obj_tok_span": seg_j_tok_span,
-    #                             "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
-    #                         })
-    #                         new_rel_list.append({
-    #                             "subject": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-    #                             "subj_char_span": seg_j_ch_span,
-    #                             "subj_tok_span": seg_j_tok_span,
-    #                             "object": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                             "obj_char_span": seg_i_ch_span,
-    #                             "obj_tok_span": seg_i_tok_span,
-    #                             "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
-    #                         })
-    #             new_sample["entity_list"] = new_ent_list
-    #             new_sample["relation_list"] = new_rel_list
-    #             new_data.append(new_sample)
-    #         return new_data
-    #
-    #     def decode(self, sample, pred_outs):
-    #         pred_sample = super(REBasedDiscontinuousNERTagger, self).decode(sample, pred_outs)
-    #         return self._trans(pred_sample)
-    #
-    #     def _trans(self, ori_sample):
-    #         # decoding
-    #         ent_list = ori_sample["entity_list"]
-    #         rel_list = ori_sample["relation_list"]
-    #         text = ori_sample["text"]
-    #         tok2char_span = ori_sample["features"]["tok2char_span"]
-    #
-    #         new_ent_list = []
-    #         new_tag_sep = "\u2E82"
-    #         ent_type2anns = {}
-    #
-    #         # map entities by type
-    #         for ent in ent_list:
-    #             if self.add_next_link:
-    #                 ent_type, pos_tag = ent["type"].split(new_tag_sep)
-    #                 ent["type"] = pos_tag
-    #             else:
-    #                 ent_type = ent["type"]
-    #             if ent_type not in ent_type2anns:
-    #                 ent_type2anns[ent_type] = {
-    #                     "seg_list": [],
-    #                     "rel_list": [],
-    #                 }
-    #
-    #             ent_type2anns[ent_type]["seg_list"].append(ent)
-    #
-    #         # map relations by entity type
-    #         for rel in rel_list:
-    #             ent_type, rel_tag = rel["predicate"].split(new_tag_sep)
-    #             rel["predicate"] = rel_tag
-    #             assert ent_type in ent_type2anns
-    #             if ent_type in ent_type2anns:
-    #                 ent_type2anns[ent_type]["rel_list"].append(rel)
-    #
-    #         for ent_type, anns in ent_type2anns.items():
-    #             offset2seg_types = {}  # "1,2" -> {B, I}
-    #             graph = nx.Graph()
-    #             for seg in anns["seg_list"]:
-    #                 offset_key = "{},{}".format(*seg["tok_span"])
-    #                 if offset_key not in offset2seg_types:
-    #                     offset2seg_types[offset_key] = set()
-    #                 offset2seg_types[offset_key].add(seg["type"])
-    #                 graph.add_node(offset_key)  # add a segment as a node
-    #
-    #             for rel in anns["rel_list"]:
-    #                 subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
-    #                 obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
-    #                 if rel["predicate"] == "SAME_ENT":
-    #                     graph.add_edge(subj_offset_key, obj_offset_key)  # add an edge between 2 segments
-    #
-    #             for cli in nx.find_cliques(graph):
-    #                 if self.add_next_link:
-    #                     # collect "next" links in this clique
-    #                     link_map = {}  # "1,2" -> "3,6"
-    #                     cli = set(cli)
-    #                     for rel in anns["rel_list"]:
-    #                         if rel["predicate"] == "NEXT":
-    #                             subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
-    #                             obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
-    #                             if subj_offset_key in cli and obj_offset_key in cli:
-    #                                 link_map[subj_offset_key] = obj_offset_key
-    #
-    #                     # iterate all nodes (segments) in this clique, and link them by "next" link (link_map)
-    #                     for offset_key in cli:
-    #                         assert offset_key in offset2seg_types  # debug for ground truth, 删
-    #                         if offset_key not in offset2seg_types:
-    #                             continue
-    #                         if "B" in offset2seg_types[offset_key]:  # it is a entity start
-    #                             point_offset_key = offset_key
-    #                             tok_span = [*point_offset_key.split(",")]
-    #                             while point_offset_key in link_map:  # has a next link to another node
-    #                                 point_offset_key = link_map[point_offset_key]  # point to next node
-    #                                 if "I" not in offset2seg_types[point_offset_key]:  # if it is not an inside segment
-    #                                     break
-    #                                 tok_span.extend(point_offset_key.split(","))
-    #                             tok_span = [int(sp) for sp in tok_span]
-    #                             char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-    #                             new_ent_list.append({
-    #                                 "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
-    #                                 "type": ent_type,
-    #                                 "char_span": char_span,
-    #                                 "tok_span": tok_span,
-    #                             })
-    #                 else:  # if no next links, sort spans by order
-    #                     spans = []
-    #                     for n in cli:
-    #                         start, end = n.split(",")
-    #                         spans.append([int(start), int(end)])
-    #                     tok_span = []
-    #                     last_end = -10
-    #                     for sp in sorted(spans, key=lambda sp: sp[0]):
-    #                         # if overlapping, the closest first (to the start seg)
-    #                         # if sp[0] <= last_end and self.language == "en" or \
-    #                         #         sp[0] < last_end and self.language == "ch":
-    #                         #     continue
-    #                         if sp[0] < last_end:
-    #                             continue
-    #                         tok_span.extend(sp)
-    #                         last_end = sp[1]
-    #                     char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-    #                     new_ent_list.append({
-    #                         "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
-    #                         "type": ent_type,
-    #                         "char_span": char_span,
-    #                         "tok_span": tok_span,
-    #                     })
-    #
-    #         # merge continuous spans
-    #         for ent in new_ent_list:
-    #             new_tok_spans = utils.merge_spans(ent["tok_span"], self.language, "token")
-    #             new_char_spans = utils.merge_spans(ent["char_span"], self.language, "char")
-    #             ent_extr_ch = Preprocessor.extract_ent_fr_txt_by_char_sp(new_char_spans, text, self.language)
-    #             ent_extr_tk = Preprocessor.extract_ent_fr_txt_by_tok_sp(new_tok_spans, tok2char_span, text, self.language)
-    #             assert ent_extr_ch == ent_extr_tk == ent["text"]
-    #
-    #         ori_sample["entity_list"] = new_ent_list
-    #         del ori_sample["relation_list"]
-    #         return ori_sample
-
     # 0129
     class REBasedDiscontinuousNERTagger(base_class):
         def __init__(self, *arg, **kwargs):
@@ -1523,7 +1419,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                                 "obj_tok_span": seg_j_tok_span,
                                 "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
                             })
-                            # ============= 共存 0113 ===============
+                            # ============= 0113 ===============
                             new_rel_list.append({
                                 "subject": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
                                 "subj_char_span": seg_j_ch_span,
@@ -1580,7 +1476,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                 ent_type, rel_tag = rel["predicate"].split(new_tag_sep)
                 rel["predicate"] = rel_tag
                 assert rel_tag == "SAME_ENT"
-                # =========== 共存 0113 ====================
+                # =========== 0113 ====================
                 subj_tok_span = rel["subj_tok_span"]
                 obj_tok_span = rel["obj_tok_span"]
                 if utils.span_contains(subj_tok_span, obj_tok_span) or \
@@ -1671,425 +1567,6 @@ def create_rebased_discontinuous_ner_tagger(base_class):
             return pred_sample
 
     return REBasedDiscontinuousNERTagger
-
-    # # tag I only
-    # class REBasedDiscontinuousNERTagger(base_class):
-    #     def __init__(self, *arg, **kwargs):
-    #         super(REBasedDiscontinuousNERTagger, self).__init__(*arg, **kwargs)
-    #         self.language = kwargs["language"]
-    #         self.add_next_link = kwargs["add_next_link"]
-    #         self.use_bound = kwargs["use_bound"]
-    #
-    #     @classmethod
-    #     def additional_preprocess(cls, data, data_type, **kwargs):
-    #         if data_type != "train":
-    #             return data
-    #
-    #         use_bound = kwargs["use_bound"]
-    #
-    #         new_tag_sep = "\u2E82"
-    #         new_data = []
-    #         for sample in data:
-    #             new_sample = copy.deepcopy(sample)
-    #             text = sample["text"]
-    #             new_ent_list = []
-    #             new_rel_list = []
-    #             for ent in sample["entity_list"]:
-    #                 assert len(ent["char_span"]) == len(ent["tok_span"])
-    #                 ent_type = ent["type"]
-    #
-    #                 ch_sp = [ent["char_span"][0], ent["char_span"][-1]]
-    #                 tok_sp = [ent["tok_span"][0], ent["tok_span"][-1]]
-    #
-    #                 # boundary
-    #                 if use_bound:
-    #                     new_ent_list.append({
-    #                         "text": text[ch_sp[0]:ch_sp[1]],
-    #                         "type": new_tag_sep.join([ent_type, "BOUNDARY"]),
-    #                         "char_span": ch_sp,
-    #                         "tok_span": tok_sp,
-    #                     })
-    #
-    #                 for idx_i in range(0, len(ent["char_span"]), 2):
-    #                     seg_i_ch_span = [ent["char_span"][idx_i], ent["char_span"][idx_i + 1]]
-    #                     seg_i_tok_span = [ent["tok_span"][idx_i], ent["tok_span"][idx_i + 1]]
-    #
-    #                     # if idx_i == 0:
-    #                     #     position_tag = "B"
-    #                     # # elif idx_i == len(ent["char_span"]) - 2:
-    #                     # #     position_tag = "E"
-    #                     # else:
-    #                     #     position_tag = "I"
-    #                     # if len(ent["char_span"]) == 2:
-    #                     #     position_tag = "S"
-    #                     position_tag = "I"
-    #
-    #                     new_ent_type = "{}{}{}".format(ent_type, new_tag_sep, position_tag)
-    #
-    #                     new_ent_list.append({
-    #                         "text": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                         "type": new_ent_type,
-    #                         "char_span": seg_i_ch_span,
-    #                         "tok_span": seg_i_tok_span,
-    #                     })
-    #                     for idx_j in range(idx_i + 2, len(ent["char_span"]), 2):
-    #                         seg_j_ch_span = [ent["char_span"][idx_j], ent["char_span"][idx_j + 1]]
-    #                         seg_j_tok_span = [ent["tok_span"][idx_j], ent["tok_span"][idx_j + 1]]
-    #                         new_rel_list.append({
-    #                             "subject": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                             "subj_char_span": seg_i_ch_span,
-    #                             "subj_tok_span": seg_i_tok_span,
-    #                             "object": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-    #                             "obj_char_span": seg_j_ch_span,
-    #                             "obj_tok_span": seg_j_tok_span,
-    #                             "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
-    #                         })
-    #                         # ============= 共存 0113 ===============
-    #                         new_rel_list.append({
-    #                             "subject": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-    #                             "subj_char_span": seg_j_ch_span,
-    #                             "subj_tok_span": seg_j_tok_span,
-    #                             "object": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                             "obj_char_span": seg_i_ch_span,
-    #                             "obj_tok_span": seg_i_tok_span,
-    #                             "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
-    #                         })
-    #                         # ================================================
-    #             new_sample["entity_list"] = new_ent_list
-    #             new_sample["relation_list"] = new_rel_list
-    #             new_data.append(new_sample)
-    #         return new_data
-    #
-    #     def decode(self, sample, pred_outs):
-    #         pred_sample = super(REBasedDiscontinuousNERTagger, self).decode(sample, pred_outs)
-    #         return self._trans(pred_sample)
-    #
-    #     def _trans(self, ori_sample):
-    #         # decoding
-    #         ent_list = ori_sample["entity_list"]
-    #         rel_list = ori_sample["relation_list"]
-    #         text = ori_sample["text"]
-    #         tok2char_span = ori_sample["features"]["tok2char_span"]
-    #
-    #         new_ent_list = []
-    #         new_tag_sep = "\u2E82"
-    #         ent_type2anns = {}
-    #
-    #         # map boudaries by entity type
-    #         # map entities by type
-    #         for ent in ent_list:
-    #             ent_type, pos_tag = ent["type"].split(new_tag_sep)
-    #             ent["type"] = pos_tag
-    #             if ent_type not in ent_type2anns:
-    #                 ent_type2anns[ent_type] = {
-    #                     "seg_list": [],
-    #                     "rel_list": [],
-    #                     "boundaries": [],
-    #                     "continuous_entity_list": [],
-    #                 }
-    #
-    #             if ent["type"] == "BOUNDARY":
-    #                 ent_type2anns[ent_type]["boundaries"].append(ent)
-    #             elif ent["type"] in {"B", "I"}:
-    #                 ent_type2anns[ent_type]["seg_list"].append(ent)
-    #             else:
-    #                 assert ent["type"] == "S"
-    #                 ent_type2anns[ent_type]["continuous_entity_list"].append(ent)
-    #
-    #         # map relations by entity type
-    #         for rel in rel_list:
-    #             ent_type, rel_tag = rel["predicate"].split(new_tag_sep)
-    #             rel["predicate"] = rel_tag
-    #             assert rel_tag == "SAME_ENT"
-    #             # =========== 共存 0113 ====================
-    #             subj_tok_span = rel["subj_tok_span"]
-    #             obj_tok_span = rel["obj_tok_span"]
-    #             if utils.span_contains(subj_tok_span, obj_tok_span) or \
-    #                     utils.span_contains(obj_tok_span, subj_tok_span):
-    #                 continue
-    #             # ======================
-    #             if ent_type in ent_type2anns:
-    #                 ent_type2anns[ent_type]["rel_list"].append(rel)
-    #
-    #         for ent_type, anns in ent_type2anns.items():
-    #             # if any(s["type"] == "I" for s in anns["seg_list"]):
-    #             #     print("1")
-    #             for c_ent in anns["continuous_entity_list"]:
-    #                 c_ent["type"] = ent_type
-    #                 new_ent_list.append(c_ent)
-    #
-    #             def extr_disc(bd_span):
-    #                 sub_seg_list = anns["seg_list"]
-    #                 sub_rel_list = anns["rel_list"]
-    #                 if bd_span is not None:
-    #                     # select nodes and edges in this region
-    #                     sub_seg_list = [seg for seg in anns["seg_list"] if utils.span_contains(bd_span, seg["tok_span"])]
-    #                     sub_rel_list = [rel for rel in anns["rel_list"]
-    #                                     if utils.span_contains(bd_span, rel["subj_tok_span"])
-    #                                     and utils.span_contains(bd_span, rel["obj_tok_span"])]
-    #
-    #                 offset2seg_types = {}
-    #                 graph = nx.Graph()
-    #                 for seg in sub_seg_list:
-    #                     offset_key = "{},{}".format(*seg["tok_span"])
-    #                     if offset_key not in offset2seg_types:
-    #                         offset2seg_types[offset_key] = set()
-    #                     offset2seg_types[offset_key].add(seg["type"])
-    #                     graph.add_node(offset_key)  # add a segment (a node)
-    #
-    #                 for rel in sub_rel_list:
-    #                     subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
-    #                     obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
-    #                     if rel["predicate"] == "SAME_ENT":
-    #                         graph.add_edge(subj_offset_key, obj_offset_key)  # add an edge between 2 segments
-    #
-    #                 cliques = []
-    #                 if bd_span is not None:
-    #                     for cli in nx.find_cliques(graph):  # find all maximal cliques,
-    #                         # filter invalid ones that do not include boundary tokens
-    #                         if any(int(n.split(",")[0]) == bd_span[0] for n in cli) and \
-    #                                 any(int(n.split(",")[1]) == bd_span[1] for n in cli):
-    #                             cliques.append(cli)
-    #                 else:
-    #                     cliques = nx.find_cliques(graph)
-    #
-    #                 for cli in cliques:
-    #                     spans = []
-    #                     for n in cli:
-    #                         start, end = n.split(",")
-    #                         spans.append([int(start), int(end)])
-    #                     tok_span = []
-    #                     last_end = -10
-    #                     for sp in sorted(spans, key=lambda sp: sp[0]):
-    #                         if sp[0] < last_end:
-    #                             continue
-    #                         tok_span.extend(sp)
-    #                         last_end = sp[1]
-    #
-    #                     tok_span = utils.merge_spans(tok_span)
-    #                     char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-    #                     new_ent_list.append({
-    #                         "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
-    #                         "type": ent_type,
-    #                         "char_span": char_span,
-    #                         "tok_span": tok_span,
-    #                     })
-    #
-    #             if self.use_bound:
-    #                 for boundary in anns["boundaries"]:
-    #                     bound_span = boundary["tok_span"]
-    #                     extr_disc(bound_span)
-    #             else:
-    #                 extr_disc(None)
-    #
-    #         pred_sample = copy.deepcopy(ori_sample)
-    #         pred_sample["entity_list"] = new_ent_list
-    #         del pred_sample["relation_list"]
-    #         return pred_sample
-    #
-    # return REBasedDiscontinuousNERTagger
-
-    # class REBasedDiscontinuousNERTagger(base_class):
-    #     def __init__(self, *arg, **kwargs):
-    #         super(REBasedDiscontinuousNERTagger, self).__init__(*arg, **kwargs)
-    #         self.language = kwargs["language"]
-    #         self.add_next_link = kwargs["add_next_link"]
-    #
-    #     @classmethod
-    #     def additional_preprocess(cls, data, data_type, **kwargs):
-    #         if data_type != "train":
-    #             return data
-    #
-    #         new_tag_sep = "\u2E82"
-    #         new_data = []
-    #         for sample in data:
-    #             new_sample = copy.deepcopy(sample)
-    #             text = sample["text"]
-    #             new_ent_list = []
-    #             new_rel_list = []
-    #             for ent in sample["entity_list"]:
-    #                 assert len(ent["char_span"]) == len(ent["tok_span"])
-    #                 ent_type = ent["type"]
-    #                 if len(ent["tok_span"]) == 2:
-    #                     # continuous entity
-    #                     new_ent = copy.deepcopy(ent)
-    #                     new_ent["type"] = new_tag_sep.join([ent_type, "CON_ENT"])
-    #                     new_ent_list.append(new_ent)
-    #                 else:
-    #                     ch_sp = [ent["char_span"][0], ent["char_span"][-1]]
-    #                     tok_sp = [ent["tok_span"][0], ent["tok_span"][-1]]
-    #                     # disc boundary
-    #                     new_ent_list.append({
-    #                         "text": text[ch_sp[0]:ch_sp[1]],
-    #                         "type": new_tag_sep.join([ent_type, "DISC_BOUND"]),
-    #                         "char_span": ch_sp,
-    #                         "tok_span": tok_sp,
-    #                     })
-    #
-    #                     # discontinuous segments
-    #                     for idx_i in range(0, len(ent["char_span"]), 2):
-    #                         seg_i_ch_span = [ent["char_span"][idx_i], ent["char_span"][idx_i + 1]]
-    #                         seg_i_tok_span = [ent["tok_span"][idx_i], ent["tok_span"][idx_i + 1]]
-    #
-    #                         position_tag = "B" if idx_i == 0 else "I"
-    #                         new_ent_type = "{}{}{}".format(ent_type, new_tag_sep, position_tag)
-    #
-    #                         new_ent_list.append({
-    #                             "text": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                             "type": new_ent_type,
-    #                             "char_span": seg_i_ch_span,
-    #                             "tok_span": seg_i_tok_span,
-    #                         })
-    #                         for idx_j in range(idx_i + 2, len(ent["char_span"]), 2):
-    #                             seg_j_ch_span = [ent["char_span"][idx_j], ent["char_span"][idx_j + 1]]
-    #                             seg_j_tok_span = [ent["tok_span"][idx_j], ent["tok_span"][idx_j + 1]]
-    #                             new_rel_list.append({
-    #                                 "subject": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                                 "subj_char_span": seg_i_ch_span,
-    #                                 "subj_tok_span": seg_i_tok_span,
-    #                                 "object": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-    #                                 "obj_char_span": seg_j_ch_span,
-    #                                 "obj_tok_span": seg_j_tok_span,
-    #                                 "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
-    #                             })
-    #                             # ============= 共存 0113 ===============
-    #                             new_rel_list.append({
-    #                                 "subject": text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-    #                                 "subj_char_span": seg_j_ch_span,
-    #                                 "subj_tok_span": seg_j_tok_span,
-    #                                 "object": text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                                 "obj_char_span": seg_i_ch_span,
-    #                                 "obj_tok_span": seg_i_tok_span,
-    #                                 "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
-    #                             })
-    #                             # ================================================
-    #             new_sample["entity_list"] = new_ent_list
-    #             new_sample["relation_list"] = new_rel_list
-    #             new_data.append(new_sample)
-    #         return new_data
-    #
-    #     def decode(self, sample, pred_outs):
-    #         pred_sample = super(REBasedDiscontinuousNERTagger, self).decode(sample, pred_outs)
-    #         return self._trans(pred_sample)
-    #
-    #     def _trans(self, ori_sample):
-    #         # decoding
-    #         ent_list = ori_sample["entity_list"]
-    #         rel_list = ori_sample["relation_list"]
-    #         text = ori_sample["text"]
-    #         tok2char_span = ori_sample["features"]["tok2char_span"]
-    #
-    #         new_ent_list = []
-    #         new_tag_sep = "\u2E82"
-    #         ent_type2anns = {}
-    #
-    #         # map boudaries by entity type
-    #         # map entities by type
-    #         for ent in ent_list:
-    #             ent_type, pos_tag = ent["type"].split(new_tag_sep)
-    #             ent["type"] = pos_tag
-    #             if ent_type not in ent_type2anns:
-    #                 ent_type2anns[ent_type] = {
-    #                     "seg_list": [],
-    #                     "rel_list": [],
-    #                     "boundaries": [],
-    #                 }
-    #
-    #             if pos_tag == "DISC_BOUND":
-    #                 ent_type2anns[ent_type]["boundaries"].append(ent)
-    #             elif pos_tag == "CON_ENT":
-    #                 ent["type"] = ent_type
-    #                 new_ent_list.append(ent)
-    #             else:
-    #                 assert pos_tag in {"B", "I"}
-    #                 ent_type2anns[ent_type]["seg_list"].append(ent)
-    #
-    #         # map relations by entity type
-    #         for rel in rel_list:
-    #             ent_type, rel_tag = rel["predicate"].split(new_tag_sep)
-    #             rel["predicate"] = rel_tag
-    #             assert rel_tag == "SAME_ENT"
-    #             # =========== 共存0113 ====================
-    #             # skip invalid relations
-    #             subj_tok_span = rel["subj_tok_span"]
-    #             obj_tok_span = rel["obj_tok_span"]
-    #             if utils.span_contains(subj_tok_span, obj_tok_span) or \
-    #                     utils.span_contains(obj_tok_span, subj_tok_span):
-    #                 continue
-    #             # ======================
-    #             if ent_type in ent_type2anns:
-    #                 ent_type2anns[ent_type]["rel_list"].append(rel)
-    #
-    #         # if ori_sample["id"] == "train_15232":
-    #         #     print("!")
-    #         #     print("??")
-    #
-    #         for ent_type, anns in ent_type2anns.items():
-    #             for boundary in anns["boundaries"]:
-    #                 bd_span = boundary["tok_span"]
-    #                 sub_seg_list = [seg for seg in anns["seg_list"] if utils.span_contains(bd_span, seg["tok_span"])]
-    #                 sub_rel_list = [rel for rel in anns["rel_list"]
-    #                                 if utils.span_contains(bd_span, rel["subj_tok_span"])
-    #                                 and utils.span_contains(bd_span, rel["obj_tok_span"])]
-    #
-    #                 # offset2seg_types = {}  # "1,2" -> {B, I}
-    #                 graph = nx.Graph()
-    #                 # for seg in sub_seg_list:
-    #                 #     offset_key = "{},{}".format(*seg["tok_span"])
-    #                 #     if offset_key not in offset2seg_types:
-    #                 #         offset2seg_types[offset_key] = set()
-    #                 #     offset2seg_types[offset_key].add(seg["type"])
-    #                 #     graph.add_node(offset_key)  # add a segment as a node
-    #
-    #                 for rel in sub_rel_list:
-    #                     subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
-    #                     obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
-    #                     if rel["predicate"] == "SAME_ENT":
-    #                         graph.add_edge(subj_offset_key, obj_offset_key)  # add an edge between 2 segments
-    #
-    #                 cliques = []
-    #                 for cli in nx.find_cliques(graph):
-    #                     #  clique is valid only if it includes boundary tokens
-    #                     if any(int(n.split(",")[0]) == bd_span[0] for n in cli) and \
-    #                             any(int(n.split(",")[1]) == bd_span[1] for n in cli):
-    #                         cliques.append(cli)
-    #
-    #                 # concatenate segments to entities
-    #                 for cli in cliques:
-    #                     spans = []
-    #                     for n in cli:
-    #                         start, end = n.split(",")
-    #                         spans.append([int(start), int(end)])
-    #                     tok_span = []
-    #                     last_end = -10
-    #                     for sp in sorted(spans, key=lambda sp: sp[0]):
-    #                         if sp[0] < last_end:  # skip invalid idx
-    #                             continue
-    #                         tok_span.extend(sp)
-    #                         last_end = sp[1]
-    #                     char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-    #                     new_ent_list.append({
-    #                         "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language),
-    #                         "type": ent_type,
-    #                         "char_span": char_span,
-    #                         "tok_span": tok_span,
-    #                     })
-    #
-    #         # merge continuous spans
-    #         for ent in new_ent_list:
-    #             new_tok_spans = utils.merge_spans(ent["tok_span"], self.language, "token")
-    #             new_char_spans = utils.merge_spans(ent["char_span"], self.language, "char")
-    #             ent_extr_ch = Preprocessor.extract_ent_fr_txt_by_char_sp(new_char_spans, text, self.language)
-    #             ent_extr_tk = Preprocessor.extract_ent_fr_txt_by_tok_sp(new_tok_spans, tok2char_span, text,
-    #                                                                     self.language)
-    #             assert ent_extr_ch == ent_extr_tk == ent["text"]
-    #
-    #         pred_sample = copy.deepcopy(ori_sample)
-    #         pred_sample["entity_list"] = new_ent_list
-    #         del pred_sample["relation_list"]
-    #         return pred_sample
-    #
-    # return REBasedDiscontinuousNERTagger
 
 
 def create_rebased_oie_tagger(base_class):
