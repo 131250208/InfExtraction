@@ -1,4 +1,2 @@
 # Information Extraction
-version control
-version control1
-
+RAIN: Resolve All INformation Extraction Tasks by an Unified Model
