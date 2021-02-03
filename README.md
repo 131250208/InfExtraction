@@ -88,5 +88,9 @@ For both training and inference, you can run:
 python train_valid.py -s settings_rain4disc
 ```
 
+### statistics
+Run `InfExtraction/workflows/others/statistics.py` 
 
+### further analysis
+Run `InfExtraction/workflows/further_analysis.py` 
 
