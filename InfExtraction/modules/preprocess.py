@@ -628,7 +628,7 @@ class Preprocessor:
 
                 normal_sample["id"] = sample["id"]
 
-            if ori_format == "tplinker":
+            if ori_format == "normal":
                 normal_sample_list.append({**normal_sample, **sample})
                 continue
 
@@ -653,10 +653,8 @@ class Preprocessor:
                 for rel in rel_list:
                     normal_rel_list.append({
                         "subject": rel[subj_key],
-                        # "subj_type": "DEFAULT",
                         "predicate": rel[pred_key],
                         "object": rel[obj_key],
-                        # "obj_type": "DEFAULT",
                     })
                     normal_ent_list.append({
                         "text": rel[subj_key],
@@ -667,20 +665,18 @@ class Preprocessor:
                         "type": "DEFAULT",
                     })
             else:
-                # ent2type = {}
+
                 for ent in sample["entityMentions"]:
                     normal_ent_list.append({
                         "text": ent["text"],
                         "type": ent["label"],
                     })
-                    # ent2type[ent["text"]] = ent["label"]
+
                 for rel in rel_list:
                     normal_rel_list.append({
                         "subject": rel[subj_key],
-                        # "subj_type": ent2type[rel[subj_key]],
                         "predicate": rel[pred_key],
                         "object": rel[obj_key],
-                        # "obj_type": ent2type[rel[obj_key]],
                     })
             normal_sample["relation_list"] = normal_rel_list
             normal_sample["entity_list"] = normal_ent_list

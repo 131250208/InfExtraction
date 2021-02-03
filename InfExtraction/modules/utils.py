@@ -33,10 +33,8 @@ def spans2ids(spans):
 
 def merge_spans(spans):
     '''
-    :param spans:
-    :param language: ch or en
-    :param span_type: token or char
-    :return:
+    :param spans: [1, 2, 2, 3]
+    :return: [1, 3]
     '''
     new_spans = []
     for pid, pos in enumerate(spans):
@@ -46,7 +44,6 @@ def merge_spans(spans):
         elif pid % 2 == 0 and p == new_spans[-1]:
             new_spans.pop()
     return new_spans
-
 
 def load_data(path, total_lines=None):
     filename = path.split("/")[-1]
