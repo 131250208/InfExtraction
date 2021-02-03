@@ -9,8 +9,11 @@ Preprocess the datasets by the open-sourced code of [Trans](https://github.com/d
 
 ### download pretrained models
 Find links in the papers:
+
 Clinical BERT: https://www.aclweb.org/anthology/W19-1909/
+
 YelpBERT: https://www.aclweb.org/anthology/2020.findings-emnlp.151/
+
 Set the config.json:
 ```
 "output_hidden_states": true,
