@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -47,17 +47,17 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-base-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
+use_wandb = True
 note = ""
-epochs = 100
-lr = 5e-5  # 5e-5, 1e-4
+epochs = 1000
+lr = 1e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
 drop_neg_samples = False
 combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 0
+model_bag_size = 10
 
 batch_size_train = 12
 batch_size_valid = 12
@@ -82,7 +82,7 @@ dep_gcn = False
 
 word_encoder = False
 subwd_encoder = True
-use_attns4rel = False  # used only if subwd_encoder (bert) is True
+use_attns4rel = True  # used only if subwd_encoder (bert) is True
 flair = False
 elmo = False
 
@@ -155,7 +155,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_epochs": 2,
+        "rewarm_epochs": 4,
     },
     "StepLR": {
         "name": "StepLR",
@@ -241,7 +241,7 @@ flair_config = {
 elmo_config = {
     "model": "5.5B",
     "finetune": True,
-    "dropout": 0.5,
+    "dropout": 0.1,
 } if elmo else None
 
 subwd_encoder_config = {
