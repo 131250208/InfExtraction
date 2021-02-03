@@ -38,7 +38,7 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "cadec"
+exp_name = "share_14_clinic"
 language = "en"
 stage = "train"  # inference
 task_type = "re+ner"  # re, re+ee
@@ -68,8 +68,8 @@ max_seq_len_valid = 100
 max_seq_len_test = 100
 
 sliding_len_train = 64
-sliding_len_valid = 100
-sliding_len_test = 100
+sliding_len_valid = 20
+sliding_len_test = 20
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
@@ -90,12 +90,12 @@ elmo = False
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
 train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
+valid_data = load_data(os.path.join(data_in_dir, exp_name, "test_data.json"))
 
 data4checking = copy.deepcopy(valid_data)
 random.shuffle(data4checking)
 checking_num = 1000
-data4checking = data4checking[:checking_num]
+data4checking = data4checking[:]
 
 test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
@@ -130,9 +130,8 @@ addtional_preprocessing_config = {
     "classify_entities_by_relation": False,  # ee, re
     "add_nested_relation": False,  # ner
     "add_same_type_relation": False,  # ner
-    "add_next_link": True,  # if set to False, can not cover all cases. e.g. ent1: A -> B -> C. ent 2: B -> C,
-                             # only ent 1 will be extracted by clique finding
-    "use_bound": False,
+    "seg_tag_scheme": "BIS",
+    "use_bound": True,
 }
 
 # tagger config
@@ -140,7 +139,7 @@ tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "add_h2t_n_t2h_links": True,
     "language": language,
-    "add_next_link": addtional_preprocessing_config["add_next_link"],
+    "seg_tag_scheme": addtional_preprocessing_config["seg_tag_scheme"],
     "use_bound": addtional_preprocessing_config["use_bound"],
 }
 
@@ -191,6 +190,7 @@ model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
 target_run_ids = ["0kQIoiOs", ]
 top_k_models = 1
 metric4testing = "trigger_class_f1"
+main_test_set_name = "test_data.json"
 cal_scores = True  # set False if the test sets are not annotated
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -220,6 +220,7 @@ char_encoder_config = {
 word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
+    "word_fusion_dim": 150,
     "word_emb_file_path": "../../data/pretrained_emb/{}".format(pretrained_emb_name),
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
@@ -259,6 +260,13 @@ dep_config = {
     "gcn_layer_num": 1,
 } if dep_gcn else None
 
+top_multi_attn_config = {
+    "num_heads": 6,
+    "layers": 2,
+    "pos_emb_dim": 64,
+    "fusion_dim": 768,
+}
+
 handshaking_kernel_config = {
     "ent_shaking_type": "cln+lstm",
     "rel_shaking_type": "cln",
@@ -283,6 +291,7 @@ model_settings = {
     "golden_ent_cla_guide": False,
     "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
+    "pred_threshold": 0.,
 }
 
 model_settings_log = copy.deepcopy(model_settings)
