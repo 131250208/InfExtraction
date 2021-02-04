@@ -166,10 +166,12 @@ class Evaluator:
 
         if type(pred_outputs) == tuple:
             pred_tags = [self.model.pred_output2pred_tag(pred_out) for pred_out in pred_outputs]
+            pred_outputs = pred_outputs
         else:
             pred_tags = [self.model.pred_output2pred_tag(pred_outputs), ]
+            pred_outputs = [pred_outputs, ]
 
-        pred_sample_list = self.decoder.decode_batch(sample_list, pred_tags)
+        pred_sample_list = self.decoder.decode_batch(sample_list, pred_tags, pred_outputs)
         return pred_sample_list
 
     def _alignment(self, pred_sample_list, golden_data):
@@ -188,29 +190,31 @@ class Evaluator:
                 merged_pred_samples[id_] = {
                     "id": id_,
                     "text": id2text[id_],
-                    "entity_list": [],
-                    "relation_list": [],
-                    "event_list": [],
-                    "open_spo_list": [],
                 }
             if "entity_list" in sample:
+                if "entity_list" not in merged_pred_samples[id_]:
+                    merged_pred_samples[id_]["entity_list"] = []
                 merged_pred_samples[id_]["entity_list"].extend(sample["entity_list"])
             if "relation_list" in sample:
+                if "relation_list" not in merged_pred_samples[id_]:
+                    merged_pred_samples[id_]["relation_list"] = []
                 merged_pred_samples[id_]["relation_list"].extend(sample["relation_list"])
             if "event_list" in sample:
+                if "event_list" not in merged_pred_samples[id_]:
+                    merged_pred_samples[id_]["event_list"] = []
                 merged_pred_samples[id_]["event_list"].extend(sample["event_list"])
             if "open_spo_list" in sample:
+                if "open_spo_list" not in merged_pred_samples[id_]:
+                    merged_pred_samples[id_]["open_spo_list"] = []
                 merged_pred_samples[id_]["open_spo_list"].extend(sample["open_spo_list"])
 
         # alignment by id (in order)
         pred_data = []
-        # 如果train set在split的时候扔了负样本，merged_pred_samples里会缺失一些id（最终版可扔可不扔，影响应该不大）
-        # 在训练前的伪解码阶段会将valid set当作train set来进行预处理split，所以解码的时候会遇到id缺失，这里用伪样本填补位置。
-        # 注意：测试集的负样本没有进行丢弃，所以不影响对比 (comment deprecated)
-        pseudo_pred_sample = {"relation_list": [], "entity_list": [], "event_list": [], "id": -1, "text": ""}
+        # 如果train set在split的时候扔了负样本，merged_pred_samples里会缺失一些id
+        # pseudo_pred_sample = {"relation_list": [], "entity_list": [], "event_list": [], "id": -1, "text": ""}
         for sample in golden_data:
             id_ = sample["id"]
-            pred_data.append(merged_pred_samples.get(id_, pseudo_pred_sample))
+            pred_data.append(merged_pred_samples[id_])
 
         for sample in pred_data:
             if "entity_list" in sample:

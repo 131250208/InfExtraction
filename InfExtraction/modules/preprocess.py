@@ -628,7 +628,7 @@ class Preprocessor:
 
                 normal_sample["id"] = sample["id"]
 
-            if ori_format == "tplinker":
+            if ori_format == "normal":
                 normal_sample_list.append({**normal_sample, **sample})
                 continue
 
@@ -653,10 +653,8 @@ class Preprocessor:
                 for rel in rel_list:
                     normal_rel_list.append({
                         "subject": rel[subj_key],
-                        # "subj_type": "DEFAULT",
                         "predicate": rel[pred_key],
                         "object": rel[obj_key],
-                        # "obj_type": "DEFAULT",
                     })
                     normal_ent_list.append({
                         "text": rel[subj_key],
@@ -667,20 +665,18 @@ class Preprocessor:
                         "type": "DEFAULT",
                     })
             else:
-                # ent2type = {}
+
                 for ent in sample["entityMentions"]:
                     normal_ent_list.append({
                         "text": ent["text"],
                         "type": ent["label"],
                     })
-                    # ent2type[ent["text"]] = ent["label"]
+
                 for rel in rel_list:
                     normal_rel_list.append({
                         "subject": rel[subj_key],
-                        # "subj_type": ent2type[rel[subj_key]],
                         "predicate": rel[pred_key],
                         "object": rel[obj_key],
-                        # "obj_type": ent2type[rel[obj_key]],
                     })
             normal_sample["relation_list"] = normal_rel_list
             normal_sample["entity_list"] = normal_ent_list
@@ -1605,17 +1601,23 @@ class Preprocessor:
                     "features": split_features,
                     "tok_level_offset": tok_level_offset,
                     "char_level_offset": char_level_offset,
-                    "entity_list": [],
-                    "relation_list": [],
-                    "event_list": [],
                 }
-                if data_type == "test" or data_type == "valid":
+                if "entity_list" in sample:
+                    new_sample["entity_list"] = []
+                if "relation_list" in sample:
+                    new_sample["relation_list"] = []
+                if "event_list" in sample:
+                    new_sample["event_list"] = []
+                if "open_spo_list" in sample:
+                    new_sample["open_spo_list"] = []
+
+                if data_type not in {"train", "debug"}:
                     if len(sub_text) > 0:
                         split_sample_list.append(new_sample)
                     if end_ind > len(tokens):
                         break
                 else:
-                    # if not test data, need to filter entities, relations, and events in the subtext
+                    # if train data, need to filter annotations in the subtext
                     # relation
                     sub_rel_list = []
                     if "relation_list" in sample:
@@ -1684,17 +1686,17 @@ class Preprocessor:
                     new_sample["open_spo_list"] = sub_open_spo_list
 
                     # do not introduce excessive negative samples
-                    if drop_neg_samples:
+                    if drop_neg_samples and data_type == "train":
                         # if task_type == "re" and len(new_sample["relation_list"]) == 0:
                         #     continue
                         # if "ner" in task_type and len(new_sample["entity_list"]) == 0:
                         #     continue
                         # if ("ee" in task_type or "ed" in task_type) and len(new_sample["event_list"]) == 0:
                         #     continue
-                        if len(new_sample["relation_list"]) == 0 \
-                                and len(new_sample["entity_list"]) == 0 \
-                                and len(new_sample["event_list"]) == 0 \
-                                and len(new_sample["open_spo_list"]) == 0:
+                        if ("entity_list" not in new_sample or len(new_sample["entity_list"]) == 0) \
+                                and ("relation_list" not in new_sample or len(new_sample["relation_list"]) == 0) \
+                                and ("event_list" not in new_sample or len(new_sample["event_list"]) == 0) \
+                                and ("open_spo_list" not in new_sample or len(new_sample["open_spo_list"]) == 0):
                             continue
 
                     # offset

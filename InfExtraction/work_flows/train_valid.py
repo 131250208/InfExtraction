@@ -255,14 +255,11 @@ if __name__ == "__main__":
     for filename, ori_test_data in filename2ori_test_data.items():
         filename2test_data[filename] = additional_preprocess(ori_test_data, "test")
 
-    all_data4gen_tag_dict = []
-    all_data4gen_tag_dict.extend(train_data)
-    # all_data4gen_tag_dict.extend(additional_preprocess(ori_valid_data, "train"))  # only when setting to "train"
-    # would it do additional preprocessing
-    # all_data4gen_tag_dict.extend(additional_preprocess(ori_test_data, "train"))
+    # all_data4gen_tag_dict = []
+    # all_data4gen_tag_dict.extend(train_data)
 
     # tagger
-    tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
+    tagger = tagger_class_name(train_data, **tagger_config)
 
     # metrics_calculator
     metrics_cal = MetricsCalculator(use_ghm)
@@ -356,12 +353,10 @@ if __name__ == "__main__":
                                           )
         # debug: checking tagging and decoding
         if check_tagging_n_decoding:
-            # for checking, take valid data as train data, do additional preprocessing to get tags
-            # but take original valid data as golden dataset to evaluate
-            data4checking = additional_preprocess(ori_data4checking, "train")
+            data4checking = additional_preprocess(ori_data4checking, "debug")
             dataloader4checking = get_dataloader(data4checking,
                                                  language,
-                                                 "train",  # only train data will be set a tag sequence
+                                                 "debug",
                                                  token_level,
                                                  max_seq_len_valid,
                                                  sliding_len_valid,

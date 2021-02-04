@@ -1,5 +1,5 @@
 import os
-device_num = 1 
+device_num = 1
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -38,43 +38,42 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "cadec4yelp"
+exp_name = "ace2005_lu"
 language = "en"
 stage = "train"  # inference
-task_type = "re+ner"  # re, re+ee
+task_type = "re+tfboys"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "yelpbert"
+pretrained_model_name = "bert-base-uncased"
 pretrained_emb_name = "glove.6B.100d.txt"
 use_wandb = False
 note = ""
-epochs = 300
-lr = 1e-5  # 5e-5, 1e-4
+epochs = 100
+lr = 5e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
-drop_neg_samples = False
+drop_neg_samples = True
 combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 15
+model_bag_size = 0  # if no saving, set to 0
 
-batch_size_train = 12
-batch_size_valid = 12
-batch_size_test = 12 
+batch_size_train = 8
+batch_size_valid = 8
+batch_size_test = 8
 
 max_seq_len_train = 64
 max_seq_len_valid = 100
 max_seq_len_test = 100
 
 sliding_len_train = 64
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_valid = 100
+sliding_len_test = 100
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
 
-# to do an ablation study, you can ablate components by setting it to False
 pos_tag_emb = False
 ner_tag_emb = False
 char_encoder = False
@@ -82,28 +81,28 @@ dep_gcn = False
 
 word_encoder = False
 subwd_encoder = True
-use_attns4rel = True  # used only if subwd_encoder (bert) is True
+use_attns4rel = True  # use only if subwd_encoder (bert) is True
 flair = False
 elmo = False
-top_attn = False
 
 # data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
+
 train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-valid_data = load_data(os.path.join(data_in_dir, exp_name, "test_data.json"))
-
-data4checking = copy.deepcopy(valid_data)
-random.shuffle(data4checking)
-checking_num = 1000
-data4checking = data4checking[:]
-
+valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
 test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
 for test_data_path in test_data_list:
     filename = test_data_path.split("/")[-1]
     ori_test_data = load_data(test_data_path)
     filename2ori_test_data[filename] = ori_test_data
+
+data4checking = copy.deepcopy(train_data)
+random.shuffle(data4checking)
+checking_num = 1000
+data4checking = data4checking[:checking_num]
+
 
 dicts = "dicts.json"
 statistics = "statistics.json"
@@ -112,7 +111,7 @@ dicts_path = os.path.join(data_in_dir, exp_name, dicts)
 statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
-# for preprocessing
+# for index_features()
 key_map = {
     "char2id": "char_list",
     "word2id": "word_list",
@@ -131,17 +130,13 @@ addtional_preprocessing_config = {
     "classify_entities_by_relation": False,  # ee, re
     "add_nested_relation": False,  # ner
     "add_same_type_relation": False,  # ner
-    "seg_tag_scheme": "BIS",
-    "use_bound": True,
 }
 
 # tagger config
 tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
-    "add_h2t_n_t2h_links": True,
-    "language": language,
-    "seg_tag_scheme": addtional_preprocessing_config["seg_tag_scheme"],
-    "use_bound": addtional_preprocessing_config["use_bound"],
+    "add_h2t_n_t2h_links": False,
+    "language": "en",
 }
 
 # optimizers and schedulers
@@ -156,7 +151,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_epochs": 4,
+        "rewarm_epochs": 2,
     },
     "StepLR": {
         "name": "StepLR",
@@ -187,14 +182,10 @@ trainer_config = {
 model_state_dict_path = None
 
 # for test
-model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
-target_run_ids = ["eyu8cm6x", ]
+model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
+target_run_ids = ["0kQIoiOs", ]
 top_k_models = 1
-<<<<<<< HEAD
-metric4testing = "ent_exact_offset_f1"
-=======
 metric4testing = "trigger_class_f1"
->>>>>>> 4e374dced6562c509119c1d0a9de4b731fb26f3c
 main_test_set_name = "test_data.json"
 cal_scores = True  # set False if the test sets are not annotated
 
@@ -225,7 +216,6 @@ char_encoder_config = {
 word_encoder_config = {
     "word2id": dicts["word2id"],
     # eegcn_word_emb.txt
-    "word_fusion_dim": 150,
     "word_emb_file_path": "../../data/pretrained_emb/{}".format(pretrained_emb_name),
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
@@ -238,16 +228,10 @@ flair_config = {
     "embedding_models": [
         {
             "model_name": "ELMoEmbeddings",
-            "parameters": ["5.5B"],
+            "parameters": [],
         },
     ]
 } if flair else None
-
-elmo_config = {
-    "model": "5.5B",
-    "finetune": False,
-    "dropout": 0.1,
-} if elmo else None
 
 subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
@@ -265,24 +249,10 @@ dep_config = {
     "gcn_layer_num": 1,
 } if dep_gcn else None
 
-top_multi_attn_config = {
-    "num_heads": 6,
-    "layers": 2,
-    "pos_emb_dim": 64,
-    "fusion_dim": 768,
-}
-
 handshaking_kernel_config = {
     "ent_shaking_type": "cln+lstm",
     "rel_shaking_type": "cln",
 }
-
-top_multi_attn_config = {
-    "num_heads": 3,
-    "layers": 1,
-    "pos_emb_dim": 64,
-    "fusion_dim": 768,
-} if top_attn else None
 
 # model settings
 model_settings = {
@@ -292,20 +262,15 @@ model_settings = {
     "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
     "flair_config": flair_config,
-    "elmo_config": elmo_config,
     "dep_config": dep_config,
-    "top_multi_attn_config": top_multi_attn_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
     "rel_dim": 768,
     "do_span_len_emb": True,
-    "emb_ent_info2rel": False,
-    "golden_ent_cla_guide": False,
-    "loss_weight": 0.5,
+    "emb_ent_info2rel": True,
+    "golden_ent_cla_guide": True,
     "loss_weight_recover_steps": 0,
-    "loss_func": "bce_loss",
-    "pred_threshold": 0.,
 }
 
 model_settings_log = copy.deepcopy(model_settings)

@@ -551,24 +551,22 @@ class MetricsCalculator:
         if data_filename != "":
             data_filename += "_"
 
-        assert len(golden_data) > 0
+        assert len(golden_data) > 0 and len(pred_data) > 0
         golden_sample = golden_data[0]
+        pred_sample = pred_data[0]
 
         total_cpg_dict = {}
-        if "entity_list" in golden_sample:
+        if "entity_list" in golden_sample and "entity_list" in pred_sample:
             cpg_dict = self.get_ent_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
-        if "relation_list" in golden_sample:
+        if "relation_list" in golden_sample and "relation_list" in pred_sample:
             cpg_dict = self.get_rel_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
-        if "event_list" in golden_sample:
+        if "event_list" in golden_sample and "event_list" in pred_sample:
             cpg_dict = self.get_ee_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
-
-        # if "open_spo_list" in golden_sample:
-        #     cpg_dict = self.get_oie_scores
 
         score_dict = {}
         for sc_pattern, cpg in total_cpg_dict.items():
@@ -576,7 +574,7 @@ class MetricsCalculator:
             for idx, sct in enumerate(["prec", "rec", "f1"]):
                 score_dict["{}{}_{}".format(data_filename, sc_pattern, sct)] = round(prf[idx], 5)
 
-        if "open_spo_list" in golden_sample:
+        if "open_spo_list" in golden_sample and "open_spo_list" in pred_sample:
             oie_score_dict = self.get_ioe_score_dict(golden_data, golden_data)
             for sct, val in oie_score_dict.items():
                 score_dict["{}{}".format(data_filename, sct)] = round(val, 5)
