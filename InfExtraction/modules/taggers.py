@@ -1202,7 +1202,7 @@ def create_rebased_tfboys_tagger(base_class):
             # find events (cliques) under every event type
             event_list = []
             for event_type, graph in event2graph.items():
-                role_map = event2role_map[event_type]
+                role_map = event2role_map.get(event_type, dict())
                 cliques = list(nx.find_cliques(graph))  # all maximal cliques
                 for cli in cliques:
                     event = {}
@@ -1212,7 +1212,7 @@ def create_rebased_tfboys_tagger(base_class):
                         tok_span = [int(start), int(end)]
                         char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
                         arg_text = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text)
-                        role_set = role_map.get(offset_str, {})
+                        role_set = role_map.get(offset_str, set())
                         for role in role_set:
                             if role == "Trigger":
                                 event["trigger"] = arg_text
