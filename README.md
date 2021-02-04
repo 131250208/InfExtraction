@@ -7,6 +7,19 @@
 * ShARe 14: https://physionet.org/content/shareclefehealth2014task2/1.0/
 Preprocess the datasets by the open-sourced code of [Trans](https://github.com/daixiangau/acl2020-transition-discontinuous-ner).
 
+### download pretrained models
+Find links in the papers:
+
+Clinical BERT: https://www.aclweb.org/anthology/W19-1909/
+
+YelpBERT: https://www.aclweb.org/anthology/2020.findings-emnlp.151/
+
+Set the config.json:
+```
+"output_hidden_states": true,
+"output_attentions": true,
+```
+
 ### convert data format
 Use `InfExtraction/workflows/format_conv.py` to transform the datasets to our format
 ```python
@@ -97,6 +110,3 @@ Run `InfExtraction/workflows/others/statistics.py`
 
 ### further analysis
 Run `InfExtraction/workflows/further_analysis.py` 
-
->>>>>>> dc617856c7d04d992f37c7767472fdd2de209fff
->>>>>>> 9ee14d553340d56cb18141f20d56690f70796f21
