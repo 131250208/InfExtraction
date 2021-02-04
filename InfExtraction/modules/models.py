@@ -487,7 +487,7 @@ class RAIN(IEModel):
                  loss_weight_recover_steps=None,
                  loss_weight=.5,
                  init_loss_weight=.5,
-                 pred_threshold=0.5,
+                 pred_threshold=0.,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -621,7 +621,7 @@ class RAIN(IEModel):
 
         return boundary_tok_pre
 
-    def get_rel_guide(self, ent_hs_hiddens, ent_class_guide):
+    def get_ent_guide4rel(self, ent_hs_hiddens, ent_class_guide):
         '''
         :param ent_hs_hiddens: (batch_size, shaking_seq_len, ent_hidden_size)
         :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
@@ -686,7 +686,7 @@ class RAIN(IEModel):
             # ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
             if not self.training or not self.golden_ent_cla_guide:
                 ent_class_guide = self.pred_output2pred_tag(pred_ent_output)
-            boundary_tok_inter_pre = self.get_rel_guide(ent_hs_hiddens, ent_class_guide)
+            boundary_tok_inter_pre = self.get_ent_guide4rel(ent_hs_hiddens, ent_class_guide)
             rel_hs_hiddens = self.cln4rel_guide(rel_hs_hiddens, boundary_tok_inter_pre)
 
         pred_rel_output = self.rel_fc(rel_hs_hiddens)
@@ -720,8 +720,6 @@ class RAIN(IEModel):
             w_ent = min(init_ent_w + step_weight, stable_ent_w)
             w_rel = max(init_rel_w - step_weight, stable_rel_w)
 
-        # print("ent_w: {}, rel_w: {}".format(w_ent, w_rel))
-
         # loss function
         loss_func = None
         if self.loss_func == "bce_loss":
@@ -738,371 +736,6 @@ class RAIN(IEModel):
             "loss": loss,
             "ent_seq_acc": self.metrics_cal.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
             "rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(rel_pred_tag, rel_gold_tag),
-        }
-
-
-class TPLinker3(IEModel):
-    def __init__(self,
-                 tagger,
-                 metrics_cal,
-                 handshaking_kernel_config=None,
-                 ent_dim=None,
-                 head_rel_dim=None,
-                 tail_rel_dim=None,
-                 emb_ent_info2rel=False,
-                 golden_ent_cla_guide=False,
-                 loss_weight_recover_steps=None,
-                 **kwargs,
-                 ):
-        super().__init__(tagger, metrics_cal, **kwargs)
-
-        self.ent_tag_size, self.head_rel_tag_size, self.tail_rel_tag_size = tagger.get_tag_size()
-        self.loss_weight_recover_steps = loss_weight_recover_steps
-        self.metrics_cal = metrics_cal
-
-        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
-        self.aggr_fc4head_rel_hsk = nn.Linear(self.cat_hidden_size, head_rel_dim)
-        self.aggr_fc4tail_rel_hsk = nn.Linear(self.cat_hidden_size, tail_rel_dim)
-
-        # handshaking kernel
-        ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
-        head_rel_shaking_type = handshaking_kernel_config["head_rel_shaking_type"]
-        tail_rel_shaking_type = handshaking_kernel_config["tail_rel_shaking_type"]
-
-        self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
-                                                                    ent_shaking_type,
-                                                                    )
-        self.head_rel_handshaking_kernel = SingleSourceHandshakingKernel(head_rel_dim,
-                                                                         head_rel_shaking_type,
-                                                                         only_look_after=False,
-                                                                         )
-        self.tail_rel_handshaking_kernel = SingleSourceHandshakingKernel(tail_rel_dim,
-                                                                         tail_rel_shaking_type,
-                                                                         only_look_after=False,
-                                                                         )
-        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
-        self.head_rel_fc = nn.Linear(head_rel_dim, self.head_rel_tag_size)
-        self.tail_rel_fc = nn.Linear(tail_rel_dim, self.tail_rel_tag_size)
-
-        self.emb_ent_info2rel = emb_ent_info2rel
-        self.golden_ent_cla_guide = golden_ent_cla_guide
-        if emb_ent_info2rel:
-            self.cln4head_rel = LayerNorm(head_rel_dim, 2 * (ent_dim + self.ent_tag_size), conditional=True)
-            self.cln4tail_rel = LayerNorm(tail_rel_dim, 2 * (ent_dim + self.ent_tag_size), conditional=True)
-
-    def generate_batch(self, batch_data):
-        seq_length = len(batch_data[0]["features"]["tok2char_span"])
-        batch_dict = super(TPLinker3, self).generate_batch(batch_data)
-        # tags
-        batch_ent_points = [sample["ent_points"] for sample in batch_data]
-        batch_head_rel_points = [sample["head_rel_points"] for sample in batch_data]
-        batch_tail_rel_points = [sample["tail_rel_points"] for sample in batch_data]
-        batch_dict["golden_tags"] = [Indexer.points2shaking_seq_batch(batch_ent_points,
-                                                                      seq_length,
-                                                                      self.ent_tag_size,
-                                                                      ),
-                                     Indexer.points2multilabel_matrix_batch(batch_head_rel_points,
-                                                                            seq_length,
-                                                                            self.head_rel_tag_size,
-                                                                            ),
-                                     Indexer.points2multilabel_matrix_batch(batch_tail_rel_points,
-                                                                            seq_length,
-                                                                            self.tail_rel_tag_size,
-                                                                            ),
-                                     ]
-        batch_dict["golden_ent_class_guide"] = Indexer.points2shaking_seq_batch(batch_ent_points,
-                                                                                seq_length,
-                                                                                self.ent_tag_size,
-                                                                                )
-        return batch_dict
-
-    def get_tok_pre(self, ent_hs_hiddens, ent_class_guide, head_tok=True):
-        '''
-        :param ent_hs_hiddens: (batch_size, shaking_seq_len, ent_hidden_size)
-        :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
-        :return: tok_hiddens: (batch_size, seq_len, ent_type_size + ent_hidden_size)
-        '''
-        ent_class_guide = ent_class_guide.float()
-        # guide_ent_class_matrix: (batch_size, seq_len, seq_len, ent_type_size)
-        guide_ent_class_matrix = MyMatrix.shaking_seq2matrix(ent_class_guide)
-        # guide_ent_hiddens_matrix: (batch_size, seq_len, seq_len, ent_hidden_size)
-        guide_ent_hiddens_matrix = MyMatrix.shaking_seq2matrix(ent_hs_hiddens)
-
-        ent_type_num_at_this_span = torch.sum(ent_class_guide, dim=-1)[:, :, None]
-        weight_at_this_span = ent_type_num_at_this_span * 10 + 1
-        # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
-        weight_at_this_span = MyMatrix.shaking_seq2matrix(weight_at_this_span)
-
-        if not head_tok:
-            guide_ent_class_matrix = guide_ent_class_matrix.permute(0, 2, 1, 3)
-            guide_ent_hiddens_matrix = guide_ent_hiddens_matrix.permute(0, 2, 1, 3)
-            weight_at_this_span = weight_at_this_span.permute(0, 2, 1, 3)
-
-        # weight4rel: (batch_size, seq_len, seq_len, 1)
-        weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-2)[:, :, None, :]
-
-        # tok_pre: (batch_size, seq_len, ent_hidden_size + ent_type_size)
-        tok_pre = torch.cat([guide_ent_hiddens_matrix, guide_ent_class_matrix], dim=-1) * weight4rel
-        tok_pre = torch.sum(tok_pre, dim=-2)
-
-        return tok_pre
-
-    def get_rel_guide(self, ent_hs_hiddens, ent_class_guide, head_tok=True):
-        '''
-        :param ent_hs_hiddens: (batch_size, shaking_seq_len, ent_hidden_size)
-        :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
-        :return: ent_guide4rel: (batch_size, seq_len, seq_len, 2 * (ent_type_size + ent_hidden_size))
-        '''
-        tok_pre = self.get_tok_pre(ent_hs_hiddens, ent_class_guide, head_tok)
-        seq_len = tok_pre.size()[1]
-        ent_guide4rel = tok_pre[:, :, None, :].repeat(1, 1, seq_len, 1)
-        ent_guide4rel = torch.cat([ent_guide4rel, ent_guide4rel.permute(0, 2, 1, 3)], dim=-1)
-        return ent_guide4rel
-
-    def forward(self, **kwargs):
-        super(TPLinker3, self).forward()
-        ent_class_guide = kwargs["golden_ent_class_guide"]
-        del kwargs["golden_ent_class_guide"]
-        cat_hiddens = self._cat_features(**kwargs)
-
-        ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
-        head_rel_hiddens = self.aggr_fc4head_rel_hsk(cat_hiddens)
-        tail_rel_hiddens = self.aggr_fc4tail_rel_hsk(cat_hiddens)
-
-        # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
-        # rel_hs_hiddens: (batch_size, seq_len, seq_len, hidden_size)
-        ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens)
-        head_rel_hs_hiddens = self.head_rel_handshaking_kernel(head_rel_hiddens)
-        tail_rel_hs_hiddens = self.tail_rel_handshaking_kernel(tail_rel_hiddens)
-
-        pred_ent_output = self.ent_fc(ent_hs_hiddens)
-
-        # embed entity info into relation hiddens
-        if self.emb_ent_info2rel:
-            # ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
-            if not self.training or not self.golden_ent_cla_guide:
-                ent_class_guide = (pred_ent_output > 0.).long()
-            head_tok_pair_context = self.get_rel_guide(ent_hs_hiddens, ent_class_guide)
-            tail_tok_pair_context = self.get_rel_guide(ent_hs_hiddens, ent_class_guide, head_tok=False)
-
-            head_rel_hs_hiddens = self.cln4head_rel(head_rel_hs_hiddens, head_tok_pair_context)
-            tail_rel_hs_hiddens = self.cln4tail_rel(tail_rel_hs_hiddens, tail_tok_pair_context)
-
-        pred_head_rel_output = self.head_rel_fc(head_rel_hs_hiddens)
-        pred_tail_rel_output = self.tail_rel_fc(tail_rel_hs_hiddens)
-        return pred_ent_output, pred_head_rel_output, pred_tail_rel_output
-
-    def pred_output2pred_tag(self, pred_output):
-        return (pred_output > 0.).long()
-
-    def get_metrics(self, pred_outputs, gold_tags):
-        ent_pred_out, head_rel_pred_out, tail_rel_pred_out, \
-        ent_gold_tag, head_rel_gold_tag, tail_rel_gold_tag = pred_outputs[0], pred_outputs[1], pred_outputs[2], \
-                                                             gold_tags[0], gold_tags[1], gold_tags[2]
-
-        ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
-        head_rel_pred_tag = self.pred_output2pred_tag(head_rel_pred_out)
-        tail_rel_pred_tag = self.pred_output2pred_tag(tail_rel_pred_out)
-
-        # ent_tag_size = ent_gold_tag.size()[-1]
-        # head_rel_tag_size = head_rel_gold_tag.size()[-1]
-        # tail_rel_tag_size = tail_rel_gold_tag.size()[-1]
-        # assert head_rel_tag_size == tail_rel_tag_size
-        #
-        # z = ent_tag_size + head_rel_tag_size + tail_rel_tag_size
-
-        total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
-        current_step = self.bp_steps
-        ori_w_ent, ori_w_head_rel, ori_w_tail_rel = 1 / 3, 1 / 3, 1 / 3
-        w_ent = max(1 - ori_w_ent * current_step / total_steps, ori_w_ent)
-        w_rel = min(ori_w_head_rel * current_step / total_steps, ori_w_head_rel)
-
-        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
-                                                                            ent_gold_tag,
-                                                                            self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out,
-                                                                            head_rel_gold_tag,
-                                                                            self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out,
-                                                                            tail_rel_gold_tag,
-                                                                            self.bp_steps)
-
-        return {
-            "loss": loss,
-            "ent_seq_acc": self.metrics_cal.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
-            "head_rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(head_rel_pred_tag, head_rel_gold_tag),
-            "tail_rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(tail_rel_pred_tag, tail_rel_gold_tag),
-        }
-
-
-class TPLinkerTree(IEModel):
-    def __init__(self,
-                 tagger,
-                 metrics_cal,
-                 handshaking_kernel_config=None,
-                 ent_dim=None,
-                 golden_ent_cla_guide=False,
-                 loss_weight_recover_steps=None,
-                 **kwargs,
-                 ):
-        super().__init__(tagger, metrics_cal, **kwargs)
-
-        self.ent_tag_size, self.head_rel_tag_size, self.tail_rel_tag_size = tagger.get_tag_size()
-        self.loss_weight_recover_steps = loss_weight_recover_steps
-
-        self.metrics_cal = metrics_cal
-
-        self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
-
-        # handshaking kernel
-        ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
-
-        self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
-                                                                    ent_shaking_type,
-                                                                    )
-
-        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
-
-        self.golden_ent_cla_guide = golden_ent_cla_guide
-        tok_dim4rel = ent_dim + self.ent_tag_size
-        self.cln4head_rel = LayerNorm(tok_dim4rel, tok_dim4rel, conditional=True)
-        self.cln4tail_rel = LayerNorm(tok_dim4rel, tok_dim4rel, conditional=True)
-        self.head_rel_fc = nn.Linear(tok_dim4rel, self.head_rel_tag_size)
-        self.tail_rel_fc = nn.Linear(tok_dim4rel, self.tail_rel_tag_size)
-
-    def generate_batch(self, batch_data):
-        seq_length = len(batch_data[0]["features"]["tok2char_span"])
-        batch_dict = super(TPLinkerTree, self).generate_batch(batch_data)
-        # tags
-        batch_ent_points = [sample["ent_points"] for sample in batch_data]
-        batch_head_rel_points = [sample["head_rel_points"] for sample in batch_data]
-        batch_tail_rel_points = [sample["tail_rel_points"] for sample in batch_data]
-        batch_dict["golden_tags"] = [Indexer.points2shaking_seq_batch(batch_ent_points,
-                                                                      seq_length,
-                                                                      self.ent_tag_size,
-                                                                      ),
-                                     Indexer.points2multilabel_matrix_batch(batch_head_rel_points,
-                                                                            seq_length,
-                                                                            self.head_rel_tag_size,
-                                                                            ),
-                                     Indexer.points2multilabel_matrix_batch(batch_tail_rel_points,
-                                                                            seq_length,
-                                                                            self.tail_rel_tag_size,
-                                                                            ),
-                                     ]
-        batch_dict["golden_ent_class_guide"] = Indexer.points2shaking_seq_batch(batch_ent_points,
-                                                                                seq_length,
-                                                                                self.ent_tag_size,
-                                                                                )
-        return batch_dict
-
-    def get_tok_pre(self, ent_hs_hiddens, ent_class_guide, head_tok=True):
-        '''
-        :param ent_hs_hiddens: (batch_size, shaking_seq_len, ent_hidden_size)
-        :param ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
-        :return: tok_hiddens: (batch_size, seq_len, ent_type_size + ent_hidden_size)
-        '''
-        ent_class_guide = ent_class_guide.float()
-        # guide_ent_class_matrix: (batch_size, seq_len, seq_len, ent_type_size)
-        guide_ent_class_matrix = MyMatrix.shaking_seq2matrix(ent_class_guide)
-        # guide_ent_hiddens_matrix: (batch_size, seq_len, seq_len, ent_hidden_size)
-        guide_ent_hiddens_matrix = MyMatrix.shaking_seq2matrix(ent_hs_hiddens)
-
-        ent_type_num_at_this_span = torch.sum(ent_class_guide, dim=-1)[:, :, None]
-        weight_at_this_span = ent_type_num_at_this_span * 10 + 1
-        # ent_type_num_at_this_span: (batch_size, seq_len, seq_len, 1)
-        weight_at_this_span = MyMatrix.shaking_seq2matrix(weight_at_this_span)
-
-        if not head_tok:
-            guide_ent_class_matrix = guide_ent_class_matrix.permute(0, 2, 1, 3)
-            guide_ent_hiddens_matrix = guide_ent_hiddens_matrix.permute(0, 2, 1, 3)
-            weight_at_this_span = weight_at_this_span.permute(0, 2, 1, 3)
-
-        # weight4rel: (batch_size, seq_len, seq_len, 1)
-        weight4rel = weight_at_this_span / torch.sum(weight_at_this_span, dim=-2)[:, :, None, :]
-
-        # tok_pre: (batch_size, seq_len, ent_hidden_size + ent_type_size)
-        tok_pre = torch.cat([guide_ent_hiddens_matrix, guide_ent_class_matrix], dim=-1) * weight4rel
-        tok_pre = torch.sum(tok_pre, dim=-2)
-
-        return tok_pre
-
-    def forward(self, **kwargs):
-        super(TPLinkerTree, self).forward()
-        ent_class_guide = kwargs["golden_ent_class_guide"]
-        del kwargs["golden_ent_class_guide"]
-        cat_hiddens = self._cat_features(**kwargs)
-
-        ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
-        # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
-        ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens)
-        pred_ent_output = self.ent_fc(ent_hs_hiddens)
-
-        # ent_class_guide: (batch_size, shaking_seq_len, ent_type_size)
-        if not self.training or not self.golden_ent_cla_guide:
-            ent_class_guide = (pred_ent_output > 0.).long()
-        head_tok_hiddens = self.get_tok_pre(ent_hs_hiddens, ent_class_guide)
-        tail_tok_hiddens = self.get_tok_pre(ent_hs_hiddens, ent_class_guide, head_tok=False)
-
-        seq_len = head_tok_hiddens.size()[1]
-        guide_head_tok_pre = head_tok_hiddens[:, :, None, :].repeat(1, 1, seq_len, 1)
-        vis_head_tok_pre = guide_head_tok_pre.permute(0, 2, 1, 3)
-        head_rel_hs_hiddens = self.cln4head_rel(vis_head_tok_pre, guide_head_tok_pre)
-
-        guide_tail_tok_pre = tail_tok_hiddens[:, :, None, :].repeat(1, 1, seq_len, 1)
-        vis_tail_tok_pre = guide_tail_tok_pre.permute(0, 2, 1, 3)
-        tail_rel_hs_hiddens = self.cln4tail_rel(vis_tail_tok_pre, guide_tail_tok_pre)
-
-        pred_head_rel_output = self.head_rel_fc(head_rel_hs_hiddens)
-        pred_tail_rel_output = self.tail_rel_fc(tail_rel_hs_hiddens)
-        return pred_ent_output, pred_head_rel_output, pred_tail_rel_output
-
-    def pred_output2pred_tag(self, pred_output):
-        return (pred_output > 0.).long()
-
-    def get_metrics(self, pred_outputs, gold_tags):
-        ent_pred_out, head_rel_pred_out, tail_rel_pred_out, \
-        ent_gold_tag, head_rel_gold_tag, tail_rel_gold_tag = pred_outputs[0], pred_outputs[1], pred_outputs[2], \
-                                                             gold_tags[0], gold_tags[1], gold_tags[2]
-
-        ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
-        head_rel_pred_tag = self.pred_output2pred_tag(head_rel_pred_out)
-        tail_rel_pred_tag = self.pred_output2pred_tag(tail_rel_pred_out)
-
-        # ent_tag_size = ent_gold_tag.size()[-1]
-        # head_rel_tag_size = head_rel_gold_tag.size()[-1]
-        # tail_rel_tag_size = tail_rel_gold_tag.size()[-1]
-        # assert head_rel_tag_size == tail_rel_tag_size
-
-        # z = ent_tag_size + head_rel_tag_size + tail_rel_tag_size
-        # total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
-        # current_step = self.bp_steps
-        # w_ent = max(ent_tag_size / z + 1 - current_step / total_steps, ent_tag_size / z)
-        # w_rel = min((head_rel_tag_size / z) * current_step / total_steps, (head_rel_tag_size / z))
-
-        total_steps = self.loss_weight_recover_steps + 1  # + 1 avoid division by zero error
-        current_step = self.bp_steps
-        ori_w_ent, ori_w_head_rel, ori_w_tail_rel = 1 / 3, 1 / 3, 1 / 3
-        w_ent = max(1 - ori_w_ent * current_step / total_steps, ori_w_ent)
-        w_rel = min(ori_w_head_rel * current_step / total_steps, ori_w_head_rel)
-
-        # print("bp_steps: {}, ent_w: {:.5}, rel_w: {:.5}".format(current_step, w_ent, w_rel))
-
-        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
-                                                                            ent_gold_tag,
-                                                                            self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(head_rel_pred_out,
-                                                                            head_rel_gold_tag,
-                                                                            self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(tail_rel_pred_out,
-                                                                            tail_rel_gold_tag,
-                                                                            self.bp_steps)
-
-        return {
-            "loss": loss,
-            "ent_seq_acc": self.metrics_cal.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
-            "head_rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(head_rel_pred_tag, head_rel_gold_tag),
-            "tail_rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(tail_rel_pred_tag, tail_rel_gold_tag),
         }
 
 
@@ -1149,10 +782,6 @@ class TableFillingBackbone(IEModel):
 
         cat_hiddens = self._cat_features(**kwargs)
         event_con = self.aggr_fc4event_context(cat_hiddens)
-
-        # event_con = event_con.permute(1, 0, 2)
-        # event_con, _ = self.multi_head_attn(event_con, event_con, event_con)
-        # event_con = event_con.permute(1, 0, 2)
 
         vis_tok_hiddens = self.aggr_fc4vis_tok(cat_hiddens)
 
