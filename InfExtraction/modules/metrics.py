@@ -123,6 +123,7 @@ class MetricsCalculator:
         arg_hard_iden_set, arg_hard_class_set = set(), set()  # consider trigger offset
         arg_soft_iden_set, arg_soft_class_set = set(), set()  # do not consider trigger offset
         arg_link_iden_set, arg_link_class_set = set(), set()  # for trigger-free
+        event_type_set = set()
 
         for event in event_list:
             # trigger-based metrics
@@ -148,7 +149,7 @@ class MetricsCalculator:
             # trigger-free metrics
             arg_list = copy.deepcopy(event["argument_list"])
             if "trigger" in event and event["trigger"] != "":
-                # take trigger as an ordinary argument
+                # take trigger as a general argument
                 arg_list.append({
                     "text": event["trigger"],
                     "tok_span": event["trigger_tok_span"],
@@ -167,6 +168,9 @@ class MetricsCalculator:
                     arg_j_offset = arg_j["tok_span"]
                     arg_j_role = arg_j["type"]
 
+                    event_type_set.add(arg_i_event_type)
+                    event_type_set.add(arg_j_event_type)
+
                     link_iden_mark = str([arg_i_event_type] + [arg_j_event_type] + arg_i_offset + arg_j_offset)
                     link_class_mark = str([arg_i_event_type] + [arg_j_event_type] +
                                           arg_i_offset + arg_j_offset +
@@ -183,6 +187,7 @@ class MetricsCalculator:
             "arg_hard_class": arg_hard_class_set,
             "arg_link_iden": arg_link_iden_set,
             "arg_link_class": arg_link_class_set,
+            "event_type": event_type_set,
         }
 
     @staticmethod
@@ -323,16 +328,6 @@ class MetricsCalculator:
                         right_overlap = 1
                     elif tok_id2occur_num[tok_ids[0]] == 1 and tok_id2occur_num[tok_ids[-1]] == 1:
                         inner_overlap = 1
-            # for idx in range(0, len(tok_span), 2):
-            #     sp = [tok_span[idx], tok_span[idx + 1]]
-            #     tok_ids = utils.spans2ids(sp)
-            #     if any(tok_id2occur_num[tok_pos] > 1 for tok_pos in tok_ids):
-            #         if idx == 0:
-            #             left_overlap = 1
-            #         elif idx == len(tok_span) - 2:
-            #             right_overlap = 1
-            #         else:
-            #             inner_overlap = 1
 
             if left_overlap + right_overlap + inner_overlap > 1:
                 mark_set_dict["multi_overlap"].add(mark)
@@ -348,8 +343,6 @@ class MetricsCalculator:
 
         return mark_set_dict
 
-    count = 0
-
     @staticmethod
     def cal_cpg4disc_ent_add_analysis(pred_ent_list, gold_ent_list, cpg_dict):
         '''
@@ -363,9 +356,6 @@ class MetricsCalculator:
 
         for key in cpg_dict.keys():
             pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
-            # if len(gold_set) > 0 and key == "span_len: 3":
-            #     MetricsCalculator.count += len(gold_set)
-            #     print(MetricsCalculator.count)
             MetricsCalculator.cal_cpg(pred_set, gold_set, cpg_dict[key])
 
     @staticmethod
@@ -417,6 +407,7 @@ class MetricsCalculator:
             "arg_hard_class": [0, 0, 0],
             "arg_link_iden": [0, 0, 0],
             "arg_link_class": [0, 0, 0],
+            "event_type": [0, 0, 0],
         }
         '''
         pred_set_dict = MetricsCalculator.get_mark_sets_ee(pred_event_list)
@@ -436,6 +427,7 @@ class MetricsCalculator:
             "arg_hard_class": [0, 0, 0],
             "arg_link_iden": [0, 0, 0],
             "arg_link_class": [0, 0, 0],
+            "event_type": [0, 0, 0],
         }
         for idx, pred_sample in enumerate(pred_sample_list):
             gold_sample = golden_sample_list[idx]
