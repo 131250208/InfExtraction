@@ -170,12 +170,12 @@ class SingleSourceHandshakingKernel(nn.Module):
         if "bilstm" in shaking_type:
             assert only_look_after is True
             self.lstm4span = nn.LSTM(hidden_size,
-                                     hidden_size // 2,
+                                     hidden_size,
                                      num_layers=1,
                                      bidirectional=False,
                                      batch_first=True)
             self.lstm4span_back = nn.LSTM(hidden_size,
-                                     hidden_size // 2,
+                                     hidden_size,
                                      num_layers=1,
                                      bidirectional=False,
                                      batch_first=True)
@@ -226,7 +226,8 @@ class SingleSourceHandshakingKernel(nn.Module):
                     span_pre_back = torch.flip(span_pre_back, [1, ])
                     span_pre_back = span_pre_back.view(batch_size, matrix_size, matrix_size, -1)
                     span_pre_back = span_pre_back.permute(0, 2, 1, 3)
-                    span_pre = torch.cat([span_pre, span_pre_back], dim=-1)
+                    # span_pre = torch.cat([span_pre, span_pre_back], dim=-1)
+                    span_pre = span_pre + span_pre_back
 
                 # drop lower triangle and convert matrix to sequence
                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
