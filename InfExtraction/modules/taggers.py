@@ -1118,7 +1118,6 @@ def create_rebased_tfboys_tagger(base_class):
                         fin_ent_list.append({
                             "text": arg_i["text"],
                             "type": "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
-                            # "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
                             "char_span": arg_i["char_span"],
                             "tok_span": arg_i["tok_span"],
                         })
@@ -1234,6 +1233,154 @@ def create_rebased_tfboys_tagger(base_class):
             pred_sample["event_list"] = event_list
             return pred_sample
     return REBasedTFBoysTagger
+
+    # class REBasedTFBoysTagger(base_class):
+    #     def __init__(self, data, *args, **kwargs):
+    #         super(REBasedTFBoysTagger, self).__init__(data, *args, **kwargs)
+    #         self.event_type2arg_rols = {}
+    #         for sample in data:
+    #             for event in sample["event_list"]:
+    #                 event_type = event["trigger_type"]
+    #                 for arg in event["argument_list"]:
+    #                     if event_type not in self.event_type2arg_rols:
+    #                         self.event_type2arg_rols[event_type] = set()
+    #                     self.event_type2arg_rols[event_type].add(arg["type"])
+    #
+    #     @classmethod
+    #     def additional_preprocess(cls, data, data_type, **kwargs):
+    #         if data_type not in {"train", "debug"}:
+    #             return data
+    #
+    #         new_data = copy.deepcopy(data)
+    #         separator = "\u2E82"
+    #         for sample in tqdm(new_data, desc="additional preprocessing"):
+    #             fin_ent_list = []
+    #             fin_rel_list = []
+    #             for event in sample["event_list"]:
+    #                 pseudo_arg = {
+    #                     "type": "Trigger",
+    #                     "char_span": event["trigger_char_span"],
+    #                     "tok_span": event["trigger_tok_span"],
+    #                     "text": event["trigger"],
+    #                 }
+    #                 event_type = event["trigger_type"]
+    #                 arg_list = [pseudo_arg] + event["argument_list"]
+    #                 for i, arg_i in enumerate(arg_list):
+    #                     fin_ent_list.append({
+    #                         "text": arg_i["text"],
+    #                         "type": "EE:{}".format(arg_i["type"]),
+    #                         # "type": "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
+    #                         "char_span": arg_i["char_span"],
+    #                         "tok_span": arg_i["tok_span"],
+    #                     })
+    #                     for j, arg_j in enumerate(arg_list):
+    #                         fin_rel_list.append({
+    #                             "subject": arg_i["text"],
+    #                             "subj_char_span": arg_i["char_span"],
+    #                             "subj_tok_span": arg_i["tok_span"],
+    #                             "object": arg_j["text"],
+    #                             "obj_char_span": arg_j["char_span"],
+    #                             "obj_tok_span": arg_j["tok_span"],
+    #                             "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
+    #                         })
+    #
+    #             # if "relation_list" in sample:
+    #             #     fin_rel_list.extend(sample["relation_list"])
+    #             # if "entity_list" in sample:
+    #             #     fin_ent_list.extend(sample["entity_list"])
+    #             sample["entity_list"] = fin_ent_list
+    #             sample["relation_list"] = fin_rel_list
+    #         new_data = super().additional_preprocess(new_data, data_type, **kwargs)
+    #         return new_data
+    #
+    #     def decode(self, sample, pred_outs):
+    #         pred_sample = super(REBasedTFBoysTagger, self).decode(sample, pred_outs)
+    #         pred_sample = self._trans(pred_sample)
+    #
+    #         # pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
+    #         # pred_sample["relation_list"] = [rel for rel in pred_sample["relation_list"] if
+    #         #                                 "EE:" not in rel["predicate"]]
+    #         del pred_sample["entity_list"]
+    #         del pred_sample["relation_list"]
+    #         return pred_sample
+    #
+    #     def _trans(self, sample):
+    #         rel_list = sample["relation_list"]
+    #         ent_list = sample["entity_list"]
+    #
+    #         # choose tags with EE:
+    #         new_rel_list, new_ent_list = [], []
+    #         for rel in rel_list:
+    #             if rel["predicate"].split(":")[0] == "EE":
+    #                 new_rel = copy.deepcopy(rel)
+    #                 new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
+    #                 new_rel_list.append(new_rel)
+    #         for ent in ent_list:
+    #             if ent["type"].split(":")[0] == "EE":
+    #                 new_ent = copy.deepcopy(ent)
+    #                 new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
+    #                 new_ent_list.append(new_ent)
+    #
+    #         # decoding
+    #         tok2char_span = sample["features"]["tok2char_span"]
+    #         text = sample["text"]
+    #         separator = "\u2E82"
+    #         event2graph = {}
+    #         for rel in new_rel_list:
+    #             subj_offset_str = "{},{}".format(*rel["subj_tok_span"])
+    #             obj_offset_str = "{},{}".format(*rel["obj_tok_span"])
+    #
+    #             if "IN_SAME_EVENT" in rel["predicate"]:
+    #                 _, event_type = rel["predicate"].split(separator)
+    #                 if event_type not in event2graph:
+    #                     event2graph[event_type] = nx.Graph()
+    #                 event2graph[event_type].add_edge(subj_offset_str, obj_offset_str)
+    #
+    #         role_map = {}
+    #         for ent in new_ent_list:
+    #             role = ent["type"]
+    #             offset_str = "{},{}".format(*ent["tok_span"])
+    #             if offset_str not in role_map:
+    #                 role_map[offset_str] = set()
+    #             role_map[offset_str].add(role)
+    #
+    #         # find events (cliques) under every event type
+    #         event_list = []
+    #         for event_type, graph in event2graph.items():
+    #             cliques = list(nx.find_cliques(graph))  # all maximal cliques
+    #             for cli in cliques:
+    #                 event = {}
+    #                 arguments = []
+    #                 for offset_str in cli:
+    #                     start, end = offset_str.split(",")
+    #                     tok_span = [int(start), int(end)]
+    #                     char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+    #                     arg_text = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text)
+    #                     role_set = role_map.get(offset_str, set())
+    #                     for role in role_set:
+    #                         if role not in self.event_type2arg_rols[event_type] and role != "Trigger":
+    #                             continue
+    #                         if role == "Trigger":
+    #                             event["trigger"] = arg_text
+    #                             event["trigger_tok_span"] = tok_span
+    #                             event["trigger_type"] = event_type
+    #                             event["trigger_char_span"] = char_span
+    #                         else:
+    #                             arguments.append({
+    #                                 "text": arg_text,
+    #                                 "type": role,
+    #                                 "char_span": char_span,
+    #                                 "tok_span": tok_span,
+    #                                 "event_type": event_type,
+    #                             })
+    #                 event["argument_list"] = arguments
+    #                 event_list.append(event)
+    #
+    #         pred_sample = copy.deepcopy(sample)
+    #         pred_sample["event_list"] = event_list
+    #         return pred_sample
+    #
+    # return REBasedTFBoysTagger
 
 
 def create_rebased_discontinuous_ner_tagger(base_class):
