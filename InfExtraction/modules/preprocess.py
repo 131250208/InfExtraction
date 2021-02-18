@@ -1872,8 +1872,6 @@ class Preprocessor:
             bad_events = []
             if "entity_list" in sample:
                 for ent in sample["entity_list"]:
-                    if ent["tok_span"][0] == 16 == ent["tok_span"][1]:
-                        print("1")
                     extr_ent_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(ent["tok_span"], tok2char_span, text, language)
                     extr_ent_c = Preprocessor.extract_ent_fr_txt_by_char_sp(ent["char_span"], text, language)
 
