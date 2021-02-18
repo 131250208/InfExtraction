@@ -453,6 +453,7 @@ class MetricsCalculator:
             # try:
             self.cal_rel_cpg(pred_rel_list, gold_rel_list, re_cpg_dict)
             # except Exception:
+            #     print("!")
             #     pass
         return re_cpg_dict
 
