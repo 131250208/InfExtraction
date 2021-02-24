@@ -1,8 +1,7 @@
 import json
 import os
 from InfExtraction.modules.preprocess import Preprocessor, WhiteWordTokenizer
-from InfExtraction.work_flows import settings_tplinker_pp as settings
-from InfExtraction.modules.utils import load_data, save_as_json_lines
+from InfExtraction.modules.utils import load_data, save_as_json_lines, merge_spans
 from tqdm import tqdm
 import random
 from tqdm import tqdm
@@ -13,6 +12,7 @@ import jieba
 import string
 from pattern.en import lexeme, lemma
 import itertools
+import matplotlib.pyplot as plt
 
 def get_add_seg(type_set, seed):
     # types
@@ -170,19 +170,77 @@ def clean_entity(ent):
 
 
 def preprocess_duee():
-    data_in_dir = "../../data/ori_data/duie_1_bk"
-    data_out_dir = "../../data/ori_data/duie_1"
+    data_in_dir = "../../data/ori_data/duee_1_bk"
+    data_out_dir = "../../data/ori_data/duee_1"
     if not os.path.exists(data_out_dir):
         os.makedirs(data_out_dir)
 
-    train_filename = "train_data.json"
-    valid_filename = "dev_data.json"
+    train_filename = "train.json"
+    valid_filename = "dev.json"
     train_path = os.path.join(data_in_dir, train_filename)
     dev_path = os.path.join(data_in_dir, valid_filename)
-    with open(train_path, "r", encoding="utf-8") as file_in:
-        train_data = [json.loads(line) for line in file_in]
-    with open(dev_path, "r", encoding="utf-8") as file_in:
-        dev_data = [json.loads(line) for line in file_in]
+    train_data = load_data(train_path)
+    dev_data = load_data(dev_path)
+
+    random.seed(2333)
+    random.shuffle(train_data)
+    event_type2train_data = {}
+    for sample in tqdm(train_data):
+        for spo in sample["event_list"]:
+            if spo["event_type"] not in event_type2train_data:
+                event_type2train_data[spo["event_type"]] = []
+            event_type2train_data[spo["event_type"]].append(sample)
+
+    memory = set()
+    valid_rate = 0.1
+    val_num = int(len(train_data) * valid_rate)
+
+    event_type2val_num = {}
+    count = 0
+    for sample in dev_data:
+        for event in sample["event_list"]:
+            event_type = event["event_type"]
+            event_type2val_num[event_type] = event_type2val_num.get(event_type, 0) + 1
+            count += 1
+    event_type2val_rate = {et: vn/count for et, vn in event_type2val_num.items()}
+
+    valid_data = []
+    event_type2data_no_dup = {}
+    event_type2data_sorteded = sorted(event_type2train_data.items(), key=lambda x: len(x[1]))
+    for event_type, subset in event_type2data_sorteded:
+        new_subset = []
+        for sample in subset:
+            if sample["id"] not in memory:
+                new_subset.append(sample)
+                memory.add(sample["id"])
+        event_type2data_no_dup[event_type] = new_subset
+
+    for et, subset in event_type2data_no_dup.items():
+        vr_et = event_type2val_rate[et]
+        sub_val_num = int(val_num * vr_et) + 1
+        random.shuffle(subset)
+        valid_data.extend(subset[:sub_val_num])
+    valid_data = valid_data[:val_num]  # may exceed val_num because of +1, so truncate first val_num samples
+    # val_data_event_type2event_list = {}
+    # for sample in valid_data:
+    #     for event in sample["event_list"]:
+    #         event_type = event["event_type"]
+    #         if event_type not in val_data_event_type2event_list:
+    #             val_data_event_type2event_list[event_type] = []
+    #         val_data_event_type2event_list[event_type].append(event)
+
+    valid_id_set = {sample["id"] for sample in valid_data}
+    new_train_data = [sample for sample in train_data if sample["id"] not in valid_id_set]
+    test_data = dev_data
+
+    train_sv_path = os.path.join(data_out_dir, "train_data.json")
+    valid_sv_path = os.path.join(data_out_dir, "valid_data.json")
+    test_sv_path = os.path.join(data_out_dir, "test_data.json")
+    save_as_json_lines(new_train_data, train_sv_path)
+    save_as_json_lines(valid_data, valid_sv_path)
+    save_as_json_lines(test_data, test_sv_path)
+
+    return new_train_data, valid_data, test_data
 
 
 def preprocess_duie():
@@ -255,28 +313,13 @@ def preprocess_duie():
         for spo in sample["spo_list"]:
             if spo["predicate"] in {"专业代码", "邮政编码"} and text[re.search(spo["object"], text).span()[0] - 1] == "0":
                 spo["object"] = "0" + spo["object"]
-                # print(text)
-                # pprint(sample["spo_list"])
-                # print("====================================")
             # strip redundant whitespaces and unknown characters
             spo["subject"] = clean_entity(spo["subject"])
             spo["object"] = clean_entity(spo["object"])
-        # if text == "人物简介陈胜功，男，工学博士，山东省平度市人，北京航空航天大学自动化科学与电气工程学院副教授、硕士研究生导师（硕士学科： 080202机械电子工程）":
-        #     for spo in sample["spo_list"]:
-        #         if spo["object"] == "80202":
-        #             spo["object"] = "080202"
-        # if text == "0810信息与通信工程":
-        #     for spo in sample["spo_list"]:
-        #         if spo["object"] == "810":
-        #             spo["object"] = "0810"
 
         new_spo_list = []
         for spo in sample["spo_list"]:
             if spo["subject"].lower() not in text.lower() or spo["object"].lower() not in text.lower():
-                # print(text)
-                # pprint(spo)
-                # print("===========================================")
-
                 # drop wrong spo
                 continue
 
@@ -300,10 +343,82 @@ def preprocess_duie():
     save_as_json_lines(test_data, os.path.join(data_out_dir, "test_data.json"))
 
 
-def preprocess_daixiang_data(data_in_dir, data_out_dir):
-    if not os.path.exists(data_out_dir):
-        os.makedirs(data_out_dir)
+def trans_daixiang_data(path, data_type=None):
+    with open(path, "r", encoding="utf-8") as file_in:
+        lines = [line.strip("\n") for line in file_in]
+        data = []
+        for i in range(0, len(lines), 3):
+            sample = lines[i: i + 3]
+            text = sample[0]
+            word_list = text.split(" ")
+            annstr = sample[1]
+            ent_list = []
+            word2char_span = WhiteWordTokenizer.get_tok2char_span_map(word_list)
 
+            # entities
+            for ann in annstr.split("|"):
+                if ann == "":
+                    continue
+                offsets, ent_type = ann.split(" ")
+                offsets = [int(idx) for idx in offsets.split(",")]
+                assert len(offsets) % 2 == 0
+                for idx, pos in enumerate(offsets):
+                    if idx % 2 != 0:
+                        offsets[idx] += 1
+
+                extr_segs = []
+                char_span = []
+                tok_span = []
+                for idx in range(0, len(offsets), 2):
+                    wd_sp = [offsets[idx], offsets[idx + 1]]
+                    ch_sp_list = word2char_span[wd_sp[0]:wd_sp[1]]
+                    ch_sp = [ch_sp_list[0][0], ch_sp_list[-1][1]]
+
+                    seg_wd = " ".join(word_list[wd_sp[0]: wd_sp[1]])
+                    seg_ch = text[ch_sp[0]:ch_sp[1]]
+                    assert seg_ch == seg_wd
+
+                    char_span.extend(ch_sp)
+                    tok_span.extend(wd_sp)
+                    extr_segs.append(seg_ch)
+                ent_txt_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, "en")
+                ent_txt = " ".join(extr_segs)
+                # if len(extr_segs) >= 2:
+                #     end_bd = extr_segs[0].split()[-1]
+                #     start_bd = extr_segs[-1].split()[0]
+                #     seg_start_bd.add(start_bd)
+                #     seg_end_bd.add(end_bd)
+                #     for sg_id in range(len(extr_segs) - 1):
+                #         sg1 = extr_segs[sg_id]
+                #         sg2 = extr_segs[sg_id + 1]
+                #         end_bd = sg1.split()[-1]
+                #         start_bd = sg2.split()[0]
+                #         seg_bd.add(",".join([end_bd, start_bd]))
+                #         seg_start_bd.add(start_bd)
+                #         seg_end_bd.add(end_bd)
+
+                assert ent_txt == ent_txt_extr
+                ent = {
+                    "text": ent_txt,
+                    "type": ent_type,
+                    "char_span": char_span,
+                    "tok_span": tok_span,
+                }
+                ent_list.append(ent)
+
+            new_sample = {
+                "text": sample[0],
+                "word_list": word_list,
+                "word2char_span": word2char_span,
+                "entity_list": ent_list,
+            }
+            if data_type is not None:
+                new_sample["id"] = "{}_{}".format(data_type, len(data))
+            data.append(new_sample)
+    return data
+
+
+def preprocess_daixiang_data(data_in_dir):
     train_filename = "train.txt"
     valid_filename = "dev.txt"
     test_filename = "test.txt"
@@ -312,67 +427,27 @@ def preprocess_daixiang_data(data_in_dir, data_out_dir):
     valid_path = os.path.join(data_in_dir, valid_filename)
     test_path = os.path.join(data_in_dir, test_filename)
 
-    def trans_data(path):
-        with open(path, "r", encoding="utf-8") as file_in:
-            lines = [line.strip("\n") for line in file_in]
-            data = []
-            for i in range(0, len(lines), 3):
-                sample = lines[i: i + 3]
-                text = sample[0]
-                word_list = text.split(" ")
-                annstr = sample[1]
-                ent_list = []
-                word2char_span = WhiteWordTokenizer.get_tok2char_span_map(word_list)
-
-                # entities
-                for ann in annstr.split("|"):
-                    if ann == "":
-                        continue
-                    offsets, ent_type = ann.split(" ")
-                    offsets = [int(idx) for idx in offsets.split(",")]
-                    assert len(offsets) % 2 == 0
-                    for idx, pos in enumerate(offsets):
-                        if idx % 2 != 0:
-                            offsets[idx] += 1
-
-                    extr_segs = []
-                    char_span = []
-                    for idx in range(0, len(offsets), 2):
-                        wd_sp = [offsets[idx], offsets[idx + 1]]
-                        ch_sp_list = word2char_span[wd_sp[0]:wd_sp[1]]
-                        ch_sp = [ch_sp_list[0][0], ch_sp_list[-1][1]]
-
-                        seg_wd = " ".join(word_list[wd_sp[0]: wd_sp[1]])
-                        seg_ch = text[ch_sp[0]:ch_sp[1]]
-                        assert seg_ch == seg_wd
-
-                        char_span.extend(ch_sp)
-                        extr_segs.append(seg_ch)
-                    ent_txt_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, "en")
-                    ent_txt = " ".join(extr_segs)
-                    assert ent_txt == ent_txt_extr
-                    ent = {
-                        "text": ent_txt,
-                        "type": ent_type,
-                        "char_span": char_span,
-                        # "extr_segs": extr_segs,
-                    }
-                    ent_list.append(ent)
-                    # if len(char_span) > 4:
-                    #     print(len(char_span))  # 6, 8
-
-                data.append({
-                    "text": sample[0],
-                    "word_list": word_list,
-                    "word2char_span": word2char_span,
-                    "entity_list": ent_list,
-                })
-        return data
-
-    train_data = trans_data(train_path)
-    valid_data = trans_data(valid_path)
-    test_data = trans_data(test_path)
+    train_data = trans_daixiang_data(train_path)
+    valid_data = trans_daixiang_data(valid_path)
+    test_data = trans_daixiang_data(test_path)
     return train_data, valid_data, test_data
+
+
+def preproc_save_daixiang_data(data_in_dir="../../data/ori_data/share_14_bk", data_out_dir="../../data/ori_data/share_14"):
+    train_data, valid_data, test_data = preprocess_daixiang_data(data_in_dir)
+
+    for sample in train_data + valid_data + test_data:
+        text = sample["text"]
+        for ent in sample["entity_list"]:
+            ori_char_span = ent["char_span"]
+            ent["char_span"] = merge_spans(ori_char_span, "en", "char")
+            ent_ori_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(ori_char_span, text, "en")
+            ent_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(ent["char_span"], text, "en")
+            assert ent_ori_extr == ent_extr == ent["text"]
+
+    save_as_json_lines(train_data, os.path.join(data_out_dir, "train_data.json"))
+    save_as_json_lines(valid_data, os.path.join(data_out_dir, "valid_data.json"))
+    save_as_json_lines(test_data, os.path.join(data_out_dir, "test_data.json"))
 
 
 def postprocess_duee():
@@ -769,7 +844,7 @@ def preprocess_oie4():
             return lexeme_ws
 
         def try_best2get_spans(target_str, text):
-            spans, add_text = Preprocessor.search_spans_fr_txt(target_str, text, "en")
+            spans, add_text = Preprocessor.search_char_spans_fr_txt(target_str, text, "en")
             fin_spans = None
             if add_text.strip("_ ") == "" and len(spans) != 0:  # if exact match
                 fin_spans = spans
@@ -803,7 +878,7 @@ def preprocess_oie4():
                     alt_txt = "".join(chs)
 
                     # try to get spans
-                    spans, add_text = Preprocessor.search_spans_fr_txt(alt_txt, text, "en")
+                    spans, add_text = Preprocessor.search_char_spans_fr_txt(alt_txt, text, "en")
                     # cal how many words are matched this time
                     match_num = len(re.findall("_+", add_text)) - len(re.findall("_+", pre_add_text))
                     if match_num > 0:  # some words matched
@@ -813,7 +888,7 @@ def preprocess_oie4():
                     fin_spans = match_num2spans[max_match_num]  # use the longest match
 
             if fin_spans is None or len(fin_spans) == 0:  # if still can not match, take partial match instead
-                spans, add_text = Preprocessor.search_spans_fr_txt(target_str, text, "en")
+                spans, add_text = Preprocessor.search_char_spans_fr_txt(target_str, text, "en")
                 fin_spans = spans
             return fin_spans
 
@@ -836,7 +911,7 @@ def preprocess_oie4():
                             spo["predicate"]["char_span"] = [0, 0]
                             continue
 
-                        spans, add_text = Preprocessor.search_spans_fr_txt(predicate, text, "en")
+                        spans, add_text = Preprocessor.search_char_spans_fr_txt(predicate, text, "en")
                         if add_text.strip("_ ") == "" and len(spans) != 0:
                             spo["predicate"]["char_span"] = spans
                             continue
@@ -907,36 +982,110 @@ def preprocess_oie4():
         #         pprint(spo)
         #         print("==========================")
 
+def trans2dai_dataset():
+    in_data_dir = "../../data/normal_data/share_14_uncbase"
+    out_data_dir = "../../data/ori_data/share_14_uncbase"
+    if not os.path.exists(out_data_dir):
+        os.makedirs(out_data_dir)
+
+    test_data_path = os.path.join(in_data_dir, "test_data.json")
+    train_data_path = os.path.join(in_data_dir, "train_data.json")
+    valid_data_path = os.path.join(in_data_dir, "valid_data.json")
+    test_out_path = os.path.join(out_data_dir, "test.txt")
+    valid_out_path = os.path.join(out_data_dir, "dev.txt")
+    train_out_path = os.path.join(out_data_dir, "train.txt")
+
+    def trans2daixiang_subwd(in_path, out_path):
+        data = load_data(in_path)
+        with open(out_path, "w", encoding="utf-8") as out_file:
+            for sample in data:
+                ent_list = []
+                for ent in sample["entity_list"]:
+                    ent_subwd_sp = [str(pos) if idx % 2 == 0 else str(pos - 1) for idx, pos in
+                                    enumerate(ent["wd_span"])]
+                    ent_list.append(",".join(ent_subwd_sp) + " " + ent["type"])
+                text = sample["text"]
+                ann_line = "|".join(ent_list)
+                out_file.write("{}\n".format(text))
+                out_file.write("{}\n".format(ann_line))
+                out_file.write("\n")
+
+    trans2daixiang_subwd(test_data_path, test_out_path)
+    trans2daixiang_subwd(train_data_path, train_out_path)
+    trans2daixiang_subwd(valid_data_path, valid_out_path)
+
 
 if __name__ == "__main__":
-    # train_data, valid_data, test_data = preprocess_oie4()
-    data_in_dir = "../../data/ori_data/cadec_bk"
-    data_out_dir = "../../data/ori_data/cadec"
-    train_data, valid_data, test_data = preprocess_daixiang_data(data_in_dir, data_out_dir)
-    test_data_w_disc = []
-    test_data_only_disc = []
-    for sample in test_data:
-        w_disc = False
-        for ent in sample["entity_list"]:
-            if len(ent["char_span"]) > 2:
-                w_disc = True
-                break
-        o_disc = True
-        for ent in sample["entity_list"]:
-            if len(ent["char_span"]) <= 2:
-                o_disc = False
-                break
-        if len(sample["entity_list"]) == 0:
-            w_disc = False
-            o_disc = False
+    s = "string"
+    s.span = [1, 2]
 
-        if w_disc:
-            test_data_w_disc.append(sample)
-        if o_disc:
-            test_data_only_disc.append(sample)
-
-    save_as_json_lines(train_data, os.path.join(data_out_dir, "train_data.json"))
-    save_as_json_lines(valid_data, os.path.join(data_out_dir, "valid_data.json"))
-    save_as_json_lines(test_data, os.path.join(data_out_dir, "test_data.json"))
-    save_as_json_lines(test_data_w_disc, os.path.join(data_out_dir, "test_data_w_disc.json"))
-    save_as_json_lines(test_data_only_disc, os.path.join(data_out_dir, "test_data_only_disc.json"))
+    pass
+    # path = "../../data/ori_data/lsoie_data/lsoie_wiki_test.conll"
+    # with open(path, "r", encoding="utf-8") as file_in:
+    #     data = []
+    #     word_list = []
+    #     tag_list = []
+    #     lines = []
+    #     for line in file_in:
+    #         line = line.strip("\n")
+    #         line = line.strip()
+    #         lines.append(line)
+    #         if line != "":
+    #             items = line.split("\t")
+    #             word = items[1]
+    #             tag = items[-1]
+    #             word_list.append(word)
+    #             tag_list.append(tag)
+    #         else:
+    #             data.append({
+    #                 "text": " ".join(word_list),
+    #                 "word_list": word_list,
+    #                 "tag_list": tag_list,
+    #                 "lines": lines,
+    #             })
+    #             word_list = []
+    #             tag_list = []
+    #             lines = []
+    #     if len(word_list) > 0:
+    #         data.append({
+    #             "text": " ".join(word_list),
+    #             "word_list": word_list,
+    #             "tag_list": tag_list,
+    #             "lines": lines,
+    #         })
+    #         word_list = []
+    #         tag_list = []
+    #         lines = []
+    #
+    #     count = 0
+    #     final_data = []
+    #     for idx, sample in enumerate(data):
+    #         word_list = sample["word_list"]
+    #         tag_list = sample["tag_list"]
+    #         role_tags, bio_tags = [], []
+    #         for tag in tag_list:
+    #             tag_split = tag.split("-")
+    #             role_tags.append(tag_split[0])
+    #             bio_tags.append(tag_split[-1])
+    #
+    #         wrong_annotation = False
+    #         argument_list = []
+    #         for m in re.finditer("BI*", "".join(bio_tags)):
+    #             try:
+    #                 assert role_tags[m.span()[0]] == role_tags[m.span()[1] - 1]
+    #             except Exception:
+    #                 print("!")
+    #                 count += 1
+    #                 wrong_annotation = True
+    #                 break
+    #             role = role_tags[m.span()[0]]
+    #             argument_list.append({
+    #                 "text": " ".join(word_list[m.span()[0]:m.span()[1]]),
+    #                 "word_span": [*m.span()],
+    #                 "type": role,
+    #             })
+    #         if wrong_annotation:
+    #             continue
+    #         sample["id"] = idx
+    #         sample["argument_list"] = argument_list
+    #         final_data.append(sample)

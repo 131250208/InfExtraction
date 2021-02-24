@@ -212,7 +212,7 @@ model_settings = {
     "handshaking_kernel_config": handshaking_kernel_config,
     "fin_hidden_size": 512,
 }
-if model_name == "TPLinkerPP":
+if model_name == "RAIN":
     assert max_seq_len_train == max_seq_len_valid == max_seq_len_test
     model_settings["matrix_size"] = max_seq_len_train
 

@@ -74,7 +74,6 @@ sliding_len_test = 20
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
 
-# to do an ablation study, you can ablate components by setting it to False
 pos_tag_emb = False
 ner_tag_emb = False
 char_encoder = False
@@ -82,7 +81,7 @@ dep_gcn = False
 
 word_encoder = False
 subwd_encoder = True
-use_attns4rel = True  # used only if subwd_encoder (bert) is True
+use_attns4rel = True  # use only if subwd_encoder (bert) is True
 flair = False
 elmo = False
 
@@ -289,6 +288,7 @@ model_settings = {
     "do_span_len_emb": True,
     "emb_ent_info2rel": False,
     "golden_ent_cla_guide": False,
+    "loss_func": "mce_loss",
     "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
     "pred_threshold": 0.,

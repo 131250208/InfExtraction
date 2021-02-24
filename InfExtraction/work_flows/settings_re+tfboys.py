@@ -268,9 +268,12 @@ model_settings = {
     "ent_dim": 768,
     "rel_dim": 768,
     "do_span_len_emb": True,
-    "emb_ent_info2rel": True,
-    "golden_ent_cla_guide": True,
+    "emb_ent_info2rel": False,
+    "golden_ent_cla_guide": False,
+    "loss_func": "mce_loss",
+    "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
+    "pred_threshold": 0.,
 }
 
 model_settings_log = copy.deepcopy(model_settings)

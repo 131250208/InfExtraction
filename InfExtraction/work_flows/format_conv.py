@@ -1059,8 +1059,7 @@ def preprocess_saoke(data_path = "../../data/ori_data/saoke_bk/saoke.json"):
         new_data.append(new_sample)
     return new_data, predefined_p, bad_spo_list
 
-
-if __name__ == "__main__":
+def trans_saoke():
     new_data, predefined_pred_set, bad_spo_list = preprocess_saoke()
 
     for sample in new_data:
@@ -1085,4 +1084,6 @@ if __name__ == "__main__":
     save_as_json_lines(train_data, "../../data/ori_data/saoke/train_data.json")
     save_as_json_lines(valid_data, "../../data/ori_data/saoke/valid_data.json")
     save_as_json_lines(test_data, "../../data/ori_data/saoke/test_data.json")
+
+if __name__ == "__main__":
     pass
