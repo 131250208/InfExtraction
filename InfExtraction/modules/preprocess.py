@@ -240,25 +240,67 @@ class WhiteWordTokenizer:
     '''
 
     @staticmethod
-    def tokenize(text):
-        return text.split(" ")
+    def tokenize(text, ent_list=None, span_list=None):
+        '''
+        :param text:
+        :param ent_list: ground truth entity list, to ensure the text would be split from the correct boundaries
+        :param span_list: ground truth span list, to ensure the text would be split from the correct boundaries
+        :return:
+        '''
+        boundary_ids = set()
+        if ent_list is not None and len(ent_list) > 0:
+            for ent in ent_list:
+                for m in re.finditer(re.escape(ent), text):
+                    boundary_ids.add(m.span()[0])
+                    boundary_ids.add(m.span()[1])
+
+        if span_list is not None and len(span_list) > 0:
+            for sp in span_list:
+                boundary_ids = boundary_ids.union(set(sp))
+
+        if len(boundary_ids) > 0:
+            split_ids = [0] + sorted(list(boundary_ids)) + [len(text)]
+            segs = []
+            for idx, split_id in enumerate(split_ids):
+                if idx == len(split_ids) - 1:
+                    break
+                segs.append(text[split_id:split_ids[idx + 1]])
+        else:
+            segs = [text]
+
+        word_list = []
+        for seg in segs:
+            word_list.extend(seg.split(" "))
+        return word_list
 
     @staticmethod
-    def get_tok2char_span_map(tokens):
+    def get_tok2char_span_map(tokens, text=None):
+        '''
+        :param tokens:
+        :param text: must set if tokens are not separated by whitespaces, e.g. text = "hello.", tokens = ["hello", "."]
+        :return:
+        '''
         tok2char_span = []
         char_num = 0
         for tok in tokens:
             tok2char_span.append([char_num, char_num + len(tok)])
-            char_num += len(tok) + 1  # +1: whitespace
+            char_num += len(tok)
+            if text is not None and (char_num > len(text) - 1 or text[char_num] != " "):
+                pass
+            else:
+                char_num += 1
         return tok2char_span
 
     @staticmethod
-    def tokenize_plus(text):
-        word_list = WhiteWordTokenizer.tokenize(text)
+    def tokenize_plus(text, ent_list=None, span_list=None):
+        word_list = WhiteWordTokenizer.tokenize(text, ent_list, span_list)
         res = {
             "word_list": word_list,
-            "word2char_span": WhiteWordTokenizer.get_tok2char_span_map(word_list),
+            "word2char_span": WhiteWordTokenizer.get_tok2char_span_map(word_list, text),
         }
+        for wid, char_sp in enumerate(res["word2char_span"]):
+            extr_word = text[char_sp[0]: char_sp[1]]
+            assert word_list[wid] == extr_word
         return res
 
 
@@ -279,7 +321,7 @@ class ChineseWordTokenizer:
 
         if span_list is not None and len(span_list) > 0:
             for sp in span_list:
-                boundary_ids.union(set(sp))
+                boundary_ids = boundary_ids.union(set(sp))
 
         if len(boundary_ids) > 0:
             split_ids = [0] + sorted(list(boundary_ids)) + [len(text)]
@@ -1099,7 +1141,7 @@ class Preprocessor:
             if "event_list" in sample:
                 bad_events = []
                 for event in sample["event_list"]:
-                    event_cp = copy.deepcopy(event)
+                    bad_event = copy.deepcopy(event)
                     bad = False
                     trigger_wd_span = event["trigger_wd_span"]
                     trigger_subwd_span = event["trigger_subwd_span"]
@@ -1108,10 +1150,10 @@ class Preprocessor:
 
                     if not (trigger_wd == trigger_subwd == event["trigger"]):
                         bad = True
-                        event_cp["extr_trigger_wd"] = trigger_wd
-                        event_cp["extr_trigger_subwd"] = trigger_subwd
+                        bad_event["extr_trigger_wd"] = trigger_wd
+                        bad_event["extr_trigger_subwd"] = trigger_subwd
 
-                    for arg in event_cp["argument_list"]:
+                    for arg in bad_event["argument_list"]:
                         arg_wd_span = arg["wd_span"]
                         arg_subwd_span = arg["subwd_span"]
                         arg_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(arg_wd_span, word2char_span, text, language)
@@ -1122,7 +1164,7 @@ class Preprocessor:
                             arg["extr_arg_wd"] = arg_wd
                             arg["extr_arg_subwd"] = arg_subwd
                     if bad:
-                        bad_events.append(event)
+                        bad_events.append(bad_event)
                 if len(bad_events) > 0:
                     sample_id2mismatched_ents[sample["id"]]["bad_events"] = bad_events
 
@@ -1235,7 +1277,10 @@ class Preprocessor:
                 word = sample["features"]["word_list"][wid]
                 if self.do_lower_case:
                     word = word.lower()
-                assert re.sub("##", "", subw) in word or subw == "[UNK]"
+                try:
+                    assert re.sub("##", "", subw) in word or subw == "[UNK]"
+                except Exception:
+                    print("!")
 
             for subw_id, char_sp in enumerate(feats["subword2char_span"]):
                 subw = sample["features"]["subword_list"][subw_id]
@@ -1963,7 +2008,8 @@ class Preprocessor:
                             bad_event["extr_arg"] = extr_arg_t
                             bad_event["extr_arg_c"] = extr_arg_c
                     if bad:
-                        bad_events.append(event)
+                        print("!")
+                        bad_events.append(bad_event)
 
             sample_id2mismatched_ents[sample["id"]] = {}
             if len(bad_entities) > 0:
@@ -1972,6 +2018,7 @@ class Preprocessor:
                 sample_id2mismatched_ents[sample["id"]]["bad_relations"] = bad_rels
             if len(bad_events) > 0:
                 sample_id2mismatched_ents[sample["id"]]["bad_events"] = bad_events
+
             if len(sample_id2mismatched_ents[sample["id"]]) == 0:
                 del sample_id2mismatched_ents[sample["id"]]
         return sample_id2mismatched_ents
@@ -2049,9 +2096,4 @@ class Preprocessor:
 
 
 if __name__ == "__main__":
-    bert = BertTokenizerFast.from_pretrained("../../data/pretrained_models/bert-base-uncased")
-    text = "type1; type2; type3[SEP]FSAN jkfsn [PAD]"
-    codes = bert.encode_plus(text, return_offsets_mapping=True)
-    print(bert.tokenize(text))
-    print(codes["offset_mapping"])
     pass

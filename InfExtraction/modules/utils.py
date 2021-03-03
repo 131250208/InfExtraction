@@ -53,7 +53,8 @@ def load_data(path, total_lines=None):
         if total_lines is not None:
             print("total number is set: {}".format(total_lines))
             data = data[:total_lines]
-        print("done! {} samples are loaded!".format(len(data)))
+        sample_num = len(data) if type(data) == list else 1
+        print("done! {} samples are loaded!".format(sample_num))
     except json.decoder.JSONDecodeError:
         with open(path, "r", encoding="utf-8") as file_in:
             if total_lines is not None:
