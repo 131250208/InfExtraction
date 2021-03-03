@@ -57,7 +57,7 @@ drop_neg_samples = True
 combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 5  # if no saving, set to 0
+model_bag_size = 0  # if no saving, set to 0
 
 batch_size_train = 6
 batch_size_valid = 6
@@ -78,7 +78,7 @@ data_out_dir = "../../data/res_data"
 train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
 valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
 
-data4checking = copy.deepcopy(train_data)
+data4checking = copy.deepcopy(valid_data)
 random.shuffle(data4checking)
 checking_num = 1000
 data4checking = data4checking[:checking_num]

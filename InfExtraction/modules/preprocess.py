@@ -264,19 +264,24 @@ class WhiteWordTokenizer:
 
 class ChineseWordTokenizer:
     @staticmethod
-    def tokenize(text, ent_list=None):
+    def tokenize(text, ent_list=None, span_list=None):
         '''
         :param text:
         :param ent_list: tokenize by entities first
         :return:
         '''
+        boundary_ids = set()
         if ent_list is not None and len(ent_list) > 0:
-            boundary_ids = set()
             for ent in ent_list:
                 for m in re.finditer(re.escape(ent), text):
                     boundary_ids.add(m.span()[0])
                     boundary_ids.add(m.span()[1])
 
+        if span_list is not None and len(span_list) > 0:
+            for sp in span_list:
+                boundary_ids.union(set(sp))
+
+        if len(boundary_ids) > 0:
             split_ids = [0] + sorted(list(boundary_ids)) + [len(text)]
             segs = []
             for idx, split_id in enumerate(split_ids):
@@ -303,8 +308,8 @@ class ChineseWordTokenizer:
         return word2char_span
 
     @staticmethod
-    def tokenize_plus(text, ent_list=None):
-        word_list = ChineseWordTokenizer.tokenize(text, ent_list)
+    def tokenize_plus(text, ent_list=None, span_list=None):
+        word_list = ChineseWordTokenizer.tokenize(text, ent_list, span_list)
         res = {
             "word_list": word_list,
             "word2char_span": ChineseWordTokenizer.get_tok2char_span_map(word_list),
@@ -884,26 +889,28 @@ class Preprocessor:
 
             if "open_spo_list" in sample:
                 for spo in sample["open_spo_list"]:
-                    if "subject" in spo and spo["subject"] is not None:
-                        spo["subject"]["wd_span"] = char_span2tok_span(spo["subject"]["char_span"], char2word_span)
-                        spo["subject"]["subwd_span"] = char_span2tok_span(spo["subject"]["char_span"], char2subwd_span)
-                    if "object" in spo and spo["object"] is not None:
-                        spo["object"]["wd_span"] = char_span2tok_span(spo["object"]["char_span"], char2word_span)
-                        spo["object"]["subwd_span"] = char_span2tok_span(spo["object"]["char_span"], char2subwd_span)
-                    if "predicate" in spo and spo["predicate"] is not None:
-                        spo["predicate"]["wd_span"] = char_span2tok_span(spo["predicate"]["char_span"], char2word_span)
-                        spo["predicate"]["subwd_span"] = char_span2tok_span(spo["predicate"]["char_span"], char2subwd_span)
+                    # if "subject" in spo and spo["subject"] is not None:
+                    #     spo["subject"]["wd_span"] = char_span2tok_span(spo["subject"]["char_span"], char2word_span)
+                    #     spo["subject"]["subwd_span"] = char_span2tok_span(spo["subject"]["char_span"], char2subwd_span)
+                    # if "object" in spo and spo["object"] is not None:
+                    #     spo["object"]["wd_span"] = char_span2tok_span(spo["object"]["char_span"], char2word_span)
+                    #     spo["object"]["subwd_span"] = char_span2tok_span(spo["object"]["char_span"], char2subwd_span)
+                    # if "predicate" in spo and spo["predicate"] is not None:
+                    #     spo["predicate"]["wd_span"] = char_span2tok_span(spo["predicate"]["char_span"], char2word_span)
+                    #     spo["predicate"]["subwd_span"] = char_span2tok_span(spo["predicate"]["char_span"], char2subwd_span)
 
-                    for arg in spo["other_args"]:
+                    for arg in spo:
                         arg["wd_span"] = char_span2tok_span(arg["char_span"], char2word_span)
                         arg["subwd_span"] = char_span2tok_span(arg["char_span"], char2subwd_span)
         return data
 
     @staticmethod
-    def search_char_spans_fr_txt(target_seg, text, language):
+    def search_char_spans_fr_txt(target_seg, text, language, merge_sps=True):
         if target_seg == "" or target_seg is None:
             return [0, 0], ""
+
         add_text = re.sub("\S", "_", target_seg)
+
         # if continuous
         if language == "ch" and target_seg in text:
             span = [*re.search(re.escape(target_seg), text).span()]
@@ -915,7 +922,7 @@ class Preprocessor:
         # discontinuous but in the same order
         words = target_seg.split(" ") if language == "en" else list(target_seg)
         words = [re.escape(w) for w in words]
-        pattern = "(" + ").*(".join(words) + ")"
+        pattern = "(" + ").*?(".join(words) + ")"
 
         se = None
         try:
@@ -928,8 +935,11 @@ class Preprocessor:
 
         if se is not None:  # same order but dicontinuous
             spans = []
-            for i in range(len(words)):
-                spans.extend([*se.span(i + 1)])
+            # for i in range(len(words)):
+            #     spans.extend([*se.span(i + 1)])
+            for sp in list(se.regs)[1:]:
+                spans.extend([*sp])
+
         else:  # different orders, or some words are not in the original text
             sbwd_list = []
             if language == "ch":
@@ -981,7 +991,7 @@ class Preprocessor:
                 #     spans.extend([spans[-1], spans[-1] + 1])  # whitespace
 
         # merge
-        new_spans = utils.merge_spans(spans, language, "char")
+        new_spans = utils.merge_spans(spans) if merge_sps else spans
         # seg_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(new_spans, text, language)
         # try:
         #     assert seg_extr == target_seg
@@ -1012,10 +1022,10 @@ class Preprocessor:
             if tk_sp[-1] == 0:
                 return tok_span
             char_span_list = tok2char_span[tk_sp[0]:tk_sp[1]]
-            try:
-                char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
-            except Exception:
-                print("!")
+            # try:
+            char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
+            # except Exception:
+            #     print("!")
         return char_span
 
     @staticmethod
@@ -1254,10 +1264,12 @@ class Preprocessor:
         event_type_set = set()
         argument_type_set = set()
 
-        prefix_set = set()
-        suffix_set = set()
-        predefined_rel_set = set()
-        other_arg_set = set()
+        # # oie
+        # prefix_set = set()
+        # suffix_set = set()
+        # predefined_rel_set = set()
+        # other_arg_set = set()
+        oie_arg_type_set = set()
 
         max_word_seq_length, max_subword_seq_length = 0, 0
         ent_exist, rel_exist, event_exist, oie_exist = False, False, False, False
@@ -1290,19 +1302,24 @@ class Preprocessor:
                     for arg in event["argument_list"]:
                         argument_type_set.add(arg["type"])
 
+            # if "open_spo_list" in sample:
+            #     oie_exist = True
+            #     for spo in sample["open_spo_list"]:
+            #         predicate = spo["predicate"]
+            #         if predicate["predefined"]:
+            #             predefined_rel_set.add(predicate["complete"])
+            #         if predicate["prefix"] != "":
+            #             prefix_set.add(predicate["prefix"])
+            #         if predicate["suffix"] != "":
+            #             suffix_set.add(predicate["suffix"])
+            #
+            #         for arg in spo["other_args"]:
+            #             other_arg_set.add(arg["type"])
             if "open_spo_list" in sample:
                 oie_exist = True
                 for spo in sample["open_spo_list"]:
-                    predicate = spo["predicate"]
-                    if predicate["predefined"]:
-                        predefined_rel_set.add(predicate["complete"])
-                    if predicate["prefix"] != "":
-                        prefix_set.add(predicate["prefix"])
-                    if predicate["suffix"] != "":
-                        suffix_set.add(predicate["suffix"])
-
-                    for arg in spo["other_args"]:
-                        other_arg_set.add(arg["type"])
+                    for arg in spo:
+                        oie_arg_type_set.add(arg["type"])
 
             # character
             char_set |= set(sample["text"])
@@ -1343,10 +1360,11 @@ class Preprocessor:
             data_statistics["event_type_num"] = len(event_type_set)
             data_statistics["arg_type_num"] = len(argument_type_set)
         if oie_exist:
-            data_statistics["predefined_rel_num"] = len(predefined_rel_set)
-            data_statistics["prefix_num"] = len(prefix_set)
-            data_statistics["suffix_num"] = len(suffix_set)
-            data_statistics["other_arg_num"] = len(other_arg_set)
+            # data_statistics["predefined_rel_num"] = len(predefined_rel_set)
+            # data_statistics["prefix_num"] = len(prefix_set)
+            # data_statistics["suffix_num"] = len(suffix_set)
+            # data_statistics["other_arg_num"] = len(other_arg_set)
+            data_statistics["oie_arg_type_num"] = len(oie_arg_type_set)
 
         if ent_exist:
             data_statistics["ent_types"] = list(ent_type_set)
@@ -1356,10 +1374,11 @@ class Preprocessor:
             data_statistics["event_types"] = list(event_type_set)
             data_statistics["arg_types"] = list(argument_type_set)
         if oie_exist:
-            data_statistics["predefined_rel_types"] = list(predefined_rel_set)
-            data_statistics["prefix_types"] = list(prefix_set)
-            data_statistics["suffix_types"] = list(suffix_set)
-            data_statistics["other_args"] = list(other_arg_set)
+            # data_statistics["predefined_rel_types"] = list(predefined_rel_set)
+            # data_statistics["prefix_types"] = list(prefix_set)
+            # data_statistics["suffix_types"] = list(suffix_set)
+            # data_statistics["other_args"] = list(other_arg_set)
+            data_statistics["oie_arg_types"] = list(oie_arg_type_set)
 
         dicts = {
             "char2id": char2id,
@@ -1459,10 +1478,12 @@ class Preprocessor:
             if "open_spo_list" in sample:
                 tok_key = "subwd_span" if token_level == "subword" else "wd_span"
                 for spo in sample["open_spo_list"]:
-                    spo["subject"]["tok_span"] = spo["subject"][tok_key]
-                    spo["object"]["tok_span"] = spo["object"][tok_key]
-                    spo["predicate"]["tok_span"] = spo["predicate"][tok_key]
-                    for arg in spo["other_args"]:
+                    # spo["subject"]["tok_span"] = spo["subject"][tok_key]
+                    # spo["object"]["tok_span"] = spo["object"][tok_key]
+                    # spo["predicate"]["tok_span"] = spo["predicate"][tok_key]
+                    # for arg in spo["other_args"]:
+                    #     arg["tok_span"] = arg[tok_key]
+                    for arg in spo:
                         arg["tok_span"] = arg[tok_key]
         return data
 
@@ -1521,25 +1542,36 @@ class Preprocessor:
         if "open_spo_list" in sample:
             sub_open_spo_list = []
             for spo in sample["open_spo_list"]:
-                if "subject" in spo and spo["subject"] is not None and \
-                        not (spo["subject"]["tok_span"][0] >= start_ind and
-                             spo["subject"]["tok_span"][-1] <= end_ind):
-                    continue
-                if "object" in spo and spo["object"] is not None and \
-                        not (spo["object"]["tok_span"][0] >= start_ind and
-                             spo["object"]["tok_span"][-1] <= end_ind):
-                    continue
-                if "predicate" in spo and spo["predicate"] is not None and \
-                        not (spo["predicate"]["tok_span"][0] >= start_ind and
-                             spo["predicate"]["tok_span"][-1] <= end_ind):
-                    continue
-                spo_cp = copy.deepcopy(spo)
-                new_other_args = []
-                for arg in spo_cp["other_args"]:
-                    if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
-                        new_other_args.append(arg)
-                spo_cp["other_args"] = new_other_args
-                sub_open_spo_list.append(spo_cp)
+                # if "subject" in spo and spo["subject"] is not None and \
+                #         not (spo["subject"]["tok_span"][0] >= start_ind and
+                #              spo["subject"]["tok_span"][-1] <= end_ind):
+                #     continue
+                # if "object" in spo and spo["object"] is not None and \
+                #         not (spo["object"]["tok_span"][0] >= start_ind and
+                #              spo["object"]["tok_span"][-1] <= end_ind):
+                #     continue
+                # if "predicate" in spo and spo["predicate"] is not None and \
+                #         not (spo["predicate"]["tok_span"][0] >= start_ind and
+                #              spo["predicate"]["tok_span"][-1] <= end_ind):
+                #     continue
+                # spo_cp = copy.deepcopy(spo)
+                # new_other_args = []
+                # for arg in spo_cp["other_args"]:
+                #     if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
+                #         new_other_args.append(arg)
+                # spo_cp["other_args"] = new_other_args
+                #
+                # sub_open_spo_list.append(spo_cp)
+                new_spo = []
+                bad_spo = False
+                for arg in spo:
+                    if not (start_ind <= arg["tok_span"][0] < arg["tok_span"][-1] <= end_ind) and \
+                            arg["type"] in {"predicate", "object", "subject"}:
+                        bad_spo = True
+                        break
+                    new_spo.append(arg)
+                if not bad_spo:
+                    sub_open_spo_list.append(new_spo)
             new_sample["open_spo_list"] = sub_open_spo_list
         return new_sample
 
@@ -1635,7 +1667,7 @@ class Preprocessor:
                                     and obj_tok_span[0] >= start_ind and obj_tok_span[-1] <= end_ind:
                                 rel_cp = copy.deepcopy(rel)
                                 sub_rel_list.append(rel_cp)
-                    new_sample["relation_list"] = sub_rel_list
+                        new_sample["relation_list"] = sub_rel_list
 
                     # entity
                     sub_ent_list = []
@@ -1646,7 +1678,7 @@ class Preprocessor:
                             if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
                                 ent_cp = copy.deepcopy(ent)
                                 sub_ent_list.append(ent_cp)
-                    new_sample["entity_list"] = sub_ent_list
+                        new_sample["entity_list"] = sub_ent_list
 
                     # event
                     sub_event_list = []
@@ -1664,32 +1696,42 @@ class Preprocessor:
                                     new_arg_list.append(arg_cp)
                             event_cp["argument_list"] = new_arg_list
                             sub_event_list.append(event_cp)
-                    new_sample["event_list"] = sub_event_list
+                        new_sample["event_list"] = sub_event_list
 
                     # open ie
                     sub_open_spo_list = []
                     if "open_spo_list" in sample:
                         for spo in sample["open_spo_list"]:
-                            if "subject" in spo and spo["subject"] is not None and \
-                                    not (spo["subject"]["tok_span"][0] >= start_ind and
-                                    spo["subject"]["tok_span"][-1] <= end_ind):
-                                continue
-                            if "object" in spo and spo["object"] is not None and \
-                                    not (spo["object"]["tok_span"][0] >= start_ind and
-                                    spo["object"]["tok_span"][-1] <= end_ind):
-                                continue
-                            if "predicate" in spo and spo["predicate"] is not None and \
-                                    not (spo["predicate"]["tok_span"][0] >= start_ind and
-                                    spo["predicate"]["tok_span"][-1] <= end_ind):
-                                continue
-                            spo_cp = copy.deepcopy(spo)
-                            new_other_args = []
-                            for arg in spo_cp["other_args"]:
-                                if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
-                                    new_other_args.append(arg)
-                            spo_cp["other_args"] = new_other_args
-                            sub_open_spo_list.append(spo_cp)
-                    new_sample["open_spo_list"] = sub_open_spo_list
+                        #     if "subject" in spo and spo["subject"] is not None and \
+                        #             not (spo["subject"]["tok_span"][0] >= start_ind and
+                        #             spo["subject"]["tok_span"][-1] <= end_ind):
+                        #         continue
+                        #     if "object" in spo and spo["object"] is not None and \
+                        #             not (spo["object"]["tok_span"][0] >= start_ind and
+                        #             spo["object"]["tok_span"][-1] <= end_ind):
+                        #         continue
+                        #     if "predicate" in spo and spo["predicate"] is not None and \
+                        #             not (spo["predicate"]["tok_span"][0] >= start_ind and
+                        #             spo["predicate"]["tok_span"][-1] <= end_ind):
+                        #         continue
+                        #     spo_cp = copy.deepcopy(spo)
+                        #     new_other_args = []
+                        #     for arg in spo_cp["other_args"]:
+                        #         if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
+                        #             new_other_args.append(arg)
+                        #     spo_cp["other_args"] = new_other_args
+                        #     sub_open_spo_list.append(spo_cp)
+                            new_spo = []
+                            bad_spo = False
+                            for arg in spo:
+                                if not (start_ind <= arg["tok_span"][0] < arg["tok_span"][-1] <= end_ind) and \
+                                        arg["type"] in {"predicate", "object", "subject"}:
+                                    bad_spo = True
+                                    break
+                                new_spo.append(arg)
+                            if not bad_spo:
+                                sub_open_spo_list.append(new_spo)
+                        new_sample["open_spo_list"] = sub_open_spo_list
 
                     # do not introduce excessive negative samples
                     if drop_neg_samples and data_type == "train":

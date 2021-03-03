@@ -43,7 +43,7 @@ test_data = trans_daixiang_data(test_path)
 ### preprocess
 Do this part under `InfExtraction/workflows`
 1. Set settings_preprocess.py as below:
-```
+```python
 data_in_dir = "../../data/ori_data/share_14"
 data_out_dir = "../../data/normal_data/share_14_clinic"
 
