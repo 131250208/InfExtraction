@@ -1,5 +1,5 @@
 import os
-device_num = 0
+device_num = 1 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -38,18 +38,18 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "share_14_clinic"
+exp_name = "cadec4yelp"
 language = "en"
 stage = "train"  # inference
 task_type = "re+ner"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "bert-base-cased"
+pretrained_model_name = "yelpbert"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = True
+use_wandb = False
 note = ""
-epochs = 1000
+epochs = 300
 lr = 1e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
@@ -57,11 +57,11 @@ drop_neg_samples = False
 combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 10
+model_bag_size = 15
 
 batch_size_train = 12
 batch_size_valid = 12
-batch_size_test = 12
+batch_size_test = 12 
 
 max_seq_len_train = 64
 max_seq_len_valid = 100
@@ -84,6 +84,7 @@ subwd_encoder = True
 use_attns4rel = True  # use only if subwd_encoder (bert) is True
 flair = False
 elmo = False
+top_attn = False
 
 # data
 data_in_dir = "../../data/normal_data"
@@ -185,10 +186,14 @@ trainer_config = {
 model_state_dict_path = None
 
 # for test
-model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
-target_run_ids = ["0kQIoiOs", ]
+model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
+target_run_ids = ["eyu8cm6x", ]
 top_k_models = 1
+<<<<<<< HEAD
+metric4testing = "ent_exact_offset_f1"
+=======
 metric4testing = "trigger_class_f1"
+>>>>>>> 4e374dced6562c509119c1d0a9de4b731fb26f3c
 main_test_set_name = "test_data.json"
 cal_scores = True  # set False if the test sets are not annotated
 
@@ -239,7 +244,7 @@ flair_config = {
 
 elmo_config = {
     "model": "5.5B",
-    "finetune": True,
+    "finetune": False,
     "dropout": 0.1,
 } if elmo else None
 
@@ -271,6 +276,13 @@ handshaking_kernel_config = {
     "rel_shaking_type": "cln",
 }
 
+top_multi_attn_config = {
+    "num_heads": 3,
+    "layers": 1,
+    "pos_emb_dim": 64,
+    "fusion_dim": 768,
+} if top_attn else None
+
 # model settings
 model_settings = {
     "pos_tag_emb_config": pos_tag_emb_config,
@@ -281,6 +293,7 @@ model_settings = {
     "flair_config": flair_config,
     "elmo_config": elmo_config,
     "dep_config": dep_config,
+    "top_multi_attn_config": top_multi_attn_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
@@ -291,6 +304,7 @@ model_settings = {
     "loss_func": "mce_loss",
     "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
+    "loss_func": "bce_loss",
     "pred_threshold": 0.,
 }
 
