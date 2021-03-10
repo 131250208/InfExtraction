@@ -126,10 +126,12 @@ class MetricsCalculator:
         event_type_set = set()
 
         for event in event_list:
+            event_type = event["event_type"]
+            event_type_set.add(event_type)
+
             # trigger-based metrics
             trigger_offset = None
             if "trigger" in event:
-                event_type = event["trigger_type"]
                 trigger_offset = event["trigger_tok_span"]
                 trigger_iden_set.add(str(trigger_offset))
                 trigger_class_set.add(str([event_type] + trigger_offset))
@@ -137,7 +139,7 @@ class MetricsCalculator:
             for arg in event["argument_list"]:
                 argument_offset = arg["tok_span"]
                 argument_role = arg["type"]
-                event_type = arg["event_type"]
+                # event_type = arg["event_type"]
 
                 arg_soft_iden_set.add(str([event_type] + argument_offset))
                 arg_soft_class_set.add(str([event_type] + argument_offset + [argument_role]))
@@ -149,27 +151,26 @@ class MetricsCalculator:
             # trigger-free metrics
             arg_list = copy.deepcopy(event["argument_list"])
             if "trigger" in event and event["trigger"] != "":
-                # take trigger as a general argument
+                # take trigger as a normal argument
                 arg_list.append({
                     "text": event["trigger"],
                     "tok_span": event["trigger_tok_span"],
                     "char_span": event["trigger_char_span"],
                     "type": "Trigger",  # argument role
-                    "event_type": event["trigger_type"],
+                    # "event_type": event["trigger_type"],
                 })
 
             for arg_i in arg_list:
                 for arg_j in arg_list:
-                    arg_i_event_type = arg_i["event_type"]
+                    # arg_i_event_type = arg_i["event_type"]
+                    arg_i_event_type = event_type
                     arg_i_offset = arg_i["tok_span"]
                     arg_i_role = arg_i["type"]
 
-                    arg_j_event_type = arg_j["event_type"]
+                    # arg_j_event_type = arg_j["event_type"]
+                    arg_j_event_type = event_type
                     arg_j_offset = arg_j["tok_span"]
                     arg_j_role = arg_j["type"]
-
-                    event_type_set.add(arg_i_event_type)
-                    event_type_set.add(arg_j_event_type)
 
                     link_iden_mark = str([arg_i_event_type] + [arg_j_event_type] + arg_i_offset + arg_j_offset)
                     link_class_mark = str([arg_i_event_type] + [arg_j_event_type] +
@@ -192,6 +193,10 @@ class MetricsCalculator:
 
     @staticmethod
     def get_partial_ent(ent_text):
+        '''
+        :param ent_text:
+        :return: the head word of the given text
+        '''
         ch_pattern = "[\u4e00-\u9fa5\s]+"
         try:
             part_ent = ent_text[0] if re.match(ch_pattern, ent_text[0]) is not None else ent_text.split()[0]

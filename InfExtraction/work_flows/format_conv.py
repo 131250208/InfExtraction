@@ -585,7 +585,7 @@ def trans2dai_dataset():
     trans2daixiang_subwd(valid_data_path, valid_out_path)
 
 
-def preprocess_saoke(data_path = "../../data/ori_data/saoke_bk/saoke.json"):
+def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
     data = load_data(data_path)
     # fix data
     subj_fix_map = {
@@ -1081,9 +1081,153 @@ def trans_saoke():
     valid_data = new_data[train_num:train_num + valid_num]
     test_data = new_data[-test_num:]
 
-    save_as_json_lines(train_data, "../../data/ori_data/saoke/train_data.json")
-    save_as_json_lines(valid_data, "../../data/ori_data/saoke/valid_data.json")
-    save_as_json_lines(test_data, "../../data/ori_data/saoke/test_data.json")
+    return train_data, valid_data, test_data
+
+def trans_casie():
+    from glob import glob
+    data = []
+    for file_path in glob("../../data/ori_data/casie_bk/*.json"):
+        sample = load_data(file_path)
+        file_name = file_path.split("/")[-1]
+        idx = re.search("\d+", file_name).group()
+        sample["id"] = idx
+        data.append(sample)
+
+    new_data = []
+    for sample in data:
+        if "cyberevent" not in sample:
+            continue
+        text = sample["content"]
+        new_sample = {
+            "id": sample["id"],
+            "text": text,
+            "event_list": []
+        }
+
+        span2text = {}
+        char_span_list = []
+        for hp in sample["cyberevent"]["hopper"]:
+            for event in hp["events"]:
+                trigger = event["nugget"]["text"]
+                trigger_char_span = [event["nugget"]["startOffset"], event["nugget"]["endOffset"]]
+                span2text[str(trigger_char_span)] = trigger
+
+                new_event = {
+                    "trigger": trigger,
+                    "trigger_char_span": trigger_char_span,
+                    "realis": event["realis"],
+                    "trigger_type": "{}.{}".format(event["type"], event["subtype"]),
+                    "argument_list": [],
+                }
+                if "argument" in event:
+                    for arg in event["argument"]:
+                        arg_char_span = [arg["startOffset"], arg["endOffset"]]
+                        arg_txt = arg["text"]
+                        span2text[str(arg_char_span)] = arg_txt
+
+                        new_event["argument_list"].append({
+                            "text": arg_txt,
+                            "char_span": arg_char_span,
+                            "type": arg["role"]["type"],
+                        })
+                new_sample["event_list"].append(new_event)
+        # check spans
+        span2text_ = dict(sorted(span2text.items(), key=lambda x: int(re.search("\d+", x[0]).group())))
+        for sp_str, txt in span2text_.items():
+            sp_se = re.search("\[(\d+), (\d+)\]", sp_str)
+            sp = [int(sp_se.group(1)), int(sp_se.group(2))]
+            char_span_list.append(sp)
+
+            extr_txt = Preprocessor.extract_ent_fr_txt_by_char_sp(sp, text)
+            try:
+                assert extr_txt == txt
+            except Exception:
+                print(sample["sourcefile"])
+                print(extr_txt)
+                print(txt)
+                print("===========================")
+
+        # word2char_span and word list
+        tok_res = WhiteWordTokenizer.tokenize_plus(text, span_list=char_span_list)
+        new_sample["word_list"] = tok_res["word_list"]
+        new_sample["word2char_span"] = tok_res["word2char_span"]
+        new_data.append(new_sample)
+
+    random.shuffle(new_data)
+    test_data = new_data[-100:]
+    save_as_json_lines(test_data, "../../data/ori_data/casie/test_data.json")
+
+    valid_num = int(900 / 8) - 1
+    for start_idx in range(0, 900, valid_num):
+        end_idx = start_idx + valid_num
+        if end_idx > 900:
+            break
+        valid_data = new_data[start_idx:end_idx]
+        train_data = new_data[:start_idx] + new_data[end_idx:-100]
+        save_as_json_lines(train_data, "../../data/ori_data/casie/train_data_{}.json".format(start_idx // valid_num))
+        save_as_json_lines(valid_data, "../../data/ori_data/casie/valid_data_{}.json".format(start_idx // valid_num))
+        print("{}, {}".format(len(train_data), len(valid_data)))
+
 
 if __name__ == "__main__":
-    pass
+    data_dir = "../../data/ori_data/chfinann_bk"
+    save_dir = "../../data/ori_data/chfinann"
+    train_data = load_data(os.path.join(data_dir, "train.json"))
+    val_data = load_data(os.path.join(data_dir, "dev.json"))
+    test_data = load_data(os.path.join(data_dir, "test.json"))
+
+    def trans_chfinann(data):
+        new_data = []
+        for sample in data:
+            text = " ".join(sample[1]["sentences"])
+
+            # mention 2 spans
+            all_char_span_list = []
+            offset = [0, ]
+            for sent in sample[1]["sentences"]:
+                offset.append(offset[-1] + len(sent) + 1)
+            mention2spans = {m: [[offset[sp[0]] + sp[1], offset[sp[0]] + sp[2]] for sp in sent_spans] for m, sent_spans in sample[1]["ann_mspan2dranges"].items()}
+            for m, char_spans in mention2spans.items():
+                all_char_span_list.extend(char_spans)
+                for sp in char_spans:
+                    assert m == text[sp[0]:sp[1]]
+
+            event_list = []
+            for event in sample[1]["recguid_eventname_eventdict_list"]:
+                event_type = event[1]
+                arg_list = []
+                for arg_type, mention in event[2].items():
+                    if mention is None:
+                        continue
+                    for m_span in mention2spans[mention]:
+                        arg_list.append({
+                            "text": mention,
+                            "char_span": m_span,
+                            "type": arg_type,
+                        })
+                event_list.append({
+                    "event_type": event_type,
+                    "argument_list": arg_list,
+                })
+
+            tok_res = ChineseWordTokenizer.tokenize_plus(text, span_list=all_char_span_list)
+            new_sample = {
+                "id": sample[0],
+                "text": text,
+                **tok_res,
+                "event_list": event_list,
+            }
+            new_data.append(new_sample)
+        return new_data
+
+    new_train_data = trans_chfinann(train_data)
+    new_valid_data = trans_chfinann(val_data)
+    new_test_data = trans_chfinann(test_data)
+
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    save_as_json_lines(new_train_data, os.path.join(save_dir, "train_data.json"))
+    save_as_json_lines(new_valid_data, os.path.join(save_dir, "valid_data.json"))
+    save_as_json_lines(new_test_data, os.path.join(save_dir, "test_data.json"))
+
+

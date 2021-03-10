@@ -633,14 +633,20 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
             }
             ent_list.append(entity)
 
-        cand_ent_list4rel = []
+        # cand_ent_list4rel = []
+        rel2candidate_ents = {
+            "DEFAULT": []
+        }
         for ent in ent_list:
-            if self.classify_entities_by_relation and "REL:" in ent["type"]:
-                new_ent = copy.deepcopy(ent)
-                new_ent["type"] = re.sub("REL:", "", new_ent["type"])
-                cand_ent_list4rel.append(new_ent)
+            if self.classify_entities_by_relation:
+                if "REL:" in ent["type"]:
+                    new_ent = copy.deepcopy(ent)
+                    rel = re.sub("REL:", "", new_ent["type"])
+                    if rel not in rel2candidate_ents:
+                        rel2candidate_ents[rel] = []
+                    rel2candidate_ents[rel].append(new_ent)
             else:
-                cand_ent_list4rel.append(ent)
+                rel2candidate_ents["DEFAULT"].append(ent)
 
         rel2link_type_map = {}
         for pt in rel_points:
@@ -654,6 +660,8 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
             rel2link_type_map[rel][index_pair].add(link_type)
 
         for rel, link_type_map in rel2link_type_map.items():
+            cand_ent_list4rel = rel2candidate_ents[rel] \
+                if self.classify_entities_by_relation else rel2candidate_ents["DEFAULT"]
             for subj in cand_ent_list4rel:
                 for obj in cand_ent_list4rel:
                     h2h_ids = "{},{}".format(subj["tok_span"][0], obj["tok_span"][0])
@@ -684,6 +692,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                         })
 
         pred_sample = copy.deepcopy(sample)
+
         # filter extra relations
         pred_sample["relation_list"] = Preprocessor.unique_list(
             [rel for rel in rel_list if "EXT:" not in rel["predicate"]])
@@ -703,7 +712,7 @@ def create_rebased_ee_tagger(base_class):
             self.event_type2arg_rols = {}
             for sample in data:
                 for event in sample["event_list"]:
-                    event_type = event["trigger_type"]
+                    event_type = event["event_type"]
                     for arg in event["argument_list"]:
                         if event_type not in self.event_type2arg_rols:
                             self.event_type2arg_rols[event_type] = set()
@@ -723,7 +732,7 @@ def create_rebased_ee_tagger(base_class):
                 for event in sample["event_list"]:
                     fin_ent_list.append({
                         "text": event["trigger"],
-                        "type": "EE:{}{}{}".format("Trigger", separator, event["trigger_type"]),
+                        "type": "EE:{}{}{}".format("Trigger", separator, event["event_type"]),
                         "char_span": event["trigger_char_span"],
                         "tok_span": event["trigger_tok_span"],
                     })
@@ -742,13 +751,15 @@ def create_rebased_ee_tagger(base_class):
                             "object": event["trigger"],
                             "obj_char_span": event["trigger_char_span"],
                             "obj_tok_span": event["trigger_tok_span"],
-                            # "obj_type": "EE:{}{}{}".format("Trigger", separator, event["trigger_type"]),
-                            "predicate": "EE:{}{}{}".format(arg["type"], separator, event["trigger_type"]),
+                            # "obj_type": "EE:{}{}{}".format("Trigger", separator, event["event_type"]),
+                            "predicate": "EE:{}{}{}".format(arg["type"], separator, event["event_type"]),
                         })
                 sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
+
                 # extend original entity list
                 if "entity_list" in sample:
                     fin_ent_list.extend(sample["entity_list"])
+
                 sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
             new_data = super().additional_preprocess(new_data, data_type, **kwargs)
             return new_data
@@ -760,6 +771,8 @@ def create_rebased_ee_tagger(base_class):
             pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
             pred_sample["relation_list"] = [rel for rel in pred_sample["relation_list"] if
                                             "EE:" not in rel["predicate"]]
+            # del pred_sample["entity_list"]
+            # del pred_sample["relation_list"]
             return pred_sample
 
         def _trans2ee(self, rel_list, ent_list):
@@ -842,7 +855,7 @@ def create_rebased_ee_tagger(base_class):
                 trigger_offset2event2arguments[trigger_offset_str][et].append({
                     "text": rel["subject"],
                     "type": argument_role,
-                    "event_type": et,
+                    # "event_type": et,
                     "char_span": rel["subj_char_span"],
                     "tok_span": rel["subj_tok_span"],
                 })
@@ -866,7 +879,7 @@ def create_rebased_ee_tagger(base_class):
                                 trigger_offset2event2arguments[trig_offset_str][et].append({
                                     "text": ent["text"],
                                     "type": arg_role,
-                                    "event_type": et,
+                                    # "event_type": et,
                                     "char_span": ent["char_span"],
                                     "tok_span": ent["tok_span"],
                                 })
@@ -885,7 +898,7 @@ def create_rebased_ee_tagger(base_class):
                         "trigger": trigger_offset2trigger_text[trigger_offset_str],
                         "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
                         "trigger_tok_span": [int(trigger_offset[0]), int(trigger_offset[1])],
-                        "trigger_type": et,
+                        "event_type": et,
                         "argument_list": Preprocessor.unique_list(arguments),
                     }
                     event_list.append(event)
@@ -901,7 +914,7 @@ def create_rebased_tfboys_tagger(base_class):
             self.event_type2arg_rols = {}
             for sample in data:
                 for event in sample["event_list"]:
-                    event_type = event["trigger_type"]
+                    event_type = event["event_type"]
                     for arg in event["argument_list"]:
                         if event_type not in self.event_type2arg_rols:
                             self.event_type2arg_rols[event_type] = set()
@@ -924,7 +937,7 @@ def create_rebased_tfboys_tagger(base_class):
                         "tok_span": event["trigger_tok_span"],
                         "text": event["trigger"],
                     }
-                    event_type = event["trigger_type"]
+                    event_type = event["event_type"]
                     arg_list = [pseudo_arg] + event["argument_list"]
                     for i, arg_i in enumerate(arg_list):
                         fin_ent_list.append({
@@ -1028,7 +1041,7 @@ def create_rebased_tfboys_tagger(base_class):
                             if role == "Trigger":
                                 event["trigger"] = arg_text
                                 event["trigger_tok_span"] = tok_span
-                                event["trigger_type"] = event_type
+                                event["event_type"] = event_type
                                 event["trigger_char_span"] = char_span
                             else:
                                 arguments.append({
@@ -1036,7 +1049,7 @@ def create_rebased_tfboys_tagger(base_class):
                                     "type": role,
                                     "char_span": char_span,
                                     "tok_span": tok_span,
-                                    "event_type": event_type,
+                                    # "event_type": event_type,
                                 })
                     event["argument_list"] = arguments
                     event_list.append(event)
@@ -1885,10 +1898,10 @@ class Tagger4TFBoys(Tagger):
             self.add_h2t_n_t2h_links = True
         for sample in data:
             for event in sample["event_list"]:
-                node_tag_set.add(event["trigger_type"])
+                node_tag_set.add(event["event_type"])
                 edge_tag_set.union(
-                    {self.separator.join([event["trigger_type"], link]) for link in self.edge_link_types})
-                role_tag_set.add(self.separator.join(["Trigger", event["trigger_type"]]))
+                    {self.separator.join([event["event_type"], link]) for link in self.edge_link_types})
+                role_tag_set.add(self.separator.join(["Trigger", event["event_type"]]))
                 for arg in event["argument_list"]:
                     role_tag_set.add(arg["type"])
 
@@ -1909,7 +1922,7 @@ class Tagger4TFBoys(Tagger):
         node_matrix_points, edge_matrix_points, role_matrix_points = [], [], []
 
         for event in sample["event_list"]:
-            event_type = event["trigger_type"]
+            event_type = event["event_type"]
             pseudo_arg = {
                 "type": self.separator.join(["Trigger", event_type]),
                 "tok_span": event["trigger_tok_span"],

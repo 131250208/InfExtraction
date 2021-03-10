@@ -277,7 +277,7 @@ class WhiteWordTokenizer:
     def get_tok2char_span_map(tokens, text=None):
         '''
         :param tokens:
-        :param text: must set if tokens are not separated by whitespaces, e.g. text = "hello.", tokens = ["hello", "."]
+        :param text: must be given if tokens are not all separated by whitespaces, e.g. text = "hello.", tokens = ["hello", "."]
         :return:
         '''
         tok2char_span = []
@@ -579,8 +579,6 @@ class Preprocessor:
                     normal_event["trigger_start_index"] += len(normal_event["trigger"]) - len(clean_tri)
                     normal_event["trigger"] = clean_tri.rstrip()
 
-                    normal_event["trigger_type"] = normal_event["event_type"]
-                    del normal_event["event_type"]
                     normal_event["trigger_char_span"] = [normal_event["trigger_start_index"],
                                                          normal_event["trigger_start_index"] + len(normal_event["trigger"])]
                     char_span = normal_event["trigger_char_span"]
@@ -602,7 +600,6 @@ class Preprocessor:
                             "text": arg["argument"],
                             "type": arg["role"],
                             "char_span": char_span,
-                            "event_type": normal_event["trigger_type"],
                         })
                     normal_event["argument_list"] = normal_arg_list
                     del normal_event["arguments"]
@@ -753,11 +750,6 @@ class Preprocessor:
     def pre_check_data_annotation(data, language=" "):
         def check_ent_span(entity_list):
             for ent in entity_list:
-                # segs = []
-                # for idx in range(0, len(ent_char_span), 2):
-                #     ch_sp = [ent_char_span[idx], ent_char_span[idx + 1]]
-                #     segs.append(text[ch_sp[0]:ch_sp[1]])
-                # sep = " " if language == "en" else ""
                 ent_ext_fr_span = Preprocessor.extract_ent_fr_txt_by_char_sp(ent["char_span"], text, language)
                 if ent["text"] != ent_ext_fr_span:
                     raise Exception("char span error: ent_text: {} != ent_ext_fr_span: {}".format(ent["text"],
@@ -796,10 +788,11 @@ class Preprocessor:
             if "event_list" in sample:
                 entities_fr_event = []
                 for event in sample["event_list"]:
-                    entities_fr_event.append({
-                        "text": event["trigger"],
-                        "char_span": [*event["trigger_char_span"]]
-                    })
+                    if "trigger" in event:
+                        entities_fr_event.append({
+                            "text": event["trigger"],
+                            "char_span": [*event["trigger_char_span"]]
+                        })
                     for arg in event["argument_list"]:
                         entities_fr_event.append({
                             "text": arg["text"],
@@ -807,13 +800,6 @@ class Preprocessor:
                         })
                 entities_fr_event = Preprocessor.unique_list(entities_fr_event)
                 check_ent_span(entities_fr_event)
-
-                # # comment because arguments and triggers can not in the entity list
-                # entities_mem = {str({"text": ent["text"], "char_span": ent["char_span"]})
-                #                 for ent in sample["entity_list"]}
-                # for ent in entities_fr_event:
-                #     if str(ent) not in entities_mem:
-                #         raise Exception("entity list misses some entities in event list")
 
     def add_char_span(self, dataset, ignore_subword_match=True):
         '''
@@ -830,11 +816,6 @@ class Preprocessor:
             if "entity_list" in sample:
                 entities.extend([ent["text"] for ent in sample["entity_list"]])
             entities = Preprocessor.unique_list(entities)
-            # if "event_list" in sample:
-            #     for event in sample["event_list"]:
-            #         entities.append(event["trigger"])
-            #         entities.extend([arg["text"] for arg in event["argument_list"]])
-
             ent2char_spans = self._get_ent2char_spans(sample["text"], entities,
                                                       ignore_subword_match=ignore_subword_match)
 
@@ -877,7 +858,7 @@ class Preprocessor:
             if "event_list" in sample:
                 miss_span = False
                 for event in sample["event_list"]:
-                    if "trigger_char_span" not in event:
+                    if "trigger" in event and "trigger_char_span" not in event:
                         miss_span = True
                     for arg in event["argument_list"]:
                         if "char_span" not in arg:
@@ -923,8 +904,9 @@ class Preprocessor:
 
             if "event_list" in sample:
                 for event in sample["event_list"]:
-                    event["trigger_wd_span"] = char_span2tok_span(event["trigger_char_span"], char2word_span)
-                    event["trigger_subwd_span"] = char_span2tok_span(event["trigger_char_span"], char2subwd_span)
+                    if "trigger" in event:
+                        event["trigger_wd_span"] = char_span2tok_span(event["trigger_char_span"], char2word_span)
+                        event["trigger_subwd_span"] = char_span2tok_span(event["trigger_char_span"], char2subwd_span)
                     for arg in event["argument_list"]:
                         arg["wd_span"] = char_span2tok_span(arg["char_span"], char2word_span)
                         arg["subwd_span"] = char_span2tok_span(arg["char_span"], char2subwd_span)
@@ -1143,15 +1125,17 @@ class Preprocessor:
                 for event in sample["event_list"]:
                     bad_event = copy.deepcopy(event)
                     bad = False
-                    trigger_wd_span = event["trigger_wd_span"]
-                    trigger_subwd_span = event["trigger_subwd_span"]
-                    trigger_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_wd_span, word2char_span, text, language)
-                    trigger_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_subwd_span, subword2char_span, text, language)
 
-                    if not (trigger_wd == trigger_subwd == event["trigger"]):
-                        bad = True
-                        bad_event["extr_trigger_wd"] = trigger_wd
-                        bad_event["extr_trigger_subwd"] = trigger_subwd
+                    if "trigger" in event:
+                        trigger_wd_span = event["trigger_wd_span"]
+                        trigger_subwd_span = event["trigger_subwd_span"]
+                        trigger_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_wd_span, word2char_span, text, language)
+                        trigger_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_subwd_span, subword2char_span, text, language)
+
+                        if not (trigger_wd == trigger_subwd == event["trigger"]):
+                            bad = True
+                            bad_event["extr_trigger_wd"] = trigger_wd
+                            bad_event["extr_trigger_subwd"] = trigger_subwd
 
                     for arg in bad_event["argument_list"]:
                         arg_wd_span = arg["wd_span"]
@@ -1173,42 +1157,55 @@ class Preprocessor:
         return sample_id2mismatched_ents
 
     @staticmethod
-    def get_all_possible_entities(sample):
-        ent_list = []
+    def get_all_possible_char_spans(sample):
+        sp_list = []
         if "entity_list" in sample:
-            ent_list.extend([ent["text"] for ent in sample["entity_list"]])
+            # ent_list.extend([ent["text"] for ent in sample["entity_list"]])
+            sp_list.extend([ent["char_span"] for ent in sample["entity_list"]])
+
         if "relation_list" in sample:
-            ent_list.extend([spo["subject"] for spo in sample["relation_list"]])
-            ent_list.extend([spo["object"] for spo in sample["relation_list"]])
+            # ent_list.extend([spo["subject"] for spo in sample["relation_list"]])
+            # ent_list.extend([spo["object"] for spo in sample["relation_list"]])
+            sp_list.extend([spo["subj_char_span"] for spo in sample["relation_list"]])
+            sp_list.extend([spo["obj_char_span"] for spo in sample["relation_list"]])
+
         if "event_list" in sample:
             for event in sample["event_list"]:
-                ent_list.append(event["trigger"])
+                if "trigger" in event:
+                    # ent_list.append(event["trigger"])
+                    sp_list.append(event["trigger_char_span"])
                 for arg in event["argument_list"]:
-                    ent_list.append(arg["text"])
-        return set(ent_list)
+                    # ent_list.append(arg["text"])
+                    sp_list.append(arg["char_span"])
+
+        if "open_spo_list" in sample:
+            for spo in sample["open_spo_list"]:
+                for arg in spo:
+                    # ent_list.append(arg["text"])
+                    sp_list.append(arg["char_span"])
+
+        return sp_list
 
     def create_features(self, data, word_tokenizer_type="white"):
         # create features
         for sample in tqdm(data, desc="create features"):
             text = sample["text"]
-            # word level
-            word_level_feature_keys = {"ner_tag_list", "word_list", "pos_tag_list", "dependency_list", "word2char_span"}
+
+            # word level features
             word_features = {}
             if "word_list" not in sample or "word2char_span" not in sample:
-                # generate word level features
+                # generate word level features: word_list, word2char_span, (ner_tag_list, pos_tag_list, dependency_list)
                 word_tokenizer = self.get_word_tokenizer(word_tokenizer_type)
-                word_features = word_tokenizer.tokenize_plus(text, Preprocessor.get_all_possible_entities(sample)) \
-                    if word_tokenizer_type == "normal_chinese" else word_tokenizer.tokenize_plus(text)
+                if word_tokenizer_type in {"white", "normal_chinese"}:
+                    all_sps = Preprocessor.get_all_possible_char_spans(sample)
+                    word_features = word_tokenizer.tokenize_plus(text, span_list=all_sps)
+                else:
+                    word_features = word_tokenizer.tokenize_plus(text)
             else:
-                for key in word_level_feature_keys:
+                for key in {"ner_tag_list", "word_list", "pos_tag_list", "dependency_list", "word2char_span"}:
                     if key in sample:
                         word_features[key] = sample[key]
                         del sample[key]
-                # if "word_list" in word_features and "word2char_span" not in word_features:
-                #     if self.language == "en":
-                #         word_features["word2char_span"] = Preprocessor.get_tok2char_span_map(word_features["word_list"])
-                #     else:
-                #         raise Exception("miss word2char_span!")
 
             sample["features"] = word_features
 
@@ -1280,7 +1277,7 @@ class Preprocessor:
                 try:
                     assert re.sub("##", "", subw) in word or subw == "[UNK]"
                 except Exception:
-                    print("!")
+                    print("subw({}) not in word({})".format(subw, word))
 
             for subw_id, char_sp in enumerate(feats["subword2char_span"]):
                 subw = sample["features"]["subword_list"][subw_id]
@@ -1291,7 +1288,7 @@ class Preprocessor:
                 try:
                     assert subw_extr == subw or subw == "[UNK]"
                 except Exception:
-                    print("subw_extr != subw")
+                    print("subw_extr({}) != subw({})".format(subw_extr, subw))
         return data
 
     def generate_supporting_data(self, data, max_word_dict_size, min_word_freq):
@@ -1343,7 +1340,7 @@ class Preprocessor:
             if "event_list" in sample:
                 event_exist = True
                 for event in sample["event_list"]:
-                    event_type_set.add(event["trigger_type"])
+                    event_type_set.add(event["event_type"])
                     for arg in event["argument_list"]:
                         argument_type_set.add(arg["type"])
 
@@ -1500,26 +1497,17 @@ class Preprocessor:
             if "entity_list" in sample:
                 for ent in sample["entity_list"]:
                     ent["tok_span"] = ent["subwd_span"] if token_level == "subword" else ent["wd_span"]
-                    # del ent["subwd_span"]
-                    # del ent["wd_span"]
             if "relation_list" in sample:
                 for rel in sample["relation_list"]:
                     rel["subj_tok_span"] = rel["subj_subwd_span"] if token_level == "subword" else rel["subj_wd_span"]
                     rel["obj_tok_span"] = rel["obj_subwd_span"] if token_level == "subword" else rel["obj_wd_span"]
-                    # del rel["subj_wd_span"]
-                    # del rel["obj_wd_span"]
-                    # del rel["subj_subwd_span"]
-                    # del rel["obj_subwd_span"]
             if "event_list" in sample:
                 for event in sample["event_list"]:
-                    event["trigger_tok_span"] = event["trigger_subwd_span"] if token_level == "subword" else event[
-                        "trigger_wd_span"]
-                    del event["trigger_subwd_span"]
-                    del event["trigger_wd_span"]
+                    if "trigger" in event:
+                        event["trigger_tok_span"] = event["trigger_subwd_span"] \
+                            if token_level == "subword" else event["trigger_wd_span"]
                     for arg in event["argument_list"]:
                         arg["tok_span"] = arg["subwd_span"] if token_level == "subword" else arg["wd_span"]
-                        # del arg["subwd_span"]
-                        # del arg["wd_span"]
             if "open_spo_list" in sample:
                 tok_key = "subwd_span" if token_level == "subword" else "wd_span"
                 for spo in sample["open_spo_list"]:
@@ -1729,9 +1717,10 @@ class Preprocessor:
                     sub_event_list = []
                     if "event_list" in sample:
                         for event in sample["event_list"]:
-                            trigger_tok_span = event["trigger_tok_span"]
-                            if not (trigger_tok_span[0] >= start_ind and trigger_tok_span[-1] <= end_ind):
-                                continue
+                            if "trigger" in event:
+                                trigger_tok_span = event["trigger_tok_span"]
+                                if not (trigger_tok_span[0] >= start_ind and trigger_tok_span[-1] <= end_ind):
+                                    continue
                             event_cp = copy.deepcopy(event)
                             new_arg_list = []
                             for arg in event_cp["argument_list"]:
@@ -1922,6 +1911,7 @@ class Preprocessor:
     def span_offset(sample, tok_level_offset, char_level_offset):
         def list_add(ori_list, add_num):
             return [e + add_num for e in ori_list]
+
         if "relation_list" in sample:
             for rel in sample["relation_list"]:
                 rel["subj_tok_span"] = list_add(rel["subj_tok_span"], tok_level_offset)
@@ -1936,10 +1926,6 @@ class Preprocessor:
         if "event_list" in sample:
             for event in sample["event_list"]:
                 if "trigger" in event:
-                    # event["trigger_tok_span"][0] += tok_level_offset
-                    # event["trigger_tok_span"][1] += tok_level_offset
-                    # event["trigger_char_span"][0] += char_level_offset
-                    # event["trigger_char_span"][1] += char_level_offset
                     event["trigger_tok_span"] = list_add(event["trigger_tok_span"], tok_level_offset)
                     event["trigger_char_span"] = list_add(event["trigger_char_span"], char_level_offset)
                 for arg in event["argument_list"]:
@@ -1991,13 +1977,14 @@ class Preprocessor:
                 for event in sample["event_list"]:
                     bad_event = copy.deepcopy(event)
                     bad = False
-                    trigger_tok_span = event["trigger_tok_span"]
-                    extr_trigger_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_tok_span, tok2char_span, text, language)
-                    extr_trigger_c = Preprocessor.extract_ent_fr_txt_by_char_sp(event["trigger_char_span"], text, language)
-                    if not (extr_trigger_t == event["trigger"] == extr_trigger_c):
-                        bad = True
-                        bad_event["extr_trigger"] = extr_trigger_t
-                        bad_event["extr_trigger_c"] = extr_trigger_c
+                    if "trigger" in event:
+                        trigger_tok_span = event["trigger_tok_span"]
+                        extr_trigger_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_tok_span, tok2char_span, text, language)
+                        extr_trigger_c = Preprocessor.extract_ent_fr_txt_by_char_sp(event["trigger_char_span"], text, language)
+                        if not (extr_trigger_t == event["trigger"] == extr_trigger_c):
+                            bad = True
+                            bad_event["extr_trigger"] = extr_trigger_t
+                            bad_event["extr_trigger_c"] = extr_trigger_c
 
                     for arg in event["argument_list"]:
                         arg_span = arg["tok_span"]

@@ -55,9 +55,12 @@ for file_name, data in file_name2data.items():
     for sample in data:
         if "event_list" in sample:
             for event in sample["event_list"]:
-                for arg in event["argument_list"]:
-                    if "event_type" not in arg:
-                        arg["event_type"] = event["trigger_type"]
+                if "trigger_type" in event:
+                    event["event_type"] = event["trigger_type"]
+                    del event["trigger_type"]
+                # for arg in event["argument_list"]:
+                #     if "event_type" not in arg:
+                #         arg["event_type"] = event["event_type"]
 
 # process
 for filename, data in file_name2data.items():
