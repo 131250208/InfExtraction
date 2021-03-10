@@ -660,7 +660,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
             rel2link_type_map[rel][index_pair].add(link_type)
 
         for rel, link_type_map in rel2link_type_map.items():
-            cand_ent_list4rel = rel2candidate_ents[rel] \
+            cand_ent_list4rel = rel2candidate_ents.get(rel, []) \
                 if self.classify_entities_by_relation else rel2candidate_ents["DEFAULT"]
             for subj in cand_ent_list4rel:
                 for obj in cand_ent_list4rel:
