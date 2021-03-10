@@ -47,7 +47,7 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-base-uncased"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = True
+use_wandb = False
 note = ""
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
@@ -98,7 +98,7 @@ for test_data_path in test_data_list:
     ori_test_data = load_data(test_data_path)
     filename2ori_test_data[filename] = ori_test_data
 
-data4checking = copy.deepcopy(train_data)
+data4checking = copy.deepcopy(valid_data)
 random.shuffle(data4checking)
 checking_num = 1000
 data4checking = data4checking[:checking_num]
