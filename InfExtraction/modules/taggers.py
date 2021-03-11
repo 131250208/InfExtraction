@@ -931,14 +931,18 @@ def create_rebased_tfboys_tagger(base_class):
                 fin_ent_list = []
                 fin_rel_list = []
                 for event in sample["event_list"]:
-                    pseudo_arg = {
-                        "type": "Trigger",
-                        "char_span": event["trigger_char_span"],
-                        "tok_span": event["trigger_tok_span"],
-                        "text": event["trigger"],
-                    }
                     event_type = event["event_type"]
-                    arg_list = [pseudo_arg] + event["argument_list"]
+                    arg_list = event["argument_list"]
+
+                    if "trigger" in event:
+                        pseudo_arg = {
+                            "type": "Trigger",
+                            "char_span": event["trigger_char_span"],
+                            "tok_span": event["trigger_tok_span"],
+                            "text": event["trigger"],
+                        }
+                        arg_list += [pseudo_arg]
+
                     for i, arg_i in enumerate(arg_list):
                         fin_ent_list.append({
                             "text": arg_i["text"],
@@ -1029,7 +1033,9 @@ def create_rebased_tfboys_tagger(base_class):
                 role_map = event2role_map.get(event_type, dict())
                 cliques = list(nx.find_cliques(graph))  # all maximal cliques
                 for cli in cliques:
-                    event = {}
+                    event = {
+                        "event_type": event_type,
+                    }
                     arguments = []
                     for offset_str in cli:
                         start, end = offset_str.split(",")
@@ -1041,7 +1047,6 @@ def create_rebased_tfboys_tagger(base_class):
                             if role == "Trigger":
                                 event["trigger"] = arg_text
                                 event["trigger_tok_span"] = tok_span
-                                event["event_type"] = event_type
                                 event["trigger_char_span"] = char_span
                             else:
                                 arguments.append({
@@ -1049,7 +1054,6 @@ def create_rebased_tfboys_tagger(base_class):
                                     "type": role,
                                     "char_span": char_span,
                                     "tok_span": tok_span,
-                                    # "event_type": event_type,
                                 })
                     event["argument_list"] = arguments
                     event_list.append(event)
