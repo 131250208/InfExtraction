@@ -9,6 +9,7 @@ import networkx as nx
 from InfExtraction.modules.metrics import MetricsCalculator
 # from InfExtraction.modules.ancient_eval4oie import OIEMetrics
 import logging
+from pprint import pprint
 
 
 class Tagger(metaclass=ABCMeta):
@@ -932,7 +933,7 @@ def create_rebased_tfboys_tagger(base_class):
                 fin_rel_list = []
                 for event in sample["event_list"]:
                     event_type = event["event_type"]
-                    arg_list = event["argument_list"]
+                    arg_list = copy.deepcopy(event["argument_list"])
 
                     if "trigger" in event:
                         pseudo_arg = {
@@ -959,6 +960,15 @@ def create_rebased_tfboys_tagger(base_class):
                                 "obj_char_span": arg_j["char_span"],
                                 "obj_tok_span": arg_j["tok_span"],
                                 "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
+                            })
+                            fin_rel_list.append({
+                                "subject": arg_i["text"],
+                                "subj_char_span": arg_i["char_span"],
+                                "subj_tok_span": arg_i["tok_span"],
+                                "object": arg_j["text"],
+                                "obj_char_span": arg_j["char_span"],
+                                "obj_tok_span": arg_j["tok_span"],
+                                "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
                             })
 
                 # if "relation_list" in sample:
@@ -1003,6 +1013,7 @@ def create_rebased_tfboys_tagger(base_class):
             text = sample["text"]
             separator = "\u2E82"
             event2graph = {}
+            offsets2arg_pair_rel = {}
             for rel in new_rel_list:
                 subj_offset_str = "{},{}".format(*rel["subj_tok_span"])
                 obj_offset_str = "{},{}".format(*rel["obj_tok_span"])
@@ -1012,6 +1023,11 @@ def create_rebased_tfboys_tagger(base_class):
                     if event_type not in event2graph:
                         event2graph[event_type] = nx.Graph()
                     event2graph[event_type].add_edge(subj_offset_str, obj_offset_str)
+                else:
+                    offset_str4arg_pair = separator.join([subj_offset_str, obj_offset_str])
+                    if offset_str4arg_pair not in offsets2arg_pair_rel:
+                        offsets2arg_pair_rel[offset_str4arg_pair] = set()
+                    offsets2arg_pair_rel[offset_str4arg_pair].add(rel["predicate"])
 
             event2role_map = {}
             for ent in new_ent_list:
@@ -1032,6 +1048,7 @@ def create_rebased_tfboys_tagger(base_class):
             for event_type, graph in event2graph.items():
                 role_map = event2role_map.get(event_type, dict())
                 cliques = list(nx.find_cliques(graph))  # all maximal cliques
+
                 for cli in cliques:
                     event = {
                         "event_type": event_type,
@@ -1043,7 +1060,24 @@ def create_rebased_tfboys_tagger(base_class):
                         char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
                         arg_text = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text)
                         role_set = role_map.get(offset_str, set())
-                        for role in role_set:
+
+                        role_set_fin = set()
+                        if len(role_set) == 1:
+                            role_set_fin.add(list(role_set)[0])
+                        else:  # determine the role by the edge
+                            min_edge_num = 1 << 31
+                            can_role_set = set()
+                            for offset_str_j in cli:
+                                arg_p_set = offsets2arg_pair_rel.get(separator.join([offset_str, offset_str_j]), set())
+                                if len(arg_p_set) != 0 and len(arg_p_set) < min_edge_num:
+                                    min_edge_num = len(arg_p_set)
+                                    can_role_set = {arg_p.split(separator)[0] for arg_p in arg_p_set}
+                            role_set_fin = can_role_set
+
+                        if len(role_set_fin) != 1:
+                            role_set_fin = role_set
+
+                        for role in role_set_fin:
                             if role == "Trigger":
                                 event["trigger"] = arg_text
                                 event["trigger_tok_span"] = tok_span
@@ -1055,6 +1089,7 @@ def create_rebased_tfboys_tagger(base_class):
                                     "char_span": char_span,
                                     "tok_span": tok_span,
                                 })
+
                     event["argument_list"] = arguments
                     event_list.append(event)
 

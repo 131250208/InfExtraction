@@ -1186,6 +1186,15 @@ class Preprocessor:
 
         return sp_list
 
+    @staticmethod
+    def exist_nested_entities(sp_list):
+        sp_list = Preprocessor.unique_list(sp_list)
+        sp_list = sorted(sp_list, key=lambda x: (x[0], x[1]))
+        for idx, sp in enumerate(sp_list):
+            if idx != 0 and sp[0] < sp_list[idx - 1][1]:
+                return True
+        return False
+
     def create_features(self, data, word_tokenizer_type="white"):
         # create features
         for sample in tqdm(data, desc="create features"):
