@@ -10,7 +10,28 @@ import nltk.data
 import re
 
 
+def strip_entity(entity):
+    assert "text" in entity and "char_span" in entity
+    ent_ori_txt = entity["text"]
+    strip_left_len = len(ent_ori_txt) - len(ent_ori_txt.lstrip())
+    strip_right_len = len(ent_ori_txt) - len(ent_ori_txt.rstrip())
+    entity["char_span"][0] += strip_left_len
+    entity["char_span"][-1] -= strip_right_len
+    entity["text"] = ent_ori_txt.strip()
+    return entity
+
+
+def strip_entities(ent_list):
+    for ent in ent_list:
+        strip_entity(ent)
+
+
 def split_para2sents_ch(para):
+    '''
+    split Chinese paragraph to sentences
+    :param para:
+    :return:
+    '''
     para = re.sub('([。！？\?])([^”’])', r"\1\n\2", para)  # 单字符断句符
     para = re.sub('(\.{6})([^”’])', r"\1\n\2", para)  # 英文省略号
     para = re.sub('(\…{2})([^”’])', r"\1\n\2", para)  # 中文省略号
@@ -21,18 +42,12 @@ def split_para2sents_ch(para):
     return para.split("\n")
 
 
-# def split_para2sents_ch(paragraph):
-#     resentencesp = re.compile('([﹒﹔﹖﹗．；。！？]["’”」』]{0,2}|：(?=["‘“「『]{1,2}|$))')
-#     slist = []
-#     for i in resentencesp.split(paragraph):
-#         if resentencesp.match(i) and slist:
-#             slist[-1] += i
-#         elif i:
-#             slist.append(i)
-#     return slist
-
-
 def split_para2sents_en(paragraph):
+    '''
+    split English paragraphs to sentences
+    :param paragraph:
+    :return:
+    '''
     tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
     sentences = tokenizer.tokenize(paragraph)
     return sentences
@@ -43,6 +58,11 @@ def span_contains(span1, span2):
 
 
 def ids2span(ids):
+    '''
+    parse ids to spans, e.g. [1, 2, 3, 4, 7, 8, 9] -> [1, 5, 7, 10]
+    :param ids: id list
+    :return:
+    '''
     spans = []
     pre = -10
     for pos in ids:
@@ -56,6 +76,11 @@ def ids2span(ids):
 
 
 def spans2ids(spans):
+    '''
+    parse spans to ids, e.g. [1, 5, 7, 10] -> [1, 2, 3, 4, 7, 8, 9]
+    :param spans:
+    :return:
+    '''
     ids = []
     for i in range(0, len(spans), 2):
         ids.extend(list(range(spans[i], spans[i + 1])))
@@ -64,6 +89,7 @@ def spans2ids(spans):
 
 def merge_spans(spans):
     '''
+    merge continuous spans
     :param spans: [1, 2, 2, 3]
     :return: [1, 3]
     '''
@@ -75,6 +101,7 @@ def merge_spans(spans):
         elif pid % 2 == 0 and p == new_spans[-1]:
             new_spans.pop()
     return new_spans
+
 
 def load_data(path, total_lines=None):
     filename = path.split("/")[-1]

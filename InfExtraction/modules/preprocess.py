@@ -880,7 +880,10 @@ class Preprocessor:
                     return char_span
                 ch_sp = [char_span[idx], char_span[idx + 1]]
                 tok_span_list = char2tok_span[ch_sp[0]:ch_sp[1]]
-                tok_span.extend([tok_span_list[0][0], tok_span_list[-1][1]])
+                try:
+                    tok_span.extend([tok_span_list[0][0], tok_span_list[-1][1]])
+                except Exception:
+                    print("!")
             return tok_span
 
         for sample in tqdm(data, desc="adding word level and subword level spans"):
@@ -957,14 +960,14 @@ class Preprocessor:
             print(text)
             print("================")
 
-        if se is not None:  # same order but dicontinuous
+        if se is not None:  # discontinuous but in the same order
             spans = []
             # for i in range(len(words)):
             #     spans.extend([*se.span(i + 1)])
             for sp in list(se.regs)[1:]:
                 spans.extend([*sp])
 
-        else:  # different orders, or some words are not in the original text
+        else:  # reversed order, or some words are not in the original text
             sbwd_list = []
             if language == "ch":
                 spe_patt = "A-Za-z0-9\.~!@#\$%^&\*()_\+,\?:'\"\s"
@@ -1046,10 +1049,10 @@ class Preprocessor:
             if tk_sp[-1] == 0:
                 return tok_span
             char_span_list = tok2char_span[tk_sp[0]:tk_sp[1]]
-            # try:
-            char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
-            # except Exception:
-            #     print("!")
+            try:
+                char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
+            except Exception:
+                print("!")
         return char_span
 
     @staticmethod
@@ -1767,10 +1770,13 @@ class Preprocessor:
                             new_spo = []
                             bad_spo = False
                             for arg in spo:
-                                if not (start_ind <= arg["tok_span"][0] < arg["tok_span"][-1] <= end_ind) and \
-                                        arg["type"] in {"predicate", "object", "subject"}:
-                                    bad_spo = True
-                                    break
+                                try:
+                                    if not (start_ind <= arg["tok_span"][0] < arg["tok_span"][-1] <= end_ind) and \
+                                            arg["type"] in {"predicate", "object", "subject"}:
+                                        bad_spo = True
+                                        break
+                                except Exception:
+                                    print("!!!!")
                                 new_spo.append(arg)
                             if not bad_spo:
                                 sub_open_spo_list.append(new_spo)
@@ -2004,7 +2010,6 @@ class Preprocessor:
                             bad_event["extr_arg"] = extr_arg_t
                             bad_event["extr_arg_c"] = extr_arg_c
                     if bad:
-                        print("!")
                         bad_events.append(bad_event)
 
             sample_id2mismatched_ents[sample["id"]] = {}

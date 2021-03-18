@@ -513,19 +513,27 @@ class MetricsCalculator:
 
         return prf_dict, statistics
 
-    def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
-        from InfExtraction.modules.ancient_eval4oie import OIEMetrics
-        auc, prfc, _ = OIEMetrics.compare(pred_sample_list,
-                                          golden_sample_list,
-                                          OIEMetrics.binary_linient_tuple_match)
+    # def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
+    #     from InfExtraction.modules.ancient_eval4oie import OIEMetrics
+    #     auc, prfc, _ = OIEMetrics.compare(pred_sample_list,
+    #                                       golden_sample_list,
+    #                                       OIEMetrics.binary_linient_tuple_match)
+    #
+    #     return {
+    #         "auc": auc,
+    #         "precision": prfc[0],
+    #         "recall": prfc[1],
+    #         "f1": prfc[2],
+    #         "confidence_threshold": prfc[3],
+    #     }
 
-        return {
-            "auc": auc,
-            "precision": prfc[0],
-            "recall": prfc[1],
-            "f1": prfc[2],
-            "confidence_threshold": prfc[3],
-        }
+    def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
+        from InfExtraction.modules.saoke_eval4oie import OIEMetrics
+        correct_num, pred_num, gold_num = OIEMetrics.compare(
+            pred_sample_list, golden_sample_list, 0.85)
+        precision, recall, f1 = MetricsCalculator.get_prf_scores(
+            correct_num, pred_num, gold_num)
+        return {"precision": precision, "recall": recall, "f1": f1}
 
     @staticmethod
     def get_prf_scores(correct_num, pred_num, gold_num):
