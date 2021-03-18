@@ -2,6 +2,7 @@ import json
 import os
 from InfExtraction.modules.preprocess import Preprocessor, WhiteWordTokenizer, ChineseWordTokenizer
 from InfExtraction.modules.utils import load_data, save_as_json_lines, merge_spans
+from InfExtraction.modules import utils
 from tqdm import tqdm
 import random
 from tqdm import tqdm
@@ -589,6 +590,7 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
     data = load_data(data_path)
     # fix data
     subj_fix_map = {
+        "[主题曲《凋零》||插曲《沉醉》]": "[主题曲《凋零》|插曲《沉醉》]",
         "[BodoL innhoff|BodoL innhoff同事]": "BodoL innhoff[同事|]",
         "[张老|张老伙伴们]": "张老[伙伴们|]",
         "[沃金|沃金的暗矛巨魔]": "沃金[的暗矛巨魔|]",
@@ -751,11 +753,31 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
         "从美国的[民主|宪法]|美国社会的问题|美国的移民历史|美国人的生活习惯]": "从[美国的[民主|宪法]|美国社会的问题|美国的移民历史|美国人的生活习惯]",
         "以[文字|彩图]]": "以[文字|彩图]",
     }
+
+    def rm_blanks(txt):
+        txt = txt.strip()
+        # txt = re.sub("\s*([\|\[\]])\s*", r"\1", txt)
+        txt = re.sub("(\D)\s+", r"\1", txt)
+        txt = re.sub("\s+(\D)", r"\1", txt)
+        return txt
+
     for sample in data:
+        if sample["natural"] in text_fix_map:
+            sample["natural"] = text_fix_map[sample["natural"]]
+        sample["natural"] = rm_blanks(sample["natural"])
         text = sample["natural"]
-        if text in text_fix_map:
-            sample["natural"] = text_fix_map[text]
+
         for spo in sample["logic"]:
+            # rm redundant blanks
+            for k, v in spo.items():
+                if k not in {"object", "objects"}:
+                    spo[k] = rm_blanks(spo[k])
+                elif k == "object":
+                    new_objs = []
+                    for obj in spo[k]:
+                        new_objs.append(rm_blanks(obj))
+                    spo[k] = new_objs
+
             # fix subject
             if spo["subject"] in subj_fix_map:
                 spo["subject"] = subj_fix_map[spo["subject"]]
@@ -777,6 +799,7 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
             # fix place
             if spo["place"] in place_fix_map:
                 spo["place"] = place_fix_map[spo["place"]]
+
             # fix qualifier
             if spo["qualifier"] in qua_fix_map:
                 spo["qualifier"] = qua_fix_map[spo["qualifier"]]
@@ -840,11 +863,20 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
         return res
 
     def get_spe_txt_spans(spe_txt, text, is_pred=False):
-        target_str = re.sub("[\]\[\|]", "", spe_txt)
-        if is_pred:
-            target_str = re.sub("([^a-zA-Z]|^)[XYZU]([^a-zA-Z]|$)", r"\1\2", target_str)
+        # target_str = re.sub("[\]\[\|]", "", spe_txt)
+        # if is_pred:
+        #     target_str = re.sub("([^a-zA-Z]|^)[XYZU]([^a-zA-Z]|$)", r"\1\2", target_str)
 
-        spans, _ = Preprocessor.search_char_spans_fr_txt(target_str, text, "ch")
+        if is_pred:
+            segs = re.split("[\]\[\|XYZU]", spe_txt)
+        else:
+            segs = re.split("[\]\[\|]", spe_txt)
+
+        segs = [s.strip() for s in segs if s.strip() != ""]
+        spans = []
+        for seg in segs:
+            sp, _ = Preprocessor.search_char_spans_fr_txt(seg, text, "ch")
+            spans.extend(sp)
         spans = [(spans[i], spans[i + 1]) for i in range(0, len(spans), 2)]
 
         preid2c = {}
@@ -902,6 +934,8 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
     new_data = []
     bad_spo_list = []
     for sample_id, sample in tqdm(enumerate(data), desc="transform"):
+        # if sample_id == 10123:  # 25869
+        #     print("!23")
         ori_sample = copy.deepcopy(sample)
         sample["natural"] = sample["natural"] + "[SEP]" + "，".join(predefined_p_map.values())
         text = sample["natural"]
@@ -944,10 +978,18 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
                         comb_list = [{"char_span": sp, "text": split_list[idx]} for idx, sp in enumerate(span_list)]
                         spo[key] = comb_list
                     else:
-                        char_sp, _ = Preprocessor.search_char_spans_fr_txt(spo[key], text, "ch")
+                        all_char_sp = []
+                        if key == "predicate":
+                            p_segs = re.split("[XYZU]", spo[key])
+                        else:
+                            p_segs = [spo[key], ]
+                        p_segs = [seg.strip() for seg in p_segs if seg.strip() != ""]
+                        for seg in p_segs:
+                            char_sp, _ = Preprocessor.search_char_spans_fr_txt(seg, text, "ch")
+                            all_char_sp.extend(char_sp)
                         spo[key] = [
                             {"text": spo[key],
-                             "char_span": char_sp,
+                             "char_span": all_char_sp,
                              }, ]
                 elif key == "object":
                     new_objs = []
@@ -1035,22 +1077,34 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
                 for k, l in new_spo.items():
                     if k in {"object", "objects"} or len(l) == 0:
                         continue
-                    # try:
                     lists4prod.append([{"type": k, **i} for i in l])
-                    # except Exception:
-                    #     # print("!")
+
                 for objs in new_spo["object"]:
                     new_objs = []
                     for i in objs:
-                        # try:
                         new_objs.append({"type": "object", **i})
-                        # except Exception:
-                        #     # print("!")
                     lists4prod.append(new_objs)
 
                 open_spo_list.extend([list(item) for item in itertools.product(*lists4prod)])
 
-            new_spo_list.extend(open_spo_list)
+            # clean
+            # filter arg with blank span; strip blanks around entity
+            fin_open_spo_list = []
+            for spo in open_spo_list:
+                if any(len(arg["char_span"]) == 0 or arg["text"].strip() == "" for arg in spo):
+                    bad_spo_list.append({
+                                "text": text,
+                                "bad_spo": ori_spo,
+                                "ori_sample": ori_sample,
+                            })
+                    continue
+
+                # strip blanks
+                for arg in spo:
+                    utils.strip_entity(arg)
+                fin_open_spo_list.append(spo)
+
+            new_spo_list.extend(fin_open_spo_list)
         new_sample = {
             "id": sample_id,
             "text": text,
@@ -1058,6 +1112,7 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
         }
         new_data.append(new_sample)
     return new_data, predefined_p, bad_spo_list
+
 
 def trans_saoke():
     new_data, predefined_pred_set, bad_spo_list = preprocess_saoke()
@@ -1073,8 +1128,8 @@ def trans_saoke():
 
     train_data_rate = 0.8
     val_data_rate = 0.1
-    train_num = int(len(new_data) * 0.8)
-    valid_num = int(len(new_data) * 0.1)
+    train_num = int(len(new_data) * train_data_rate)
+    valid_num = int(len(new_data) * val_data_rate)
     test_num = len(new_data) - train_num - valid_num
     random.shuffle(new_data)
     train_data = new_data[:train_num]
@@ -1082,6 +1137,7 @@ def trans_saoke():
     test_data = new_data[-test_num:]
 
     return train_data, valid_data, test_data
+
 
 def trans_casie():
     from glob import glob
@@ -1169,7 +1225,7 @@ def trans_casie():
         print("{}, {}".format(len(train_data), len(valid_data)))
 
 
-if __name__ == "__main__":
+def trans_chfin():
     data_dir = "../../data/ori_data/chfinann_bk"
     save_dir = "../../data/ori_data/chfinann"
     train_data = load_data(os.path.join(data_dir, "train.json"))
@@ -1230,4 +1286,15 @@ if __name__ == "__main__":
     save_as_json_lines(new_valid_data, os.path.join(save_dir, "valid_data.json"))
     save_as_json_lines(new_test_data, os.path.join(save_dir, "test_data.json"))
 
+
+if __name__ == "__main__":
+    train_data, valid_data, test_data = trans_saoke()
+    save_dir = "../../data/ori_data/saoke"
+
+    train_data_path = os.path.join(save_dir, "train_data.json")
+    valid_data_path = os.path.join(save_dir, "valid_data.json")
+    test_data_path = os.path.join(save_dir, "test_data.json")
+    save_as_json_lines(train_data, train_data_path)
+    save_as_json_lines(valid_data, valid_data_path)
+    save_as_json_lines(test_data, test_data_path)
 
