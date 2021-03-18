@@ -581,7 +581,7 @@ class MetricsCalculator:
                 score_dict["{}{}_{}".format(data_filename, sc_pattern, sct)] = round(prf[idx], 5)
 
         if "open_spo_list" in golden_sample and "open_spo_list" in pred_sample:
-            oie_score_dict = self.get_ioe_score_dict(golden_data, golden_data)
+            oie_score_dict = self.get_ioe_score_dict(pred_data, golden_data)
             for sct, val in oie_score_dict.items():
                 score_dict["{}{}".format(data_filename, sct)] = round(val, 5)
         return score_dict
