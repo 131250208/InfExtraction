@@ -255,9 +255,6 @@ if __name__ == "__main__":
     for filename, ori_test_data in filename2ori_test_data.items():
         filename2test_data[filename] = additional_preprocess(ori_test_data, "test")
 
-    # all_data4gen_tag_dict = []
-    # all_data4gen_tag_dict.extend(train_data)
-
     # tagger
     tagger = tagger_class_name(train_data, **tagger_config)
 
