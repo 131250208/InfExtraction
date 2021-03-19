@@ -463,7 +463,7 @@ class TPLinkerPlus(IEModel):
         return (pred_output > 0.).long()
 
     def get_metrics(self, pred_outputs, gold_tags):
-        pred_out, gold_tag = pred_outputs, gold_tags[0]
+        pred_out, gold_tag = pred_outputs[0], gold_tags[0]
         pred_tag = self.pred_output2pred_tag(pred_out)
         return {
             "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
@@ -890,7 +890,7 @@ class TableFillingBackbone(IEModel):
         return (pred_output > 0.).long()
 
     def get_metrics(self, pred_outputs, gold_tags):
-        pred_out, gold_tag = pred_outputs, gold_tags[0]
+        pred_out, gold_tag = pred_outputs[0], gold_tags[0]
         pred_tag = self.pred_output2pred_tag(pred_out)
         return {
             "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
