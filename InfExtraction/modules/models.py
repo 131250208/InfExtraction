@@ -471,6 +471,101 @@ class TPLinkerPlus(IEModel):
         }
 
 
+class SpanNER(IEModel):
+    def __init__(self,
+                 tagger,
+                 metrics_cal,
+                 handshaking_kernel_config=None,
+                 do_span_len_emb=False,
+                 ent_dim=None,
+                 loss_func="bce_loss",  # mce_loss, pred_threshold=0.
+                 pred_threshold=0.,
+                 **kwargs,
+                 ):
+        super().__init__(tagger, metrics_cal, **kwargs)
+        self.ent_tag_size = tagger.get_tag_size()
+        self.metrics_cal = metrics_cal
+        self.loss_func = loss_func
+        self.pred_threshold = pred_threshold
+
+        inp_dim = self.cat_hidden_size
+        self.aggr_fc4ent_hsk = nn.Linear(inp_dim, ent_dim)
+
+        # handshaking kernel
+        ent_shaking_type = handshaking_kernel_config["shaking_type"]
+
+        self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
+                                                                    ent_shaking_type,
+                                                                    )
+        self.do_span_len_emb = do_span_len_emb
+        if do_span_len_emb:
+            span_len_emb_dim = 64
+            self.span_len_emb = nn.Embedding(512, span_len_emb_dim)
+            ent_dim += span_len_emb_dim
+            self.span_len_seq = None  # for cache
+        # decoding fc
+        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
+
+    def generate_batch(self, batch_data):
+        seq_length = len(batch_data[0]["features"]["tok2char_span"])
+        batch_dict = super(SpanNER, self).generate_batch(batch_data)
+        # tags
+        batch_ent_points = [sample["ent_points"] for sample in batch_data]
+        batch_dict["golden_tags"] = [Indexer.points2shaking_seq_batch(batch_ent_points,
+                                                                      seq_length,
+                                                                      self.ent_tag_size,
+                                                                      )
+                                     ]
+        return batch_dict
+
+    def forward(self, **kwargs):
+        super(SpanNER, self).forward()
+        inp_hiddens = self._cat_features(**kwargs)
+        batch_size, seq_len, _ = inp_hiddens.size()
+
+        ent_hiddens = self.aggr_fc4ent_hsk(inp_hiddens)
+
+        # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
+        ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens)
+
+        # span len
+        if self.do_span_len_emb:
+            if self.span_len_seq is None or \
+                    self.span_len_seq.size()[0] != batch_size or \
+                    self.span_len_seq.size()[1] != seq_len:
+                t = torch.arange(0, seq_len).to(ent_hs_hiddens.device)[:, None].repeat(1, seq_len)
+                span_len_matrix = torch.abs(t - t.permute(1, 0)).long()[None, :, :].repeat(batch_size, 1, 1)
+                self.span_len_seq = MyMatrix.upper_reg2seq(span_len_matrix[:, :, :, None]).view(batch_size, -1)
+            span_len_emb = self.span_len_emb(self.span_len_seq)
+            ent_hs_hiddens = torch.cat([ent_hs_hiddens, span_len_emb], dim=-1)
+
+        pred_ent_output = self.ent_fc(ent_hs_hiddens)
+
+        return pred_ent_output
+
+    def pred_output2pred_tag(self, pred_output):
+        return (pred_output > self.pred_threshold).long()
+
+    def get_metrics(self, pred_outputs, gold_tags):
+        ent_pred_out, ent_gold_tag = pred_outputs[0], gold_tags[0]
+        ent_pred_tag = self.pred_output2pred_tag(ent_pred_out)
+
+        # loss function
+        loss_func = None
+        if self.loss_func == "bce_loss":
+            loss_func = self.metrics_cal.bce_loss
+        elif self.loss_func == "mce_loss":
+            loss_func = lambda pred_out, gold_tag: self.metrics_cal.multilabel_categorical_crossentropy(pred_out,
+                                                                                                        gold_tag,
+                                                                                                        self.bp_steps)
+        loss = loss_func(ent_pred_out, ent_gold_tag)
+
+        return {
+            "loss": loss,
+            "ent_seq_acc": self.metrics_cal.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
+        }
+
+
 class RAIN(IEModel):
     def __init__(self,
                  tagger,

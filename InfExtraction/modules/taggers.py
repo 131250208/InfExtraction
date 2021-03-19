@@ -65,6 +65,75 @@ class Tagger(metaclass=ABCMeta):
         return pred_sample_list
 
 
+class Tagger4SpanNER(Tagger):
+    def __init__(self, data, **kwargs):
+        '''
+        :param data: all data, used to generate entity type and relation type dicts
+        '''
+        super().__init__()
+        ent_type_set = set()
+        for sample in data:
+            # entity type
+            ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
+        ent_type_set = sorted(ent_type_set)
+        self.ent_tag2id = {ent: idx for idx, ent in enumerate(ent_type_set)}
+        self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
+
+    def get_tag_size(self):
+        return len(self.ent_tag2id)
+
+    def get_tag_points(self, sample):
+        points = []
+        point_memory_set = set()
+
+        def add_point(point):
+            memory = "{},{},{}".format(*point)
+            if memory not in point_memory_set:
+                points.append(point)
+                point_memory_set.add(memory)
+
+        if "entity_list" in sample:
+            for ent in sample["entity_list"]:
+                add_point((ent["tok_span"][0],
+                           ent["tok_span"][1] - 1,
+                           self.ent_tag2id[ent["type"]])
+                          )
+        return points
+
+    def tag(self, data):
+        for sample in tqdm(data, desc="tagging"):
+            sample["ent_points"] = self.get_tag_points(sample)
+        return data
+
+    def decode(self, sample, pred_tags):
+        rel_list, ent_list = [], []
+        predicted_shaking_tag = pred_tags[0]
+        shk_points = Indexer.shaking_seq2points(predicted_shaking_tag)
+
+        sample_idx, text = sample["id"], sample["text"]
+        tok2char_span = sample["features"]["tok2char_span"]
+
+        for sp in shk_points:
+            ent_type = self.id2ent_tag[sp[2]]
+            # for an entity, the start position can not be larger than the end pos.
+            assert sp[0] <= sp[1]
+
+            char_span_list = tok2char_span[sp[0]:sp[1] + 1]
+            char_sp = [char_span_list[0][0], char_span_list[-1][1]]
+            ent_text = text[char_sp[0]:char_sp[1]]
+            entity = {
+                "type": ent_type,
+                "text": ent_text,
+                "tok_span": [sp[0], sp[1] + 1],
+                "char_span": char_sp,
+            }
+            ent_list.append(entity)
+
+        pred_sample = copy.deepcopy(sample)
+        pred_sample["entity_list"] = ent_list
+        return pred_sample
+
+
 class HandshakingTagger4TPLPlus(Tagger):
     @classmethod
     def is_additional_ent_type(cls, ent_type):
@@ -86,8 +155,6 @@ class HandshakingTagger4TPLPlus(Tagger):
 
             # add default entity type
             add_default_entity_type = kwargs["add_default_entity_type"]
-            # if len(fin_ent_list) == 0:  # entity list is empty, generate default entities by the relation list.
-            #     add_default_entity_type = True
             if add_default_entity_type is True:
                 for ent in sample["entity_list"]:
                     fin_ent_list.append({
@@ -400,9 +467,6 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         self.rel_tag2id = {t: idx for idx, t in enumerate(sorted(self.rel_tags))}
         self.id2rel_tag = {idx: t for t, idx in self.rel_tag2id.items()}
 
-        # ent_link_types = {"EH2ET"}
-        # self.ent_tags = {self.separator.join([ent, lt]) for ent in self.ent2id.keys() for lt in ent_link_types}
-        # self.ent_tag2id = {t: idx for idx, t in enumerate(sorted(self.ent_tags))}
         self.ent_tag2id = self.ent2id
         self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
 
@@ -421,11 +485,9 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         matrix_points: [(tok_pos1, tok_pos2, tag_id), ]
         '''
         ent_matrix_points, rel_matrix_points = [], []
-        # if self.output_ent_length:
-        #     len_matrix_points = []
+
         if "entity_list" in sample:
             for ent in sample["entity_list"]:
-                # tag = self.separator.join([ent["type"], "EH2ET"])
                 tag = ent["type"]
                 point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
                          self.ent_tag2id[tag],
@@ -443,25 +505,16 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                     continue
 
                 # add related boundaries
-
                 rel_matrix_points.append(
                     (subj_tok_span[0], obj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "SH2OH"])]))
                 rel_matrix_points.append(
                     (subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "ST2OT"])]))
-                # rel_matrix_points.append(
-                #     (obj_tok_span[0], subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OH2SH"])]))
-                # rel_matrix_points.append(
-                #     (obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OT2ST"])]))
 
                 if self.add_h2t_n_t2h_links:
                     rel_matrix_points.append(
                         (subj_tok_span[0], obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "SH2OT"])]))
                     rel_matrix_points.append(
                         (subj_tok_span[1] - 1, obj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "ST2OH"])]))
-                    # rel_matrix_points.append(
-                    #     (obj_tok_span[1] - 1, subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OT2SH"])]))
-                    # rel_matrix_points.append(
-                    #     (obj_tok_span[0], subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OH2ST"])]))
 
         return Preprocessor.unique_list(ent_matrix_points), Preprocessor.unique_list(rel_matrix_points)
 
