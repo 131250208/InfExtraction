@@ -476,7 +476,7 @@ class SpanNER(IEModel):
                  tagger,
                  metrics_cal,
                  handshaking_kernel_config=None,
-                 do_span_len_emb=False,
+                 span_len_emb_dim=0,
                  ent_dim=None,
                  loss_func="bce_loss",  # mce_loss, pred_threshold=0.
                  pred_threshold=0.,
@@ -497,9 +497,8 @@ class SpanNER(IEModel):
         self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
                                                                     ent_shaking_type,
                                                                     )
-        self.do_span_len_emb = do_span_len_emb
-        if do_span_len_emb:
-            span_len_emb_dim = 64
+        self.span_len_emb_dim = span_len_emb_dim
+        if span_len_emb_dim > 0:
             self.span_len_emb = nn.Embedding(512, span_len_emb_dim)
             ent_dim += span_len_emb_dim
             self.span_len_seq = None  # for cache
@@ -529,7 +528,7 @@ class SpanNER(IEModel):
         ent_hs_hiddens = self.ent_handshaking_kernel(ent_hiddens)
 
         # span len
-        if self.do_span_len_emb:
+        if self.span_len_emb_dim > 0:
             if self.span_len_seq is None or \
                     self.span_len_seq.size()[0] != batch_size or \
                     self.span_len_seq.size()[1] != seq_len:
@@ -575,7 +574,7 @@ class RAIN(IEModel):
                  ent_dim=None,
                  rel_dim=None,
                  use_attns4rel=False,
-                 do_span_len_emb=False,
+                 span_len_emb_dim=0,
                  emb_ent_info2rel=False,
                  golden_ent_cla_guide=False,
                  loss_func="bce_loss",  # mce_loss, pred_threshold=0.
@@ -631,9 +630,8 @@ class RAIN(IEModel):
                                       rel_dim,
                                       )
 
-        self.do_span_len_emb = do_span_len_emb
-        if do_span_len_emb:
-            span_len_emb_dim = 64
+        self.span_len_emb_dim = span_len_emb_dim
+        if span_len_emb_dim > 0:
             self.span_len_emb = nn.Embedding(512, span_len_emb_dim)
             ent_dim += span_len_emb_dim
             self.span_len_seq = None  # for cache
@@ -764,7 +762,7 @@ class RAIN(IEModel):
             rel_hs_hiddens += attns
 
         # span len
-        if self.do_span_len_emb:
+        if self.span_len_emb_dim > 0:
             if self.span_len_seq is None or \
                     self.span_len_seq.size()[0] != batch_size or \
                     self.span_len_seq.size()[1] != seq_len:
