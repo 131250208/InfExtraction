@@ -266,7 +266,7 @@ model_settings = {
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "ent_dim": 1024,
-    "do_span_len_emb": True,
+    "span_len_emb_dim": 64,
     "loss_func": "mce_loss",
     "pred_threshold": 0.,
 }
