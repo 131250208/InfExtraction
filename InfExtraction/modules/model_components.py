@@ -236,7 +236,7 @@ class SingleSourceHandshakingKernel(nn.Module):
                 span_pre, _ = self.rnn4span(visible4lstm)
                 span_pre = span_pre.view(batch_size, matrix_size, matrix_size, -1)
 
-                if len({"bilstm" "bigru"}.intersection(self.shaking_type)) > 0:
+                if len({"bilstm", "bigru"}.intersection(self.shaking_type)) > 0:
                     # mask upper triangle part
                     lower_visible = visible.permute(0, 3, 1, 2).tril().permute(0, 2, 3, 1).contiguous()
                     visible4lstm_back = lower_visible.view(batch_size * matrix_size, matrix_size, -1)
@@ -267,7 +267,6 @@ class SingleSourceHandshakingKernel(nn.Module):
             shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
 
         if "biaffine" in self.shaking_type:
-            set_trace()
             biaffine_pre = self.biaffine(guide, visible)
             biaffine_pre = torch.relu(biaffine_pre)
             shaking_pre = add_presentation(shaking_pre, biaffine_pre)
@@ -445,7 +444,6 @@ class HandshakingKernel(nn.Module):
             pre_num += 1
 
         if "biaffine" in self.shaking_type:
-            set_trace()
             biaffine_pre = self.biaffine(guide, visible)
             biaffine_pre = torch.relu(biaffine_pre)
             shaking_pre = add_presentation(shaking_pre, biaffine_pre)
