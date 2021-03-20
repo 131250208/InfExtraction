@@ -61,7 +61,7 @@ class Trainer:
                 batch_train_data[k] = v.to(self.device)
 
         pred_outputs = self.model(**batch_train_data)
-        if type(pred_outputs) is not tuple:
+        if type(pred_outputs) is not tuple:  # make it a tuple
             pred_outputs = (pred_outputs, )
 
         metrics_dict = self.model.get_metrics(pred_outputs, golden_tags)
