@@ -226,7 +226,7 @@ class SingleSourceHandshakingKernel(nn.Module):
             return all_prst
 
         if self.only_look_after:
-            if len({"lstm", "bilstm"}.intersection(self.shaking_type)) > 0:
+            if len({"lstm", "bilstm", "gru", "bigru"}.intersection(self.shaking_type)) > 0:
                 batch_size, _, matrix_size, vis_hidden_size = visible.size()
                 # mask lower triangle part
                 upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
@@ -236,7 +236,7 @@ class SingleSourceHandshakingKernel(nn.Module):
                 span_pre, _ = self.rnn4span(visible4lstm)
                 span_pre = span_pre.view(batch_size, matrix_size, matrix_size, -1)
 
-                if "bilstm" in self.shaking_type:
+                if len({"bilstm" "bigru"}.intersection(self.shaking_type)) > 0:
                     # mask upper triangle part
                     lower_visible = visible.permute(0, 3, 1, 2).tril().permute(0, 2, 3, 1).contiguous()
                     visible4lstm_back = lower_visible.view(batch_size * matrix_size, matrix_size, -1)
