@@ -162,23 +162,43 @@ class SingleSourceHandshakingKernel(nn.Module):
             self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
         if "lstm" in shaking_type:
             assert only_look_after is True
-            self.lstm4span = nn.LSTM(hidden_size,
-                                     hidden_size,
-                                     num_layers=1,
-                                     bidirectional=False,
-                                     batch_first=True)
+            self.rnn4span = nn.LSTM(hidden_size,
+                                    hidden_size,
+                                    num_layers=1,
+                                    bidirectional=False,
+                                    batch_first=True)
+        elif "gru" in shaking_type:
+            assert only_look_after is True
+            self.rnn4span = nn.GRU(hidden_size,
+                                   hidden_size,
+                                   num_layers=1,
+                                   bidirectional=False,
+                                   batch_first=True)
+
         if "bilstm" in shaking_type:
             assert only_look_after is True
-            self.lstm4span = nn.LSTM(hidden_size,
-                                     hidden_size // 2,
-                                     num_layers=1,
-                                     bidirectional=False,
-                                     batch_first=True)
-            self.lstm4span_back = nn.LSTM(hidden_size,
-                                     hidden_size // 2,
-                                     num_layers=1,
-                                     bidirectional=False,
-                                     batch_first=True)
+            self.rnn4span = nn.LSTM(hidden_size,
+                                    hidden_size // 2,
+                                    num_layers=1,
+                                    bidirectional=False,
+                                    batch_first=True)
+            self.rnn4span_back = nn.LSTM(hidden_size,
+                                         hidden_size // 2,
+                                         num_layers=1,
+                                         bidirectional=False,
+                                         batch_first=True)
+        elif "bigru" in shaking_type:
+            assert only_look_after is True
+            self.rnn4span = nn.GRU(hidden_size,
+                                   hidden_size // 2,
+                                   num_layers=1,
+                                   bidirectional=False,
+                                   batch_first=True)
+            self.rnn4span_back = nn.GRU(hidden_size,
+                                        hidden_size // 2,
+                                        num_layers=1,
+                                        bidirectional=False,
+                                        batch_first=True)
 
         if "biaffine" in shaking_type:
             self.biaffine = nn.Bilinear(hidden_size, hidden_size, hidden_size)
@@ -206,14 +226,14 @@ class SingleSourceHandshakingKernel(nn.Module):
             return all_prst
 
         if self.only_look_after:
-            if "lstm" in self.shaking_type or "bilstm" in self.shaking_type:
+            if len({"lstm", "bilstm"}.intersection(self.shaking_type)) > 0:
                 batch_size, _, matrix_size, vis_hidden_size = visible.size()
                 # mask lower triangle part
                 upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
 
                 # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
                 visible4lstm = upper_visible.view(batch_size * matrix_size, matrix_size, -1)
-                span_pre, _ = self.lstm4span(visible4lstm)
+                span_pre, _ = self.rnn4span(visible4lstm)
                 span_pre = span_pre.view(batch_size, matrix_size, matrix_size, -1)
 
                 if "bilstm" in self.shaking_type:
@@ -222,12 +242,11 @@ class SingleSourceHandshakingKernel(nn.Module):
                     visible4lstm_back = lower_visible.view(batch_size * matrix_size, matrix_size, -1)
 
                     visible4lstm_back = torch.flip(visible4lstm_back, [1, ])
-                    span_pre_back, _ = self.lstm4span_back(visible4lstm_back)
+                    span_pre_back, _ = self.rnn4span_back(visible4lstm_back)
                     span_pre_back = torch.flip(span_pre_back, [1, ])
                     span_pre_back = span_pre_back.view(batch_size, matrix_size, matrix_size, -1)
                     span_pre_back = span_pre_back.permute(0, 2, 1, 3)
                     span_pre = torch.cat([span_pre, span_pre_back], dim=-1)
-                    # span_pre = span_pre + span_pre_back
 
                 # drop lower triangle and convert matrix to sequence
                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
