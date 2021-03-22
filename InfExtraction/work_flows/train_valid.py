@@ -446,7 +446,7 @@ if __name__ == "__main__":
         run_id2model_state_paths = {}
         for root, dirs, files in os.walk(model_dir_for_test):
             for file_name in files:
-                path_se = re.search("run-\d{8}_\d{6}-(\w{8})/(.*)", root)
+                path_se = re.search("run-\d{8}_\d{6}-(\w{8})\/.*?(val_.*)", root)
                 if path_se is None:
                     continue
                 run_id = path_se.group(1)
