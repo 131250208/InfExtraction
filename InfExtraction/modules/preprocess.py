@@ -1569,14 +1569,14 @@ class Preprocessor:
         if "event_list" in sample:
             sub_event_list = []
             for event in sample["event_list"]:
-                if "trigger" in event:
+                event_cp = copy.deepcopy(event)
+                if "trigger" in event_cp:
                     trigger_tok_span = event["trigger_tok_span"]
                     if trigger_tok_span[-1] > end_ind or trigger_tok_span[0] < start_ind:
-                        del event["trigger"]
-                        del event["trigger_tok_span"]
-                        del event["trigger_char_span"]
+                        del event_cp["trigger"]
+                        del event_cp["trigger_tok_span"]
+                        del event_cp["trigger_char_span"]
 
-                event_cp = copy.deepcopy(event)
                 new_arg_list = []
                 for arg in event_cp["argument_list"]:
                     tok_span = arg["tok_span"]
@@ -1584,7 +1584,7 @@ class Preprocessor:
                         arg_cp = copy.deepcopy(arg)
                         new_arg_list.append(arg_cp)
 
-                if len(new_arg_list) > 0 or "trigger" in event:
+                if len(new_arg_list) > 0 or "trigger" in event_cp:
                     event_cp["argument_list"] = new_arg_list
                     sub_event_list.append(event_cp)
 
