@@ -1148,8 +1148,11 @@ def create_rebased_tfboys_tagger(base_class):
                                     "tok_span": tok_span,
                                 })
 
-                    event["argument_list"] = arguments
-                    event_list.append(event)
+                    # if the role sets corresponding to the nodes are all empty,
+                    # this clique is invalid and the corresponding event will not be appended into the event list.
+                    if len(arguments) > 0 or "trigger" in event:
+                        event["argument_list"] = arguments
+                        event_list.append(event)
 
             pred_sample = copy.deepcopy(sample)
             pred_sample["event_list"] = event_list
