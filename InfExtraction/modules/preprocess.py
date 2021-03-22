@@ -1572,7 +1572,10 @@ class Preprocessor:
                 if "trigger" in event:
                     trigger_tok_span = event["trigger_tok_span"]
                     if trigger_tok_span[-1] > end_ind or trigger_tok_span[0] < start_ind:
-                        continue
+                        del event["trigger"]
+                        del event["trigger_tok_span"]
+                        del event["trigger_char_span"]
+
                 event_cp = copy.deepcopy(event)
                 new_arg_list = []
                 for arg in event_cp["argument_list"]:
@@ -1580,8 +1583,11 @@ class Preprocessor:
                     if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
                         arg_cp = copy.deepcopy(arg)
                         new_arg_list.append(arg_cp)
-                event_cp["argument_list"] = new_arg_list
-                sub_event_list.append(event_cp)
+
+                if len(new_arg_list) > 0 or "trigger" in event:
+                    event_cp["argument_list"] = new_arg_list
+                    sub_event_list.append(event_cp)
+
             new_sample["event_list"] = sub_event_list
 
         if "open_spo_list" in sample:
@@ -1868,7 +1874,7 @@ class Preprocessor:
     @staticmethod
     def decompose2splits(data):
         '''
-        decompose combined samples to splits by "splits" key
+        decompose combined samples to splits by the list "splits"
         :param data:
         :return:
         '''
