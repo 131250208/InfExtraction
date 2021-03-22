@@ -162,14 +162,14 @@ class SingleSourceHandshakingKernel(nn.Module):
             self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
         if "lstm" in shaking_type:
             assert only_look_after is True
-            self.rnn4span = nn.LSTM(hidden_size,
+            self.lstm4span = nn.LSTM(hidden_size,
                                     hidden_size,
                                     num_layers=1,
                                     bidirectional=False,
                                     batch_first=True)
         elif "gru" in shaking_type:
             assert only_look_after is True
-            self.rnn4span = nn.GRU(hidden_size,
+            self.lstm4span = nn.GRU(hidden_size,
                                    hidden_size,
                                    num_layers=1,
                                    bidirectional=False,
@@ -177,24 +177,24 @@ class SingleSourceHandshakingKernel(nn.Module):
 
         if "bilstm" in shaking_type:
             assert only_look_after is True
-            self.rnn4span = nn.LSTM(hidden_size,
+            self.lstm4span = nn.LSTM(hidden_size,
                                     hidden_size // 2,
                                     num_layers=1,
                                     bidirectional=False,
                                     batch_first=True)
-            self.rnn4span_back = nn.LSTM(hidden_size,
+            self.lstm4span_back = nn.LSTM(hidden_size,
                                          hidden_size // 2,
                                          num_layers=1,
                                          bidirectional=False,
                                          batch_first=True)
         elif "bigru" in shaking_type:
             assert only_look_after is True
-            self.rnn4span = nn.GRU(hidden_size,
+            self.lstm4span = nn.GRU(hidden_size,
                                    hidden_size // 2,
                                    num_layers=1,
                                    bidirectional=False,
                                    batch_first=True)
-            self.rnn4span_back = nn.GRU(hidden_size,
+            self.lstm4span_back = nn.GRU(hidden_size,
                                         hidden_size // 2,
                                         num_layers=1,
                                         bidirectional=False,
@@ -233,7 +233,7 @@ class SingleSourceHandshakingKernel(nn.Module):
 
                 # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
                 visible4lstm = upper_visible.view(batch_size * matrix_size, matrix_size, -1)
-                span_pre, _ = self.rnn4span(visible4lstm)
+                span_pre, _ = self.lstm4span(visible4lstm)
                 span_pre = span_pre.view(batch_size, matrix_size, matrix_size, -1)
 
                 if len({"bilstm", "bigru"}.intersection(self.shaking_type)) > 0:
@@ -242,7 +242,7 @@ class SingleSourceHandshakingKernel(nn.Module):
                     visible4lstm_back = lower_visible.view(batch_size * matrix_size, matrix_size, -1)
 
                     visible4lstm_back = torch.flip(visible4lstm_back, [1, ])
-                    span_pre_back, _ = self.rnn4span_back(visible4lstm_back)
+                    span_pre_back, _ = self.lstm4span_back(visible4lstm_back)
                     span_pre_back = torch.flip(span_pre_back, [1, ])
                     span_pre_back = span_pre_back.view(batch_size, matrix_size, matrix_size, -1)
                     span_pre_back = span_pre_back.permute(0, 2, 1, 3)
