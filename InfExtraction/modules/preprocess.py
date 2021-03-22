@@ -1748,25 +1748,6 @@ class Preprocessor:
                     sub_open_spo_list = []
                     if "open_spo_list" in sample:
                         for spo in sample["open_spo_list"]:
-                        #     if "subject" in spo and spo["subject"] is not None and \
-                        #             not (spo["subject"]["tok_span"][0] >= start_ind and
-                        #             spo["subject"]["tok_span"][-1] <= end_ind):
-                        #         continue
-                        #     if "object" in spo and spo["object"] is not None and \
-                        #             not (spo["object"]["tok_span"][0] >= start_ind and
-                        #             spo["object"]["tok_span"][-1] <= end_ind):
-                        #         continue
-                        #     if "predicate" in spo and spo["predicate"] is not None and \
-                        #             not (spo["predicate"]["tok_span"][0] >= start_ind and
-                        #             spo["predicate"]["tok_span"][-1] <= end_ind):
-                        #         continue
-                        #     spo_cp = copy.deepcopy(spo)
-                        #     new_other_args = []
-                        #     for arg in spo_cp["other_args"]:
-                        #         if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
-                        #             new_other_args.append(arg)
-                        #     spo_cp["other_args"] = new_other_args
-                        #     sub_open_spo_list.append(spo_cp)
                             new_spo = []
                             bad_spo = False
                             for arg in spo:
@@ -1784,12 +1765,6 @@ class Preprocessor:
 
                     # do not introduce excessive negative samples
                     if drop_neg_samples and data_type == "train":
-                        # if task_type == "re" and len(new_sample["relation_list"]) == 0:
-                        #     continue
-                        # if "ner" in task_type and len(new_sample["entity_list"]) == 0:
-                        #     continue
-                        # if ("ee" in task_type or "ed" in task_type) and len(new_sample["event_list"]) == 0:
-                        #     continue
                         if ("entity_list" not in new_sample or len(new_sample["entity_list"]) == 0) \
                                 and ("relation_list" not in new_sample or len(new_sample["relation_list"]) == 0) \
                                 and ("event_list" not in new_sample or len(new_sample["event_list"]) == 0) \
@@ -1805,9 +1780,10 @@ class Preprocessor:
 
     @staticmethod
     def combine(data, max_seq_len):
+        assert len(data) > 0
 
         def get_new_com_sample():
-            return {
+            new_combined_sample = {
                 "id": "combined_{}".format(len(new_data)),
                 "text": "",
                 "features": {
@@ -1819,22 +1795,30 @@ class Preprocessor:
                     "dependency_list": []
                 },
                 "splits": [],
-                "entity_list": [],
-                "relation_list": [],
-                "event_list": [],
-                "open_spo_list": [],
             }
+            if "entity_list" in data[0]:
+                new_combined_sample["entity_list"] = []
+            if "relation_list" in data[0]:
+                new_combined_sample["relation_list"] = []
+            if "event_list" in data[0]:
+                new_combined_sample["event_list"] = []
+            if "open_spo_list" in data[0]:
+                new_combined_sample["open_spo_list"] = []
+            return new_combined_sample
 
         new_data = []
         combined_sample = get_new_com_sample()
+
         for sample in tqdm(data, desc="combining splits"):
             if len(combined_sample["features"]["tok2char_span"] + sample["features"]["tok2char_span"]) > max_seq_len:
                 new_data.append(combined_sample)
                 combined_sample = get_new_com_sample()
+
             # combine features
             if len(combined_sample["text"]) > 0:
                 combined_sample["text"] += " "
             combined_sample["text"] += sample["text"]
+
             combined_sample["features"]["word_list"].extend(sample["features"]["word_list"])
             combined_sample["features"]["subword_list"].extend(sample["features"]["subword_list"])
             if "pos_tag_list" in sample["features"]:
@@ -1924,6 +1908,13 @@ class Preprocessor:
 
     @staticmethod
     def span_offset(sample, tok_level_offset, char_level_offset):
+        '''
+        add offset
+        :param sample:
+        :param tok_level_offset:
+        :param char_level_offset:
+        :return:
+        '''
         def list_add(ori_list, add_num):
             return [e + add_num for e in ori_list]
 
@@ -1944,6 +1935,11 @@ class Preprocessor:
                     event["trigger_tok_span"] = list_add(event["trigger_tok_span"], tok_level_offset)
                     event["trigger_char_span"] = list_add(event["trigger_char_span"], char_level_offset)
                 for arg in event["argument_list"]:
+                    arg["tok_span"] = list_add(arg["tok_span"], tok_level_offset)
+                    arg["char_span"] = list_add(arg["char_span"], char_level_offset)
+        if "open_spo_list" in sample:
+            for spo in sample["open_spo_list"]:
+                for arg in spo:
                     arg["tok_span"] = list_add(arg["tok_span"], tok_level_offset)
                     arg["char_span"] = list_add(arg["char_span"], char_level_offset)
         return sample
