@@ -212,8 +212,7 @@ class Evaluator:
 
         # alignment by id (in order)
         pred_data = []
-        # 如果train set在split的时候扔了负样本，merged_pred_samples里会缺失一些id
-        # pseudo_pred_sample = {"relation_list": [], "entity_list": [], "event_list": [], "id": -1, "text": ""}
+        assert len(merged_pred_samples) == len(golden_data)
         for sample in golden_data:
             id_ = sample["id"]
             pred_data.append(merged_pred_samples[id_])
