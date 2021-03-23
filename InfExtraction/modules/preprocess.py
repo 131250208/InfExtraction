@@ -1523,11 +1523,6 @@ class Preprocessor:
             if "open_spo_list" in sample:
                 tok_key = "subwd_span" if token_level == "subword" else "wd_span"
                 for spo in sample["open_spo_list"]:
-                    # spo["subject"]["tok_span"] = spo["subject"][tok_key]
-                    # spo["object"]["tok_span"] = spo["object"][tok_key]
-                    # spo["predicate"]["tok_span"] = spo["predicate"][tok_key]
-                    # for arg in spo["other_args"]:
-                    #     arg["tok_span"] = arg[tok_key]
                     for arg in spo:
                         arg["tok_span"] = arg[tok_key]
         return data
@@ -1542,37 +1537,41 @@ class Preprocessor:
         :return:
         '''
         new_sample = copy.deepcopy(sample)
+        limited_span = [start_ind, end_ind]
+
         if "relation_list" in sample:
             sub_rel_list = []
             for rel in sample["relation_list"]:
                 subj_tok_span = rel["subj_tok_span"]
                 obj_tok_span = rel["obj_tok_span"]
                 # if subject and object are both in this subtext, add this spo to new sample
-                if subj_tok_span[0] >= start_ind and subj_tok_span[-1] <= end_ind \
-                        and obj_tok_span[0] >= start_ind and obj_tok_span[-1] <= end_ind:
+                # if subj_tok_span[0] >= start_ind and subj_tok_span[-1] <= end_ind \
+                #         and obj_tok_span[0] >= start_ind and obj_tok_span[-1] <= end_ind:
+                if utils.span_contains(limited_span, subj_tok_span) \
+                        and utils.span_contains(limited_span, obj_tok_span):
                     rel_cp = copy.deepcopy(rel)
                     sub_rel_list.append(rel_cp)
             new_sample["relation_list"] = sub_rel_list
 
-            # entity
         if "entity_list" in sample:
             sub_ent_list = []
             for ent in sample["entity_list"]:
                 tok_span = ent["tok_span"]
                 # if entity in this subtext, add the entity to new sample
-                if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
+                # if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
+                if utils.span_contains(limited_span, tok_span):
                     ent_cp = copy.deepcopy(ent)
                     sub_ent_list.append(ent_cp)
             new_sample["entity_list"] = sub_ent_list
 
-            # event
         if "event_list" in sample:
             sub_event_list = []
             for event in sample["event_list"]:
                 event_cp = copy.deepcopy(event)
                 if "trigger" in event_cp:
                     trigger_tok_span = event["trigger_tok_span"]
-                    if trigger_tok_span[-1] > end_ind or trigger_tok_span[0] < start_ind:
+                    # if trigger_tok_span[-1] > end_ind or trigger_tok_span[0] < start_ind:
+                    if not utils.span_contains(limited_span, trigger_tok_span):
                         del event_cp["trigger"]
                         del event_cp["trigger_tok_span"]
                         del event_cp["trigger_char_span"]
@@ -1580,44 +1579,24 @@ class Preprocessor:
                 new_arg_list = []
                 for arg in event_cp["argument_list"]:
                     tok_span = arg["tok_span"]
-                    if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
+                    # if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
+                    if utils.span_contains(limited_span, tok_span):
                         arg_cp = copy.deepcopy(arg)
                         new_arg_list.append(arg_cp)
 
                 if len(new_arg_list) > 0 or "trigger" in event_cp:
                     event_cp["argument_list"] = new_arg_list
                     sub_event_list.append(event_cp)
-
             new_sample["event_list"] = sub_event_list
 
         if "open_spo_list" in sample:
             sub_open_spo_list = []
             for spo in sample["open_spo_list"]:
-                # if "subject" in spo and spo["subject"] is not None and \
-                #         not (spo["subject"]["tok_span"][0] >= start_ind and
-                #              spo["subject"]["tok_span"][-1] <= end_ind):
-                #     continue
-                # if "object" in spo and spo["object"] is not None and \
-                #         not (spo["object"]["tok_span"][0] >= start_ind and
-                #              spo["object"]["tok_span"][-1] <= end_ind):
-                #     continue
-                # if "predicate" in spo and spo["predicate"] is not None and \
-                #         not (spo["predicate"]["tok_span"][0] >= start_ind and
-                #              spo["predicate"]["tok_span"][-1] <= end_ind):
-                #     continue
-                # spo_cp = copy.deepcopy(spo)
-                # new_other_args = []
-                # for arg in spo_cp["other_args"]:
-                #     if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
-                #         new_other_args.append(arg)
-                # spo_cp["other_args"] = new_other_args
-                #
-                # sub_open_spo_list.append(spo_cp)
                 new_spo = []
                 bad_spo = False
                 for arg in spo:
-                    if not (start_ind <= arg["tok_span"][0] < arg["tok_span"][-1] <= end_ind) and \
-                            arg["type"] in {"predicate", "object", "subject"}:
+                    if not utils.span_contains(limited_span, arg["tok_span"]) \
+                            and arg["type"] in {"predicate", "object", "subject"}:
                         bad_spo = True
                         break
                     new_spo.append(arg)
@@ -1662,16 +1641,11 @@ class Preprocessor:
 
                 # split features
                 short_word_list = features["word_list"][start_ind:end_ind]
-                # short_word_list += ["[PAD]"] * (max_seq_len - len(short_word_list))
                 short_subword_list = features["subword_list"][start_ind:end_ind]
-                # short_subword_list += ["[PAD]"] * (max_seq_len - len(short_subword_list))
                 split_features = {"word_list": short_word_list,
                                   "subword_list": short_subword_list,
                                   "tok2char_span": [[char_sp[0] - char_level_offset, char_sp[1] - char_level_offset]
                                                     for char_sp in features["tok2char_span"][start_ind:end_ind]],
-                                  # "pos_tag_list": features["pos_tag_list"][start_ind:end_ind],
-                                  # "ner_tag_list": features["ner_tag_list"][start_ind:end_ind],
-                                  # "dependency_list": [],
                                   }
                 if "pos_tag_list" in features:
                     split_features["pos_tag_list"] = features["pos_tag_list"][start_ind:end_ind]
@@ -1707,67 +1681,77 @@ class Preprocessor:
                         break
                 else:
                     # if train data, need to filter annotations in the subtext
-                    # relation
-                    sub_rel_list = []
-                    if "relation_list" in sample:
-                        for rel in sample["relation_list"]:
-                            subj_tok_span = rel["subj_tok_span"]
-                            obj_tok_span = rel["obj_tok_span"]
-                            # if subject and object are both in this subtext, add this spo to new sample
-                            if subj_tok_span[0] >= start_ind and subj_tok_span[-1] <= end_ind \
-                                    and obj_tok_span[0] >= start_ind and obj_tok_span[-1] <= end_ind:
-                                rel_cp = copy.deepcopy(rel)
-                                sub_rel_list.append(rel_cp)
-                        new_sample["relation_list"] = sub_rel_list
+                    filtered_sample = Preprocessor.filter_annotations(sample, start_ind, end_ind)
+                    if "entity_list" in filtered_sample:
+                        new_sample["entity_list"] = filtered_sample["entity_list"]
+                    if "relation_list" in filtered_sample:
+                        new_sample["relation_list"] = filtered_sample["relation_list"]
+                    if "event_list" in filtered_sample:
+                        new_sample["event_list"] = filtered_sample["event_list"]
+                    if "open_spo_list" in filtered_sample:
+                        new_sample["open_spo_list"] = filtered_sample["open_spo_list"]
 
-                    # entity
-                    sub_ent_list = []
-                    if "entity_list" in sample:
-                        for ent in sample["entity_list"]:
-                            tok_span = ent["tok_span"]
-                            # if entity in this subtext, add the entity to new sample
-                            if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
-                                ent_cp = copy.deepcopy(ent)
-                                sub_ent_list.append(ent_cp)
-                        new_sample["entity_list"] = sub_ent_list
-
-                    # event
-                    sub_event_list = []
-                    if "event_list" in sample:
-                        for event in sample["event_list"]:
-                            if "trigger" in event:
-                                trigger_tok_span = event["trigger_tok_span"]
-                                if not (trigger_tok_span[0] >= start_ind and trigger_tok_span[-1] <= end_ind):
-                                    continue
-                            event_cp = copy.deepcopy(event)
-                            new_arg_list = []
-                            for arg in event_cp["argument_list"]:
-                                tok_span = arg["tok_span"]
-                                if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
-                                    arg_cp = copy.deepcopy(arg)
-                                    new_arg_list.append(arg_cp)
-                            event_cp["argument_list"] = new_arg_list
-                            sub_event_list.append(event_cp)
-                        new_sample["event_list"] = sub_event_list
-
-                    # open ie
-                    sub_open_spo_list = []
-                    if "open_spo_list" in sample:
-                        for spo in sample["open_spo_list"]:
-                            new_spo = []
-                            bad_spo = False
-                            for arg in spo:
-                                try:
-                                    if not (start_ind <= arg["tok_span"][0] < arg["tok_span"][-1] <= end_ind) and \
-                                            arg["type"] in {"predicate", "object", "subject"}:
-                                        bad_spo = True
-                                        break
-                                except Exception:
-                                    print("!!!!")
-                                new_spo.append(arg)
-                            if not bad_spo:
-                                sub_open_spo_list.append(new_spo)
-                        new_sample["open_spo_list"] = sub_open_spo_list
+                    # # relation
+                    # sub_rel_list = []
+                    # if "relation_list" in sample:
+                    #     for rel in sample["relation_list"]:
+                    #         subj_tok_span = rel["subj_tok_span"]
+                    #         obj_tok_span = rel["obj_tok_span"]
+                    #         # if subject and object are both in this subtext, add this spo to new sample
+                    #         if subj_tok_span[0] >= start_ind and subj_tok_span[-1] <= end_ind \
+                    #                 and obj_tok_span[0] >= start_ind and obj_tok_span[-1] <= end_ind:
+                    #             rel_cp = copy.deepcopy(rel)
+                    #             sub_rel_list.append(rel_cp)
+                    #     new_sample["relation_list"] = sub_rel_list
+                    #
+                    # # entity
+                    # sub_ent_list = []
+                    # if "entity_list" in sample:
+                    #     for ent in sample["entity_list"]:
+                    #         tok_span = ent["tok_span"]
+                    #         # if entity in this subtext, add the entity to new sample
+                    #         if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
+                    #             ent_cp = copy.deepcopy(ent)
+                    #             sub_ent_list.append(ent_cp)
+                    #     new_sample["entity_list"] = sub_ent_list
+                    #
+                    # # event
+                    # sub_event_list = []
+                    # if "event_list" in sample:
+                    #     for event in sample["event_list"]:
+                    #         if "trigger" in event:
+                    #             trigger_tok_span = event["trigger_tok_span"]
+                    #             if not (trigger_tok_span[0] >= start_ind and trigger_tok_span[-1] <= end_ind):
+                    #                 continue
+                    #         event_cp = copy.deepcopy(event)
+                    #         new_arg_list = []
+                    #         for arg in event_cp["argument_list"]:
+                    #             tok_span = arg["tok_span"]
+                    #             if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
+                    #                 arg_cp = copy.deepcopy(arg)
+                    #                 new_arg_list.append(arg_cp)
+                    #         event_cp["argument_list"] = new_arg_list
+                    #         sub_event_list.append(event_cp)
+                    #     new_sample["event_list"] = sub_event_list
+                    #
+                    # # open ie
+                    # sub_open_spo_list = []
+                    # if "open_spo_list" in sample:
+                    #     for spo in sample["open_spo_list"]:
+                    #         new_spo = []
+                    #         bad_spo = False
+                    #         for arg in spo:
+                    #             try:
+                    #                 if not (start_ind <= arg["tok_span"][0] < arg["tok_span"][-1] <= end_ind) and \
+                    #                         arg["type"] in {"predicate", "object", "subject"}:
+                    #                     bad_spo = True
+                    #                     break
+                    #             except Exception:
+                    #                 print("!!!!")
+                    #             new_spo.append(arg)
+                    #         if not bad_spo:
+                    #             sub_open_spo_list.append(new_spo)
+                    #     new_sample["open_spo_list"] = sub_open_spo_list
 
                     # do not introduce excessive negative samples
                     if drop_neg_samples and data_type == "train":
@@ -1847,16 +1831,16 @@ class Preprocessor:
             # offsets for recovering
             combined_sample["splits"].append({
                 "id": sample["id"],
-                "offset_in_this_seg": [token_offset, token_offset + len(sample["features"]["tok2char_span"])],
-                "ori_offset": {
+                "offset_in_this_comb": [token_offset, token_offset + len(sample["features"]["tok2char_span"])],
+                "offset_in_ori_txt": {
                     "tok_level_offset": sample["tok_level_offset"],
                     "char_level_offset": sample["char_level_offset"],
                 }
             })
 
             # combine annotations
-            sample_cp = copy.deepcopy(sample)
-            Preprocessor.span_offset(sample_cp, token_offset, char_offset)
+            # sample_cp = copy.deepcopy(sample)
+            sample_cp = Preprocessor.span_offset(sample, token_offset, char_offset)
             if "entity_list" in sample_cp:
                 combined_sample["entity_list"].extend(sample_cp["entity_list"])
             if "relation_list" in sample_cp:
@@ -1865,6 +1849,95 @@ class Preprocessor:
                 combined_sample["event_list"].extend(sample_cp["event_list"])
             if "open_spo_list" in sample_cp:
                 combined_sample["open_spo_list"].extend(sample_cp["open_spo_list"])
+
+        # do not forget the last one
+        if combined_sample["text"] != "":
+            new_data.append(combined_sample)
+        return new_data
+
+    @staticmethod
+    def _combine(data, max_seq_len):
+        assert len(data) > 0
+
+        def get_new_com_sample():
+            new_combined_sample = {
+                "id": "combined_{}".format(len(new_data)),
+                "text": "",
+                "features": {
+                    "word_list": [],
+                    "subword_list": [],
+                    "tok2char_span": [],
+                    "pos_tag_list": [],
+                    "ner_tag_list": [],
+                    "dependency_list": []
+                },
+                "splits": [],
+            }
+            if "entity_list" in data[0]:
+                new_combined_sample["entity_list"] = []
+            if "relation_list" in data[0]:
+                new_combined_sample["relation_list"] = []
+            if "event_list" in data[0]:
+                new_combined_sample["event_list"] = []
+            if "open_spo_list" in data[0]:
+                new_combined_sample["open_spo_list"] = []
+            return new_combined_sample
+
+        new_data = []
+        combined_sample = get_new_com_sample()
+
+        for sample in tqdm(data, desc="combining splits"):
+            # combine features
+            if len(combined_sample["text"]) > 0:
+                combined_sample["text"] += " "  # use white space as a separator
+
+            combined_sample["text"] += sample["text"]
+
+            combined_sample["features"]["word_list"].extend(sample["features"]["word_list"])
+            combined_sample["features"]["subword_list"].extend(sample["features"]["subword_list"])
+            if "pos_tag_list" in sample["features"]:
+                combined_sample["features"]["pos_tag_list"].extend(sample["features"]["pos_tag_list"])
+            if "ner_tag_list" in sample["features"]:
+                combined_sample["features"]["ner_tag_list"].extend(sample["features"]["ner_tag_list"])
+            token_offset = len(combined_sample["features"]["tok2char_span"])
+            char_offset = 0
+            if token_offset > 0:
+                char_offset = combined_sample["features"]["tok2char_span"][-1][1] + 1  # +1: white space
+
+            new_tok2char_span = [[char_sp[0] + char_offset, char_sp[1] + char_offset] for char_sp in
+                                 sample["features"]["tok2char_span"]]
+            combined_sample["features"]["tok2char_span"].extend(new_tok2char_span)
+
+            if "dependency_list" in sample["features"]:
+                new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in
+                                       sample["features"]["dependency_list"]]
+                combined_sample["features"]["dependency_list"].extend(new_dependency_list)
+
+            # offsets for recovering
+            combined_sample["splits"].append({
+                "id": sample["id"],
+                "offset_in_this_comb": [token_offset, token_offset + len(sample["features"]["tok2char_span"])],
+                "offset_in_ori_txt": {
+                    "tok_level_offset": 0,
+                    "char_level_offset": 0,
+                }
+            })
+
+            # combine annotations
+            # sample_cp = copy.deepcopy(sample)
+            sample_cp = Preprocessor.span_offset(sample, token_offset, char_offset)
+            if "entity_list" in sample_cp:
+                combined_sample["entity_list"].extend(sample_cp["entity_list"])
+            if "relation_list" in sample_cp:
+                combined_sample["relation_list"].extend(sample_cp["relation_list"])
+            if "event_list" in sample_cp:
+                combined_sample["event_list"].extend(sample_cp["event_list"])
+            if "open_spo_list" in sample_cp:
+                combined_sample["open_spo_list"].extend(sample_cp["open_spo_list"])
+
+            if len(combined_sample["features"]["tok2char_span"] + sample["features"]["tok2char_span"]) > max_seq_len:
+                new_data.append(combined_sample)
+                combined_sample = get_new_com_sample()
 
         # do not forget the last one
         if combined_sample["text"] != "":
@@ -1887,10 +1960,10 @@ class Preprocessor:
                 for spl in sample["splits"]:
                     split_sample = {
                         "id": spl["id"],
-                        "tok_level_offset": spl["ori_offset"]["tok_level_offset"],
-                        "char_level_offset": spl["ori_offset"]["char_level_offset"],
+                        "tok_level_offset": spl["offset_in_ori_txt"]["tok_level_offset"],
+                        "char_level_offset": spl["offset_in_ori_txt"]["char_level_offset"],
                     }
-                    text_tok_span = spl["offset_in_this_seg"]
+                    text_tok_span = spl["offset_in_this_comb"]
                     char_sp_list = tok2char_span[text_tok_span[0]:text_tok_span[1]]
                     text_char_span = [char_sp_list[0][0], char_sp_list[-1][1]]
                     # text
@@ -1913,10 +1986,10 @@ class Preprocessor:
         return new_data
 
     @staticmethod
-    def span_offset(sample, tok_level_offset, char_level_offset):
+    def span_offset(ori_sample, tok_level_offset, char_level_offset):
         '''
         add offset
-        :param sample:
+        :param ori_sample:
         :param tok_level_offset:
         :param char_level_offset:
         :return:
@@ -1924,6 +1997,7 @@ class Preprocessor:
         def list_add(ori_list, add_num):
             return [e + add_num for e in ori_list]
 
+        sample = copy.deepcopy(ori_sample)
         if "relation_list" in sample:
             for rel in sample["relation_list"]:
                 rel["subj_tok_span"] = list_add(rel["subj_tok_span"], tok_level_offset)
