@@ -444,16 +444,7 @@ class Preprocessor:
 
     @staticmethod
     def unique_list(inp_list):
-        out_list = []
-        memory = set()
-        for item in inp_list:
-            mem = str(item)
-            if type(item) is dict:
-                mem = str(dict(sorted(item.items())))
-            if mem not in memory:
-                out_list.append(item)
-                memory.add(mem)
-        return out_list
+        return utils.unique_list(inp_list)
 
     @staticmethod
     def list_equal(list1, list2):
@@ -1191,12 +1182,7 @@ class Preprocessor:
 
     @staticmethod
     def exist_nested_entities(sp_list):
-        sp_list = Preprocessor.unique_list(sp_list)
-        sp_list = sorted(sp_list, key=lambda x: (x[0], x[1]))
-        for idx, sp in enumerate(sp_list):
-            if idx != 0 and sp[0] < sp_list[idx - 1][1]:
-                return True
-        return False
+        return utils.exist_nested_entities(sp_list)
 
     def create_features(self, data, word_tokenizer_type="white"):
         # create features
@@ -1319,10 +1305,6 @@ class Preprocessor:
         argument_type_set = set()
 
         # # oie
-        # prefix_set = set()
-        # suffix_set = set()
-        # predefined_rel_set = set()
-        # other_arg_set = set()
         oie_arg_type_set = set()
 
         max_word_seq_length, max_subword_seq_length = 0, 0
@@ -1356,19 +1338,6 @@ class Preprocessor:
                     for arg in event["argument_list"]:
                         argument_type_set.add(arg["type"])
 
-            # if "open_spo_list" in sample:
-            #     oie_exist = True
-            #     for spo in sample["open_spo_list"]:
-            #         predicate = spo["predicate"]
-            #         if predicate["predefined"]:
-            #             predefined_rel_set.add(predicate["complete"])
-            #         if predicate["prefix"] != "":
-            #             prefix_set.add(predicate["prefix"])
-            #         if predicate["suffix"] != "":
-            #             suffix_set.add(predicate["suffix"])
-            #
-            #         for arg in spo["other_args"]:
-            #             other_arg_set.add(arg["type"])
             if "open_spo_list" in sample:
                 oie_exist = True
                 for spo in sample["open_spo_list"]:

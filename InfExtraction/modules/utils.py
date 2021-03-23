@@ -10,6 +10,28 @@ import nltk.data
 import re
 
 
+def unique_list(inp_list):
+    out_list = []
+    memory = set()
+    for item in inp_list:
+        mem = str(item)
+        if type(item) is dict:
+            mem = str(dict(sorted(item.items())))
+        if mem not in memory:
+            out_list.append(item)
+            memory.add(mem)
+    return out_list
+
+
+def exist_nested_entities(sp_list):
+    sp_list = unique_list(sp_list)
+    sp_list = sorted(sp_list, key=lambda x: (x[0], x[1]))
+    for idx, sp in enumerate(sp_list):
+        if idx != 0 and sp[0] < sp_list[idx - 1][1]:
+            return True
+    return False
+
+
 def strip_entity(entity):
     '''
     strip abundant white spaces around entities
