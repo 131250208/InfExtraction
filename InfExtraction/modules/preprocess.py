@@ -571,14 +571,14 @@ class Preprocessor:
                     normal_event["trigger"] = clean_tri.rstrip()
 
                     normal_event["trigger_char_span"] = [normal_event["trigger_start_index"],
-                                                         normal_event["trigger_start_index"] + len(normal_event["trigger"])]
+                                                         normal_event["trigger_start_index"] + len(
+                                                             normal_event["trigger"])]
                     char_span = normal_event["trigger_char_span"]
                     assert text[char_span[0]:char_span[1]] == normal_event["trigger"]
                     del normal_event["trigger_start_index"]
 
                     normal_arg_list = []
                     for arg in normal_event["arguments"]:
-
                         # clean whitespaces
                         clean_arg = arg["argument"].lstrip()
                         arg["argument_start_index"] += len(arg["argument"]) - len(clean_arg)
@@ -975,7 +975,7 @@ class Preprocessor:
 
             m_list = []
             for sbwd in sorted(sbwd_list, key=lambda w: len(w), reverse=True):
-                finditer = re.finditer(re.escape(" {} ".format(sbwd)), " {} ".format(text))\
+                finditer = re.finditer(re.escape(" {} ".format(sbwd)), " {} ".format(text)) \
                     if language == "en" else re.finditer(re.escape(sbwd), text)
                 for m in finditer:
                     m_list.append(m)
@@ -1081,7 +1081,8 @@ class Preprocessor:
                     word_span = ent["wd_span"]
                     subword_span = ent["subwd_span"]
                     ent_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(word_span, word2char_span, text, language)
-                    ent_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(subword_span, subword2char_span, text, language)
+                    ent_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(subword_span, subword2char_span, text,
+                                                                          language)
 
                     if not (ent_wd == ent_subwd == ent["text"]):
                         bad_ent = copy.deepcopy(ent)
@@ -1101,8 +1102,10 @@ class Preprocessor:
 
                     subj_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(subj_wd_span, word2char_span, text, language)
                     obj_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(obj_wd_span, word2char_span, text, language)
-                    subj_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(subj_subwd_span, subword2char_span, text, language)
-                    obj_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(obj_subwd_span, subword2char_span, text, language)
+                    subj_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(subj_subwd_span, subword2char_span, text,
+                                                                           language)
+                    obj_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(obj_subwd_span, subword2char_span, text,
+                                                                          language)
 
                     if not (subj_wd == rel["subject"] == subj_subwd and obj_wd == rel["object"] == obj_subwd):
                         bad_rel = copy.deepcopy(rel)
@@ -1123,8 +1126,10 @@ class Preprocessor:
                     if "trigger" in event:
                         trigger_wd_span = event["trigger_wd_span"]
                         trigger_subwd_span = event["trigger_subwd_span"]
-                        trigger_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_wd_span, word2char_span, text, language)
-                        trigger_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_subwd_span, subword2char_span, text, language)
+                        trigger_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_wd_span, word2char_span, text,
+                                                                               language)
+                        trigger_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_subwd_span, subword2char_span,
+                                                                                  text, language)
 
                         if not (trigger_wd == trigger_subwd == event["trigger"]):
                             bad = True
@@ -1135,7 +1140,8 @@ class Preprocessor:
                         arg_wd_span = arg["wd_span"]
                         arg_subwd_span = arg["subwd_span"]
                         arg_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(arg_wd_span, word2char_span, text, language)
-                        arg_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(arg_subwd_span, subword2char_span, text, language)
+                        arg_subwd = Preprocessor.extract_ent_fr_txt_by_tok_sp(arg_subwd_span, subword2char_span, text,
+                                                                              language)
 
                         if not (arg_wd == arg_subwd == arg["text"]):
                             bad = True
@@ -1576,9 +1582,10 @@ class Preprocessor:
 
     @staticmethod
     def split_into_short_samples(data, max_seq_len, sliding_len, data_type,
-                                 token_level, task_type, wordpieces_prefix="##", early_stop=True, drop_neg_samples=False):
+                                 token_level, task_type, wordpieces_prefix="##", early_stop=True,
+                                 drop_neg_samples=False):
         '''
-        split samples with long text into samples with short subtexts
+        split long samples into short samples
         :param data: original data
         :param max_seq_len: the max sequence length of a subtext
         :param sliding_len: the size of the sliding window
@@ -1586,6 +1593,7 @@ class Preprocessor:
         :return:
         '''
         split_sample_list = []
+
         for sample in tqdm(data, desc="splitting"):
             id = sample["id"]
             text = sample["text"]
@@ -1730,12 +1738,125 @@ class Preprocessor:
                                 and ("open_spo_list" not in new_sample or len(new_sample["open_spo_list"]) == 0):
                             continue
 
+                    # if it is a combined sample, "components" exists
+                    if "components" in sample:
+                        sub_comps = []
+                        for comp in sample["components"]:
+                            if comp["offset_in_this_comb"][-1] <= start_ind \
+                                    or comp["offset_in_this_comb"][0] >= end_ind:
+                                continue
+                            sub_comps.append(copy.deepcopy(comp))
+
+                        subcomb_start_tok_id = sub_comps[0]["offset_in_this_comb"][0]
+                        sub_comps[0]["offset_in_ori_txt"]["tok_level_offset"] = start_ind - subcomb_start_tok_id
+                        start_char_id = tok2char_span[start_ind][0]
+                        subcomb_start_char_id = tok2char_span[subcomb_start_tok_id][0]
+                        sub_comps[0]["offset_in_ori_txt"]["char_level_offset"] = start_char_id - subcomb_start_char_id
+                        sub_comps[0]["offset_in_this_comb"][0] = start_ind
+                        if end_ind < sub_comps[-1]["offset_in_this_comb"][-1]:
+                            sub_comps[-1]["offset_in_this_comb"][-1] = end_ind
+
+                        for cp in sub_comps:
+                            cp["offset_in_this_comb"][0] -= start_ind
+                            cp["offset_in_this_comb"][1] -= start_ind
+
+                        new_sample["components"] = sub_comps
+
                     # offset
                     new_sample = Preprocessor.span_offset(new_sample, - tok_level_offset, - char_level_offset)
                     split_sample_list.append(new_sample)
                     if early_stop and end_ind > len(tokens):
                         break
+
         return split_sample_list
+
+    # @staticmethod
+    # def _combine(data, max_seq_len):
+    #     assert len(data) > 0
+    #
+    #     def get_new_com_sample():
+    #         new_combined_sample = {
+    #             "id": "combined_{}".format(len(new_data)),
+    #             "text": "",
+    #             "features": {
+    #                 "word_list": [],
+    #                 "subword_list": [],
+    #                 "tok2char_span": [],
+    #                 "pos_tag_list": [],
+    #                 "ner_tag_list": [],
+    #                 "dependency_list": []
+    #             },
+    #             "components": [],
+    #         }
+    #         if "entity_list" in data[0]:
+    #             new_combined_sample["entity_list"] = []
+    #         if "relation_list" in data[0]:
+    #             new_combined_sample["relation_list"] = []
+    #         if "event_list" in data[0]:
+    #             new_combined_sample["event_list"] = []
+    #         if "open_spo_list" in data[0]:
+    #             new_combined_sample["open_spo_list"] = []
+    #         return new_combined_sample
+    #
+    #     new_data = []
+    #     combined_sample = get_new_com_sample()
+    #
+    #     for sample in tqdm(data, desc="combining splits"):
+    #         if len(combined_sample["features"]["tok2char_span"] + sample["features"]["tok2char_span"]) > max_seq_len:
+    #             new_data.append(combined_sample)
+    #             combined_sample = get_new_com_sample()
+    #
+    #         # combine features
+    #         if len(combined_sample["text"]) > 0:
+    #             combined_sample["text"] += " "
+    #         combined_sample["text"] += sample["text"]
+    #
+    #         combined_sample["features"]["word_list"].extend(sample["features"]["word_list"])
+    #         combined_sample["features"]["subword_list"].extend(sample["features"]["subword_list"])
+    #         if "pos_tag_list" in sample["features"]:
+    #             combined_sample["features"]["pos_tag_list"].extend(sample["features"]["pos_tag_list"])
+    #         if "ner_tag_list" in sample["features"]:
+    #             combined_sample["features"]["ner_tag_list"].extend(sample["features"]["ner_tag_list"])
+    #         token_offset = len(combined_sample["features"]["tok2char_span"])
+    #         char_offset = 0
+    #         if token_offset > 0:
+    #             char_offset = combined_sample["features"]["tok2char_span"][-1][1] + 1  # +1: whitespace
+    #         new_tok2char_span = [[char_sp[0] + char_offset, char_sp[1] + char_offset] for char_sp in
+    #                              sample["features"]["tok2char_span"]]
+    #         combined_sample["features"]["tok2char_span"].extend(new_tok2char_span)
+    #
+    #         if "dependency_list" in sample["features"]:
+    #             new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in
+    #                                    sample["features"]["dependency_list"]]
+    #             combined_sample["features"]["dependency_list"].extend(new_dependency_list)
+    #
+    #         # offsets for recovering
+    #         combined_sample["components"].append({
+    #             "id": sample["id"],
+    #             "offset_in_this_comb": [token_offset, token_offset + len(sample["features"]["tok2char_span"])],
+    #             "offset_in_ori_txt": {
+    #                 "tok_level_offset": sample["tok_level_offset"],
+    #                 "char_level_offset": sample["char_level_offset"],
+    #             }
+    #         })
+    #
+    #         # combine annotations
+    #         # sample_cp = copy.deepcopy(sample)
+    #         sample_cp = Preprocessor.span_offset(sample, token_offset, char_offset)
+    #         if "entity_list" in sample_cp:
+    #             combined_sample["entity_list"].extend(sample_cp["entity_list"])
+    #         if "relation_list" in sample_cp:
+    #             combined_sample["relation_list"].extend(sample_cp["relation_list"])
+    #         if "event_list" in sample_cp:
+    #             combined_sample["event_list"].extend(sample_cp["event_list"])
+    #         if "open_spo_list" in sample_cp:
+    #             combined_sample["open_spo_list"].extend(sample_cp["open_spo_list"])
+    #
+    #     # do not forget the last one
+    #     if combined_sample["text"] != "":
+    #         new_data.append(combined_sample)
+    #
+    #     return new_data
 
     @staticmethod
     def combine(data, max_seq_len):
@@ -1753,8 +1874,9 @@ class Preprocessor:
                     "ner_tag_list": [],
                     "dependency_list": []
                 },
-                "splits": [],
+                "components": [],
             }
+
             if "entity_list" in data[0]:
                 new_combined_sample["entity_list"] = []
             if "relation_list" in data[0]:
@@ -1768,94 +1890,7 @@ class Preprocessor:
         new_data = []
         combined_sample = get_new_com_sample()
 
-        for sample in tqdm(data, desc="combining splits"):
-            if len(combined_sample["features"]["tok2char_span"] + sample["features"]["tok2char_span"]) > max_seq_len:
-                new_data.append(combined_sample)
-                combined_sample = get_new_com_sample()
-
-            # combine features
-            if len(combined_sample["text"]) > 0:
-                combined_sample["text"] += " "
-            combined_sample["text"] += sample["text"]
-
-            combined_sample["features"]["word_list"].extend(sample["features"]["word_list"])
-            combined_sample["features"]["subword_list"].extend(sample["features"]["subword_list"])
-            if "pos_tag_list" in sample["features"]:
-                combined_sample["features"]["pos_tag_list"].extend(sample["features"]["pos_tag_list"])
-            if "ner_tag_list" in sample["features"]:
-                combined_sample["features"]["ner_tag_list"].extend(sample["features"]["ner_tag_list"])
-            token_offset = len(combined_sample["features"]["tok2char_span"])
-            char_offset = 0
-            if token_offset > 0:
-                char_offset = combined_sample["features"]["tok2char_span"][-1][1] + 1  # +1: whitespace
-            new_tok2char_span = [[char_sp[0] + char_offset, char_sp[1] + char_offset] for char_sp in
-                                 sample["features"]["tok2char_span"]]
-            combined_sample["features"]["tok2char_span"].extend(new_tok2char_span)
-
-            if "dependency_list" in sample["features"]:
-                new_dependency_list = [[dep[0] + token_offset, dep[1] + token_offset, dep[2]] for dep in
-                                       sample["features"]["dependency_list"]]
-                combined_sample["features"]["dependency_list"].extend(new_dependency_list)
-
-            # offsets for recovering
-            combined_sample["splits"].append({
-                "id": sample["id"],
-                "offset_in_this_comb": [token_offset, token_offset + len(sample["features"]["tok2char_span"])],
-                "offset_in_ori_txt": {
-                    "tok_level_offset": sample["tok_level_offset"],
-                    "char_level_offset": sample["char_level_offset"],
-                }
-            })
-
-            # combine annotations
-            # sample_cp = copy.deepcopy(sample)
-            sample_cp = Preprocessor.span_offset(sample, token_offset, char_offset)
-            if "entity_list" in sample_cp:
-                combined_sample["entity_list"].extend(sample_cp["entity_list"])
-            if "relation_list" in sample_cp:
-                combined_sample["relation_list"].extend(sample_cp["relation_list"])
-            if "event_list" in sample_cp:
-                combined_sample["event_list"].extend(sample_cp["event_list"])
-            if "open_spo_list" in sample_cp:
-                combined_sample["open_spo_list"].extend(sample_cp["open_spo_list"])
-
-        # do not forget the last one
-        if combined_sample["text"] != "":
-            new_data.append(combined_sample)
-        return new_data
-
-    @staticmethod
-    def _combine(data, max_seq_len):
-        assert len(data) > 0
-
-        def get_new_com_sample():
-            new_combined_sample = {
-                "id": "combined_{}".format(len(new_data)),
-                "text": "",
-                "features": {
-                    "word_list": [],
-                    "subword_list": [],
-                    "tok2char_span": [],
-                    "pos_tag_list": [],
-                    "ner_tag_list": [],
-                    "dependency_list": []
-                },
-                "splits": [],
-            }
-            if "entity_list" in data[0]:
-                new_combined_sample["entity_list"] = []
-            if "relation_list" in data[0]:
-                new_combined_sample["relation_list"] = []
-            if "event_list" in data[0]:
-                new_combined_sample["event_list"] = []
-            if "open_spo_list" in data[0]:
-                new_combined_sample["open_spo_list"] = []
-            return new_combined_sample
-
-        new_data = []
-        combined_sample = get_new_com_sample()
-
-        for sample in tqdm(data, desc="combining splits"):
+        for sample in tqdm(data, desc="combining"):
             # combine features
             if len(combined_sample["text"]) > 0:
                 combined_sample["text"] += " "  # use white space as a separator
@@ -1883,7 +1918,7 @@ class Preprocessor:
                 combined_sample["features"]["dependency_list"].extend(new_dependency_list)
 
             # offsets for recovering
-            combined_sample["splits"].append({
+            combined_sample["components"].append({
                 "id": sample["id"],
                 "offset_in_this_comb": [token_offset, token_offset + len(sample["features"]["tok2char_span"])],
                 "offset_in_ori_txt": {
@@ -1904,7 +1939,7 @@ class Preprocessor:
             if "open_spo_list" in sample_cp:
                 combined_sample["open_spo_list"].extend(sample_cp["open_spo_list"])
 
-            if len(combined_sample["features"]["tok2char_span"] + sample["features"]["tok2char_span"]) > max_seq_len:
+            if len(combined_sample["features"]["tok2char_span"] + sample["features"]["tok2char_span"]) >= max_seq_len:
                 new_data.append(combined_sample)
                 combined_sample = get_new_com_sample()
 
@@ -1922,11 +1957,11 @@ class Preprocessor:
         '''
         new_data = []
         for sample in data:
-            if "splits" in sample:
+            if "components" in sample:
                 text = sample["text"]
                 tok2char_span = sample["features"]["tok2char_span"]
                 # decompose
-                for spl in sample["splits"]:
+                for spl in sample["components"]:
                     split_sample = {
                         "id": spl["id"],
                         "tok_level_offset": spl["offset_in_ori_txt"]["tok_level_offset"],
@@ -1934,7 +1969,10 @@ class Preprocessor:
                     }
                     text_tok_span = spl["offset_in_this_comb"]
                     char_sp_list = tok2char_span[text_tok_span[0]:text_tok_span[1]]
+
                     text_char_span = [char_sp_list[0][0], char_sp_list[-1][1]]
+                    assert text_char_span[0] < text_char_span[1]
+
                     # text
                     split_sample["text"] = text[text_char_span[0]:text_char_span[1]]
                     # filter annotations
@@ -1963,6 +2001,7 @@ class Preprocessor:
         :param char_level_offset:
         :return:
         '''
+
         def list_add(ori_list, add_num):
             return [e + add_num for e in ori_list]
 
@@ -2005,7 +2044,8 @@ class Preprocessor:
             bad_events = []
             if "entity_list" in sample:
                 for ent in sample["entity_list"]:
-                    extr_ent_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(ent["tok_span"], tok2char_span, text, language)
+                    extr_ent_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(ent["tok_span"], tok2char_span, text,
+                                                                           language)
                     extr_ent_c = Preprocessor.extract_ent_fr_txt_by_char_sp(ent["char_span"], text, language)
 
                     if not (extr_ent_t == ent["text"] == extr_ent_c):
@@ -2019,8 +2059,10 @@ class Preprocessor:
 
             if "relation_list" in sample:
                 for rel in sample["relation_list"]:
-                    extr_subj_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(rel["subj_tok_span"], tok2char_span, text, language)
-                    extr_obj_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(rel["obj_tok_span"], tok2char_span, text, language)
+                    extr_subj_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(rel["subj_tok_span"], tok2char_span, text,
+                                                                            language)
+                    extr_obj_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(rel["obj_tok_span"], tok2char_span, text,
+                                                                           language)
                     extr_subj_c = Preprocessor.extract_ent_fr_txt_by_char_sp(rel["subj_char_span"], text, language)
                     extr_obj_c = Preprocessor.extract_ent_fr_txt_by_char_sp(rel["obj_char_span"], text, language)
 
@@ -2039,8 +2081,10 @@ class Preprocessor:
                     bad = False
                     if "trigger" in event:
                         trigger_tok_span = event["trigger_tok_span"]
-                        extr_trigger_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_tok_span, tok2char_span, text, language)
-                        extr_trigger_c = Preprocessor.extract_ent_fr_txt_by_char_sp(event["trigger_char_span"], text, language)
+                        extr_trigger_t = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_tok_span, tok2char_span,
+                                                                                   text, language)
+                        extr_trigger_c = Preprocessor.extract_ent_fr_txt_by_char_sp(event["trigger_char_span"], text,
+                                                                                    language)
                         if not (extr_trigger_t == event["trigger"] == extr_trigger_c):
                             bad = True
                             bad_event["extr_trigger"] = extr_trigger_t
