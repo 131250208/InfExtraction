@@ -11,6 +11,11 @@ import re
 
 
 def strip_entity(entity):
+    '''
+    strip abundant white spaces around entities
+    :param entity:
+    :return:
+    '''
     assert "text" in entity and "char_span" in entity
     ent_ori_txt = entity["text"]
     strip_left_len = len(ent_ori_txt) - len(ent_ori_txt.lstrip())
