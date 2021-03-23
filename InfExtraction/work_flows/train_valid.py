@@ -62,6 +62,10 @@ def get_dataloader(data,
                    split_early_stop=True,
                    drop_neg_samples=False,
                    ):
+
+    if combine:
+        data = Preprocessor.combine(data, 512)
+
     # split test data
     data = Preprocessor.split_into_short_samples(data,
                                                  max_seq_len,
@@ -72,9 +76,6 @@ def get_dataloader(data,
                                                  wordpieces_prefix=wdp_prefix,
                                                  early_stop=split_early_stop,
                                                  drop_neg_samples=drop_neg_samples)
-
-    if combine:
-        data = Preprocessor.combine(data, max_seq_len)
 
     # check spans
     sample_id2mismatched = Preprocessor.check_spans(data, language)
