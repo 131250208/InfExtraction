@@ -198,11 +198,8 @@ class MetricsCalculator:
         :return: the head word of the given text
         '''
         ch_pattern = "[\u4e00-\u9fa5\s]+"
-        try:
-            part_ent = ent_text[0] if re.match(ch_pattern, ent_text[0]) is not None else ent_text.split()[0]
-            return part_ent
-        except Exception:
-            set_trace()
+        part_ent = ent_text[0] if re.match(ch_pattern, ent_text[0]) is not None else ent_text.split()[0]
+        return part_ent
 
     @staticmethod
     def get_mark_sets_ent(ent_list, sent_w_disc=False):
@@ -459,7 +456,7 @@ class MetricsCalculator:
             self.cal_rel_cpg(pred_rel_list, gold_rel_list, re_cpg_dict)
             # except Exception:
             #     print("!")
-            #     pass
+
         return re_cpg_dict
 
     @staticmethod
@@ -471,6 +468,7 @@ class MetricsCalculator:
             "ent_exact_offset": [0, 0, 0],
         }
 
+        # discontinuous entity exists, output corresponding metrics
         if any(len(ent["char_span"]) > 2 for sample in golden_sample_list for ent in sample["entity_list"]):
             ent_cpg_dict["disc_ent_exact_offset"] = [0, 0, 0]
             ent_cpg_dict["disc_ent_exact_text"] = [0, 0, 0]
