@@ -11,6 +11,7 @@ Train the model
 '''
 import sys, getopt
 import importlib
+import copy
 
 # settings
 try:
@@ -129,6 +130,7 @@ if __name__ == "__main__":
     # data
     data_in_dir = settings.data_in_dir
     data_out_dir = settings.data_out_dir
+
     ori_train_data = settings.train_data
     ori_valid_data = settings.valid_data
     ori_data4checking = settings.data4checking
@@ -233,6 +235,13 @@ if __name__ == "__main__":
         filename2ori_test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level, do_lower_case)
         filename2ori_test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
 
+    # # copy original data to do following operations,
+    # to maintain the original data clean for evaluation (should not be changed by preprocessing)
+    train_data = copy.deepcopy(ori_train_data)
+    valid_data = copy.deepcopy(ori_valid_data)
+    data4checking = copy.deepcopy(ori_data4checking)
+    filename2test_data = copy.deepcopy(filename2ori_test_data)
+
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # tagger
     tagger_class_name = getattr(taggers, tagger_name)
@@ -249,11 +258,10 @@ if __name__ == "__main__":
     def additional_preprocess(data, data_type):
         return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
 
-    train_data = additional_preprocess(ori_train_data, "train")
-    valid_data = additional_preprocess(ori_valid_data, "valid")
-    filename2test_data = {}
-    for filename, ori_test_data in filename2ori_test_data.items():
-        filename2test_data[filename] = additional_preprocess(ori_test_data, "test")
+    train_data = additional_preprocess(train_data, "train")
+    valid_data = additional_preprocess(valid_data, "valid")
+    for filename, test_data in filename2test_data.items():
+        filename2test_data[filename] = additional_preprocess(test_data, "test")
 
     # tagger
     tagger = tagger_class_name(train_data, **tagger_config)
@@ -350,7 +358,7 @@ if __name__ == "__main__":
                                           )
         # debug: checking tagging and decoding
         if check_tagging_n_decoding:
-            data4checking = additional_preprocess(ori_data4checking, "debug")
+            data4checking = additional_preprocess(data4checking, "debug")
             dataloader4checking = get_dataloader(data4checking,
                                                  language,
                                                  "debug",
@@ -476,7 +484,7 @@ if __name__ == "__main__":
 
                 # test
                 for filename, test_data_loader in filename2test_data_loader.items():
-                    gold_test_data = filename2test_data[filename]
+                    gold_test_data = filename2ori_test_data[filename]
                     # predicate
                     pred_samples = evaluator.predict(test_data_loader, gold_test_data)
 
