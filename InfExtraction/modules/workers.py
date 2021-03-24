@@ -186,7 +186,9 @@ class Evaluator:
         for sample in pred_sample_list:
             id_ = sample["id"]
             # recover spans by offsets
-            sample = Preprocessor.span_offset(sample, sample["tok_level_offset"], sample["char_level_offset"])
+            anns = Preprocessor.span_offset(sample, sample["tok_level_offset"], sample["char_level_offset"])
+            sample = {**sample, **anns}
+
             # merge
             if id_ not in merged_pred_samples:
                 merged_pred_samples[id_] = {
