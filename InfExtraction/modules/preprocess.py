@@ -1594,8 +1594,6 @@ class Preprocessor:
         '''
 
         split_sample_list = []
-        if data_type == "valid":
-            print("!")
 
         for sample in tqdm(data, desc="splitting"):
             id = sample["id"]
@@ -1656,13 +1654,14 @@ class Preprocessor:
 
                 # if it is a combined sample, "components" exists
                 if "components" in sample:
-                    sub_comps = []
+                    sub_comps_ = []
                     for comp in sample["components"]:
                         if comp["offset_in_this_comb"][-1] <= start_ind \
                                 or comp["offset_in_this_comb"][0] >= end_ind:
                             continue
-                        sub_comps.append(copy.deepcopy(comp))
+                        sub_comps_.append(comp)
 
+                    sub_comps = copy.deepcopy(sub_comps_)
                     subcomb_start_tok_id = sub_comps[0]["offset_in_this_comb"][0]
                     sub_comps[0]["offset_in_ori_txt"]["tok_level_offset"] = start_ind - subcomb_start_tok_id
                     start_char_id = tok2char_span[start_ind][0]
@@ -1863,7 +1862,7 @@ class Preprocessor:
 
         annotations = {}
         if "relation_list" in sample_spans:
-            annotations["relation_list"] = sample_spans["relation_list"][:]
+            annotations["relation_list"] = copy.deepcopy(sample_spans["relation_list"])
             for rel in annotations["relation_list"]:
                 rel["subj_tok_span"] = list_add(rel["subj_tok_span"], tok_level_offset)
                 rel["obj_tok_span"] = list_add(rel["obj_tok_span"], tok_level_offset)
@@ -1871,13 +1870,13 @@ class Preprocessor:
                 rel["obj_char_span"] = list_add(rel["obj_char_span"], char_level_offset)
 
         if "entity_list" in sample_spans:
-            annotations["entity_list"] = sample_spans["entity_list"][:]
+            annotations["entity_list"] = copy.deepcopy(sample_spans["entity_list"])
             for ent in annotations["entity_list"]:
                 ent["tok_span"] = list_add(ent["tok_span"], tok_level_offset)
                 ent["char_span"] = list_add(ent["char_span"], char_level_offset)
 
         if "event_list" in sample_spans:
-            annotations["event_list"] = sample_spans["event_list"][:]
+            annotations["event_list"] = copy.deepcopy(sample_spans["event_list"])
             for event in annotations["event_list"]:
                 if "trigger" in event:
                     event["trigger_tok_span"] = list_add(event["trigger_tok_span"], tok_level_offset)
@@ -1886,7 +1885,7 @@ class Preprocessor:
                     arg["tok_span"] = list_add(arg["tok_span"], tok_level_offset)
                     arg["char_span"] = list_add(arg["char_span"], char_level_offset)
         if "open_spo_list" in sample_spans:
-            annotations["open_spo_list"] = sample_spans["open_spo_list"][:]
+            annotations["open_spo_list"] = copy.deepcopy(sample_spans["open_spo_list"])
             for spo in annotations["open_spo_list"]:
                 for arg in spo:
                     arg["tok_span"] = list_add(arg["tok_span"], tok_level_offset)
