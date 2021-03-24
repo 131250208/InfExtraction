@@ -66,7 +66,6 @@ def get_dataloader(data,
     if combine:
         data = Preprocessor.combine(data, 512)
 
-    # split test data
     data = Preprocessor.split_into_short_samples(data,
                                                  max_seq_len,
                                                  sliding_len,
