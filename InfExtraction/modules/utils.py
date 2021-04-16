@@ -10,6 +10,47 @@ import nltk.data
 import re
 
 
+def search_segs(search_str, text):
+    '''
+    "split" search_str into segments according to the text,
+    e.g.
+    :param search_str: '培养一个县委书记地委书记'
+    :param text: '徐特立曾说：“培养一个县委书记、地委书记容易，培养一个速记员难”。'
+    :return: ['培养一个县委书记', '地委书记']
+    '''
+    s_idx = 0
+    seg_list = []
+    mask_chars = {"[", "]", "|"}
+    while s_idx != len(search_str):
+        start_char = search_str[s_idx]
+        if start_char in mask_chars:
+            s_idx += 1
+            continue
+        start_ids = [m.span()[0] for m in re.finditer(re.escape(start_char), text)]
+        if len(start_ids) == 0:
+            s_idx += 1
+            continue
+
+        e_idx = 0
+        while e_idx != len(search_str):
+            new_start_ids = []
+            for idx in start_ids:
+                if idx + e_idx == len(text) or s_idx + e_idx == len(search_str):
+                    continue
+                search_char = search_str[s_idx + e_idx]
+                if text[idx + e_idx] == search_str[s_idx + e_idx] and search_char not in mask_chars:
+                    new_start_ids.append(idx)
+            if len(new_start_ids) == 0:
+                break
+            start_ids = new_start_ids
+            e_idx += 1
+
+        seg_list.append(search_str[s_idx: s_idx + e_idx])
+        s_idx += e_idx
+
+    return seg_list
+
+
 def unique_list(inp_list):
     out_list = []
     memory = set()
@@ -80,9 +121,17 @@ def split_para2sents_en(paragraph):
     return sentences
 
 
-def span_contains(span1, span2):
-    return span1[0] <= span2[0] < span2[-1] <= span1[-1]
+# def span_contains(span1, span2):
+#     if len(span2) == 0:
+#         return True
+#     return span1[0] <= span2[0] < span2[-1] <= span1[-1]
 
+def span_contains(sp1, sp2):
+    if len(sp2) == 0:
+        return True
+    span1 = sorted(sp1)
+    span2 = sorted(sp2)
+    return span1[0] <= span2[0] < span2[-1] <= span1[-1]
 
 def ids2span(ids):
     '''
@@ -114,7 +163,7 @@ def spans2ids(spans):
     return ids
 
 
-def merge_spans(spans):
+def merge_spans(spans, text=None):
     '''
     merge continuous spans
     :param spans: [1, 2, 2, 3]
@@ -127,6 +176,16 @@ def merge_spans(spans):
             new_spans.append(pos)
         elif pid % 2 == 0 and p == new_spans[-1]:
             new_spans.pop()
+
+    new_spans_ = []
+    if text is not None:  # merge spans if only blanks between them
+        for pid, pos in enumerate(new_spans):
+            if pid != 0 and pid % 2 == 0 and re.match("^\s+$", text[new_spans[pid - 1]:pos]) is not None:
+                new_spans_.pop()
+            else:
+                new_spans_.append(pos)
+        new_spans = new_spans_
+
     return new_spans
 
 

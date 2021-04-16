@@ -9,7 +9,6 @@ from IPython.core.debugger import set_trace
 from InfExtraction.modules.utils import MyMatrix
 from InfExtraction.modules import utils
 import torch
-import jieba
 from pprint import pprint
 
 
@@ -306,7 +305,7 @@ class WhiteWordTokenizer:
 
 class ChineseWordTokenizer:
     @staticmethod
-    def tokenize(text, ent_list=None, span_list=None):
+    def tokenize(text, ent_list=None, span_list=None, rm_blanks=False):
         '''
         :param text:
         :param ent_list: tokenize by entities first
@@ -337,6 +336,9 @@ class ChineseWordTokenizer:
         word_list = []
         for seg in segs:
             word_list.extend(re.findall(word_pattern, seg))
+
+        if rm_blanks:
+            word_list = [w for w in word_list if re.sub("\s+", "", w) != ""]
         return word_list
 
     @staticmethod
@@ -601,12 +603,10 @@ class Preprocessor:
         return normal_data
 
     @staticmethod
-    def trans_duie(data, dataset_type, add_id=True):
+    def trans_duie_1(data, dataset_type, add_id=True):
         normal_data = []
         for ind, sample in tqdm(enumerate(data), desc="transform data"):
             text = sample["text"]
-
-            word2char_span = []
             rel_list, ent_list = [], []
 
             for spo in sample["spo_list"]:
@@ -626,7 +626,6 @@ class Preprocessor:
 
             normal_sample = {
                 "text": text,
-                # **ChineseWordTokenizer.tokenize_plus(text, ent_list),
             }
             # add id
             if add_id:
@@ -641,6 +640,62 @@ class Preprocessor:
         return normal_data
 
     @staticmethod
+    def trans_duie_2(data, dataset_type, add_id=True):
+        normal_data = []
+        for ind, sample in tqdm(enumerate(data), desc="transform data"):
+            text = sample["text"]
+            normal_sample = {
+                "text": text,
+            }
+            # add id
+            if add_id:
+                normal_sample["id"] = "{}_{}".format(dataset_type, ind)
+            else:
+                assert "id" in sample, "miss id in data!"
+                normal_sample["id"] = sample["id"]
+
+            if dataset_type != "test":
+                rel_list, ent_list = [], []
+                for spo in sample["spo_list"]:
+                    rel_list.append({
+                        "subject": spo["subject"],
+                        "object": spo["object"]["@value"],
+                        "predicate": spo["predicate"],
+                    })
+                    ent_list.append({
+                        "text": spo["subject"],
+                        "type": spo["subject_type"],
+                    })
+                    ent_list.append({
+                        "text": spo["object"]["@value"],
+                        "type": spo["object_type"]["@value"],
+                    })
+
+                    for k, item in spo["object"].items():
+                        if k == "@value":
+                            continue
+                        rel_list.append({
+                            "subject": spo["subject"],
+                            "object": item,
+                            "predicate": k,
+                        })
+                        rel_list.append({
+                            "subject": spo["object"]["@value"],
+                            "object": item,
+                            "predicate": k,
+                        })
+                        ent_list.append({
+                            "text": item,
+                            "type": spo["object_type"][k],
+                        })
+
+                normal_sample["entity_list"] = Preprocessor.unique_list(ent_list)
+                normal_sample["relation_list"] = Preprocessor.unique_list(rel_list)
+
+            normal_data.append(normal_sample)
+        return normal_data
+
+    @staticmethod
     def transform_data(data, ori_format, dataset_type, add_id=True):
         '''
         This function is for transforming data published by previous works.
@@ -649,7 +704,9 @@ class Preprocessor:
         dataset_type: "train", "valid", "test"; only for generate id for the data
         '''
         if ori_format == "duie_1":
-            return Preprocessor.trans_duie(data, dataset_type, add_id)
+            return Preprocessor.trans_duie_1(data, dataset_type, add_id)
+        if ori_format == "duie_2":
+            return Preprocessor.trans_duie_2(data, dataset_type, add_id)
         if ori_format == "duee_1":
             return Preprocessor.trans_duee(data, dataset_type, add_id)
 
@@ -874,7 +931,7 @@ class Preprocessor:
                 try:
                     tok_span.extend([tok_span_list[0][0], tok_span_list[-1][1]])
                 except Exception:
-                    print("!")
+                    print("char_span2tok_span!")
             return tok_span
 
         for sample in tqdm(data, desc="adding word level and subword level spans"):
@@ -925,100 +982,140 @@ class Preprocessor:
     @staticmethod
     def search_char_spans_fr_txt(target_seg, text, language, merge_sps=True):
         if target_seg == "" or target_seg is None:
-            return [0, 0], ""
+            return [[0, 0]], ""
 
         add_text = re.sub("\S", "_", target_seg)
 
         # if continuous
         if language == "ch" and target_seg in text:
-            span = [*re.search(re.escape(target_seg), text).span()]
-            return span, add_text
+            # span = [*re.search(re.escape(target_seg), text).span()] # 0407
+            candidate_spans = [[*m.span()] for m in re.finditer(re.escape(target_seg), text)]
+            return candidate_spans, add_text
+
         if language == "en" and " {} ".format(target_seg) in " {} ".format(text):
-            span = [*re.search(re.escape(" {} ".format(target_seg)), " {} ".format(text)).span()]
-            return [span[0], span[1] - 2], add_text
+            # span = [*re.search(re.escape(" {} ".format(target_seg)), " {} ".format(text)).span()]
+            candidate_spans = [[m.span()[0], m.span()[1] - 2]
+                               for m in re.finditer(re.escape(" {} ".format(target_seg)), " {} ".format(text))]
+            # return [span[0], span[1] - 2], add_text
+            return candidate_spans, add_text
 
-        # discontinuous but in the same order
-        words = target_seg.split(" ") if language == "en" else list(target_seg)
-        words = [re.escape(w) for w in words]
-        pattern = "(" + ").*?(".join(words) + ")"
-
-        se = None
-        try:
-            se = re.search(pattern, text)
-        except Exception:
-            print("search error!")
-            print(target_seg)
-            print(text)
-            print("================")
-
-        if se is not None:  # discontinuous but in the same order
-            spans = []
-            # for i in range(len(words)):
-            #     spans.extend([*se.span(i + 1)])
-            for sp in list(se.regs)[1:]:
-                spans.extend([*sp])
-
-        else:  # reversed order, or some words are not in the original text
-            sbwd_list = []
-            if language == "ch":
-                spe_patt = "A-Za-z0-9\.~!@#\$%^&\*()_\+,\?:'\"\s"
-                segs = re.findall("[{}]+|[^{}]+".format(spe_patt, spe_patt), target_seg)
-                for seg in segs:
-                    if re.match("[{}]+".format(spe_patt), seg):
-                        sbwd_list.append(seg)
-                    else:
-                        sbwd_list.extend(list(jieba.cut(seg, cut_all=True)))
-                        sbwd_list += list(seg)
-            elif language == "en":
-                sbwd_list = target_seg.split(" ")
-            sbwd_list = list(set(sbwd_list))
-
-            m_list = []
-            for sbwd in sorted(sbwd_list, key=lambda w: len(w), reverse=True):
-                finditer = re.finditer(re.escape(" {} ".format(sbwd)), " {} ".format(text)) \
-                    if language == "en" else re.finditer(re.escape(sbwd), text)
-                for m in finditer:
-                    m_list.append(m)
-
-            m_list = sorted(m_list, key=lambda m: m.span()[1] - m.span()[0], reverse=True)
-            match_txt_list = [m.group()[1:-1] if language == "en" else m.group() for m in m_list]
-            match_span_list = [[m.span()[0], m.span()[1] - 2] if language == "en" else [*m.span()] for m in m_list]
-
-            sps = [0] * len(target_seg)
-            pred_cp = target_seg[:]
-            for m_idx, m_txt in enumerate(match_txt_list):
-                m_span = match_span_list[m_idx]
-                se = re.search(re.escape(" {} ".format(m_txt)), " {} ".format(pred_cp)) \
-                    if language == "en" else re.search(re.escape(m_txt), pred_cp)
-                if se is not None:
-                    star_idx = se.span()[0]
-                    sp = [se.span()[0], se.span()[1] - 2] if language == "en" else se.span()
-                    sps[star_idx] = [*m_span]
-
-                    # mask
-                    pred_ch_list = list(pred_cp)
-                    pred_ch_list[sp[0]:sp[1]] = ["_"] * (sp[1] - sp[0])
-                    pred_cp = "".join(pred_ch_list)
-            add_text = pred_cp
-
-            sps = [sp for sp in sps if sp != 0]
-            spans = []
-            for idx, sp in enumerate(sps):
-                spans.extend(sp)
-                # if language == "en" and idx != len(sps) - 1 and sps[idx][0] - 1 == sp[-1]:
-                #     spans.extend([spans[-1], spans[-1] + 1])  # whitespace
-
-        # merge
-        new_spans = utils.merge_spans(spans) if merge_sps else spans
-        # seg_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(new_spans, text, language)
+        # # discontinuous but in the same order
+        # if language == "ch":
+        #     words = ChineseWordTokenizer.tokenize(target_seg)
+        # elif language == "en":
+        #     words = target_seg.split(" ")
+        #
+        # words = [re.escape(w) for w in words]
+        # pattern = "(" + ").*?(".join(words) + ")"
+        #
+        # match_list = None
         # try:
-        #     assert seg_extr == target_seg
+        #     match_list = list(re.finditer(pattern, text))
         # except Exception:
+        #     print("search error!")
+        #     print(target_seg)
         #     print(text)
-        #     print("{} != {}".format(seg_extr, target_seg))
-        #     print("add: {}".format(pred_cp))
         #     print("================")
-        return new_spans, add_text
+        #
+        # if len(match_list) > 0:  # discontinuous but in the same order
+        #     candidate_spans = []
+        #     for m in match_list:
+        #         spans = []
+        #         for sp in list(m.regs)[1:]:
+        #             spans.extend([*sp])
+        #         candidate_spans.append(spans)
+        #
+        # else:  # reversed order, or some words are not in the original text
+        seg_list = utils.search_segs(target_seg, text)
+        # if language == "ch":
+        #     seg_list = ChineseWordTokenizer.tokenize(target_seg)
+        # elif language == "en":
+        #     seg_list = target_seg.split(" ")
+
+        word2spans = {}
+        m_list = []
+        text_cp = text[:]
+        for sbwd_idx, sbwd in enumerate(sorted(seg_list, key=lambda s: len(s), reverse=True)):
+            finditer = re.finditer(re.escape(" {} ".format(sbwd)), " {} ".format(text_cp)) \
+                if language == "en" else re.finditer(re.escape(sbwd),
+                                                     text_cp)  # a bug to fix: if language == "en", span should be [m[0], m[1] - 2]
+            for m in finditer:
+                m_list.append(m)
+
+                # word_idx2spans
+                if m.group() not in word2spans:
+                    word2spans[m.group()] = []
+                word2spans[m.group()].append(m)
+
+                # mask
+                sp = m.span()
+                text_ch_list = list(text_cp)
+                text_ch_list[sp[0]:sp[1]] = ["_"] * (sp[1] - sp[0])
+                text_cp = "".join(text_ch_list)
+
+        word2surround_sps = {}
+        for sbwd_idx, sbwd in enumerate(seg_list):
+            pre_spans = word2spans[seg_list[sbwd_idx - 1]] if sbwd_idx != 0 else []
+            try:
+                post_spans = word2spans[seg_list[sbwd_idx + 1]] if sbwd_idx != len(seg_list) - 1 else []
+            except Exception:
+                print("TTTTT")
+            if sbwd not in word2surround_sps:
+                word2surround_sps[sbwd] = {}
+            word2surround_sps[sbwd]["pre"] = pre_spans
+            word2surround_sps[sbwd]["post"] = post_spans
+
+        dist_map = [0] * len(m_list)
+        for mid_i, mi in enumerate(m_list):
+            sur_sps = word2surround_sps[mi.group()]
+            # try:
+            pre_dists = [min(abs(mi.span()[0] - mj.span()[1]), abs(mi.span()[1] - mj.span()[0])) for mj in sur_sps["pre"]]
+            dist_map[mid_i] += min(pre_dists) if len(pre_dists) > 0 else 0
+            post_dists = [min(abs(mi.span()[0] - mj.span()[1]), abs(mi.span()[1] - mj.span()[0])) for mj in sur_sps["post"]]
+            dist_map[mid_i] += min(post_dists) if len(post_dists) > 0 else 0
+
+            # except Exception:
+            #     print("!!!!!!")
+            # for mid_j, mj in enumerate(m_list):
+            #     if mid_i == mid_j:
+            #         continue
+            #     dist_map[mid_i] += min(abs(mi.span()[0] - mj.span()[1]), abs(mi.span()[1] - mj.span()[0]))
+
+        m_list_ = [{"score": dist_map[mid], "mention": m} for mid, m in enumerate(m_list)]
+        word2cand_sps = {}
+
+        m_list_ = sorted(m_list_, key=lambda m: m["score"], reverse=True)
+        for m in m_list_:
+            if m["mention"].group() not in word2cand_sps:
+                word2cand_sps[m["mention"].group()] = []
+            word2cand_sps[m["mention"].group()].append(m["mention"])
+
+        # choose the most cohesive spans as candidates
+        cand_spans = []
+        add_list = []
+        for wd in seg_list:
+            if wd in word2cand_sps:
+                # last word first
+                last_w = word2cand_sps[wd].pop() if len(word2cand_sps[wd]) > 1 else word2cand_sps[wd][-1]
+                cand_spans.append(last_w.span())
+                add_list.append("_")
+            else:
+                add_list.append(wd)
+        add_text = "".join(add_list)
+
+        spans = []
+        for idx, sp in enumerate(cand_spans):
+            spans.extend(sp)
+
+        candidate_spans = [spans]
+
+        # merge continuous spans
+        new_candidate_spans = []
+        for spans in candidate_spans:
+            new_spans = utils.merge_spans(spans) if merge_sps else spans
+            new_candidate_spans.append(new_spans)
+
+        return new_candidate_spans, add_text
 
     @staticmethod
     def extract_ent_fr_txt_by_char_sp(char_span, text, language=None):
@@ -1039,11 +1136,11 @@ class Preprocessor:
             tk_sp = [tok_span[idx], tok_span[idx + 1]]
             if tk_sp[-1] == 0:
                 return tok_span
-            char_span_list = tok2char_span[tk_sp[0]:tk_sp[1]]
             try:
+                char_span_list = tok2char_span[tk_sp[0]:tk_sp[1]]
                 char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
             except Exception:
-                print("!")
+                print("tok_span2char_span!")
         return char_span
 
     @staticmethod
@@ -1182,9 +1279,37 @@ class Preprocessor:
             for spo in sample["open_spo_list"]:
                 for arg in spo:
                     # ent_list.append(arg["text"])
+                    if len(arg["char_span"]) == 0:
+                        continue
                     sp_list.append(arg["char_span"])
 
         return sp_list
+
+    @staticmethod
+    def get_all_possible_entities(sample):
+        ent_list = []
+        if "entity_list" in sample:
+            ent_list.extend([ent["text"] for ent in sample["entity_list"]])
+
+        if "relation_list" in sample:
+            ent_list.extend([spo["subject"] for spo in sample["relation_list"]])
+            ent_list.extend([spo["object"] for spo in sample["relation_list"]])
+
+        if "event_list" in sample:
+            for event in sample["event_list"]:
+                if "trigger" in event:
+                    ent_list.append(event["trigger"])
+                for arg in event["argument_list"]:
+                    ent_list.append(arg["text"])
+
+        if "open_spo_list" in sample:
+            for spo in sample["open_spo_list"]:
+                for arg in spo:
+                    if len(arg["char_span"]) == 0:
+                        continue
+                    ent_list.append(arg["text"])
+
+        return Preprocessor.unique_list(ent_list)
 
     @staticmethod
     def exist_nested_entities(sp_list):
@@ -1316,7 +1441,15 @@ class Preprocessor:
         max_word_seq_length, max_subword_seq_length = 0, 0
         ent_exist, rel_exist, event_exist, oie_exist = False, False, False, False
 
+        max_ann_subwd_span = 0
+        max_ann_wd_span = 0
+
         for sample in tqdm(data, desc="generating supporting data"):
+            min_subwd_span_start = 99999
+            max_subwd_span_end = 0
+            min_wd_span_start = 99999
+            max_wd_span_end = 0
+
             # POS tag
             if "pos_tag_list" in sample["features"]:
                 pos_tag_set |= {pos_tag for pos_tag in sample["features"]["pos_tag_list"]}
@@ -1326,29 +1459,61 @@ class Preprocessor:
             # dependency relations
             if "word_dependency_list" in sample["features"]:
                 deprel_type_set |= {deprel[-1] for deprel in sample["features"]["word_dependency_list"]}
+
+            subwd_span_list = []
+            wd_span_list = []
+
             # entity
             if "entity_list" in sample:
                 ent_exist = True
                 for ent in sample["entity_list"]:
                     ent_type_set.add(ent["type"])
+                    subwd_span_list.append(ent["subwd_span"])
+                    wd_span_list.append(ent["wd_span"])
+
             # relation
             if "relation_list" in sample:
                 rel_exist = True
                 for rel in sample["relation_list"]:
                     rel_type_set.add(rel["predicate"])
+                    subwd_span_list.append(rel["subj_subwd_span"])
+                    wd_span_list.append(rel["subj_wd_span"])
+                    subwd_span_list.append(rel["obj_subwd_span"])
+                    wd_span_list.append(rel["obj_wd_span"])
+
             # event
             if "event_list" in sample:
                 event_exist = True
                 for event in sample["event_list"]:
                     event_type_set.add(event["event_type"])
+                    if "trigger" in event:
+                        subwd_span_list.append(event["trigger_subwd_span"])
+                        wd_span_list.append(event["trigger_wd_span"])
+
                     for arg in event["argument_list"]:
                         argument_type_set.add(arg["type"])
+                        subwd_span_list.append(arg["subwd_span"])
+                        wd_span_list.append(arg["wd_span"])
 
             if "open_spo_list" in sample:
                 oie_exist = True
                 for spo in sample["open_spo_list"]:
                     for arg in spo:
                         oie_arg_type_set.add(arg["type"])
+                        if arg["text"] in {"DESC", "ISA", "IN", "BIRTH", "DEATH", "=", "NOT"}:
+                            continue
+                        subwd_span_list.append(arg["subwd_span"])
+                        wd_span_list.append(arg["wd_span"])
+
+            # span
+            for sp in subwd_span_list:
+                min_subwd_span_start = min(min_subwd_span_start, sp[0])
+                max_subwd_span_end = max(max_subwd_span_end, sp[1])
+            for sp in wd_span_list:
+                min_wd_span_start = min(min_wd_span_start, sp[0])
+                max_wd_span_end = max(max_wd_span_end, sp[1])
+            max_ann_subwd_span = max(max_subwd_span_end - min_subwd_span_start, max_ann_subwd_span)
+            max_ann_wd_span = max(max_wd_span_end - min_wd_span_start, max_ann_wd_span)
 
             # character
             char_set |= set(sample["text"])
@@ -1380,6 +1545,8 @@ class Preprocessor:
             "char_num": len(char2id),
             "max_word_seq_length": max_word_seq_length,
             "max_subword_seq_length": max_subword_seq_length,
+            "max_ann_subword_span": max_ann_subwd_span,
+            "max_ann_word_span": max_ann_wd_span,
         }
         if ent_exist:
             data_statistics["ent_type_num"] = len(ent_type_set)
@@ -1577,6 +1744,10 @@ class Preprocessor:
                     new_spo.append(arg)
                 if not bad_spo:
                     sub_open_spo_list.append(new_spo)
+
+                # if any(not utils.span_contains(limited_span, arg["tok_span"]) for arg in spo):
+                #     continue
+                # sub_open_spo_list.append(spo)
             filter_res["open_spo_list"] = sub_open_spo_list
         return filter_res
 
@@ -1652,7 +1823,7 @@ class Preprocessor:
                 if "open_spo_list" in sample:
                     new_sample["open_spo_list"] = []
 
-                # if it is a combined sample, "components" exists
+                # if "components" exists -> it is a combined sample
                 if "components" in sample:
                     sub_comps_ = []
                     for comp in sample["components"]:

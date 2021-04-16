@@ -198,7 +198,11 @@ class MetricsCalculator:
         :return: the head word of the given text
         '''
         ch_pattern = "[\u4e00-\u9fa5\s]+"
-        part_ent = ent_text[0] if re.match(ch_pattern, ent_text[0]) is not None else ent_text.split()[0]
+        try:
+            part_ent = ent_text[0] if re.match(ch_pattern, ent_text[0]) is not None else ent_text.split()[0]
+        except Exception:
+            print("????ent empty")
+
         return part_ent
 
     @staticmethod

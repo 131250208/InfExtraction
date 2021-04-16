@@ -7,13 +7,13 @@ class OIEMetrics:
     @staticmethod
     def trans(spo):
         new_spo = {}
-        for role in spo:
-            if role["type"] != "object":
-                new_spo[role["type"]] = role
+        for arg in spo:
+            if arg["type"] != "object":
+                new_spo[arg["type"]] = arg
             else:
                 if "object" not in new_spo:
                     new_spo["object"] = []
-                new_spo["object"].append(role)
+                new_spo["object"].append(arg)
         return new_spo
 
     @staticmethod
@@ -48,25 +48,37 @@ class OIEMetrics:
     @staticmethod
     def compare(pred_data, gold_data, threshold):
         # 读每个ins，计算每个pair的相似性，
-        correct_num = 0
-        gold_num = 0
-        pred_num = 0
-        new_gold_data = copy.deepcopy(gold_data)
+        total_correct_num = 0
+        total_gold_num = 0
+        total_pred_num = 0
 
-        for idx in range(len(pred_data)):
-            gold_num += len(new_gold_data[idx]["open_spo_list"])
-            pred_num += len(pred_data[idx]["open_spo_list"])
-            for predicted_ex in pred_data[idx]["open_spo_list"]:
+        for sample_idx, pred_sample in enumerate(pred_data):
+            gold_sample = gold_data[sample_idx]
+            pred_spo_list = pred_sample["open_spo_list"]
+            gold_spo_list4debug = gold_sample["open_spo_list"]
+            gold_spo_list = copy.deepcopy(gold_sample["open_spo_list"])
+
+            pred_num = len(pred_spo_list)
+            gold_num = len(gold_spo_list)
+
+            total_gold_num += gold_num
+            total_pred_num += pred_num
+
+            correct_num = 0
+            for predicted_ex in pred_spo_list:
                 ex_score = 0
                 hit_idx = None
-                for idx, gold_ex in enumerate(
-                        new_gold_data[idx]["open_spo_list"]):
+                for spo_idx, gold_ex in enumerate(
+                        gold_spo_list):
                     match_score = OIEMetrics.match(OIEMetrics.trans(predicted_ex), OIEMetrics.trans(gold_ex))
                     if match_score > ex_score:
                         ex_score = match_score
-                        hit_idx = idx
+                        hit_idx = spo_idx
                 if ex_score > threshold:
                     correct_num += 1
-                    del new_gold_data[idx][hit_idx]
+                    del gold_spo_list[hit_idx]
+            total_correct_num += correct_num
 
-        return correct_num, pred_num, gold_num
+            # if not (correct_num == pred_num == gold_num):
+            #     print("!")
+        return total_correct_num, total_pred_num, total_gold_num

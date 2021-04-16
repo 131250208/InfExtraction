@@ -210,6 +210,8 @@ class Evaluator:
             if "open_spo_list" in sample:
                 if "open_spo_list" not in merged_pred_samples[id_]:
                     merged_pred_samples[id_]["open_spo_list"] = []
+                # if id_ == 10467:
+                #     print("de")
                 merged_pred_samples[id_]["open_spo_list"].extend(sample["open_spo_list"])
 
         # alignment by id (in order)
@@ -228,6 +230,20 @@ class Evaluator:
                 sample["event_list"] = Preprocessor.unique_list(sample["event_list"])
             if "open_spo_list" in sample:
                 sample["open_spo_list"] = Preprocessor.unique_list(sample["open_spo_list"])
+
+                # filter redundant spo
+                def arg_to_str(arg):
+                    return "-".join([*[str(idx) for idx in arg["tok_span"]], arg["type"]])
+
+                new_spo_list = []
+                for spo_i in sample["open_spo_list"]:
+                    spo_set_i = {arg_to_str(arg) for arg in spo_i}
+                    if any(spo_set_i.issubset({arg_to_str(arg) for arg in spo_j})
+                           and len(spo_set_i) < len({arg_to_str(arg) for arg in spo_j})
+                           for spo_j in sample["open_spo_list"]):  # if spo_i is a proper subset of another spo, skip
+                        continue
+                    new_spo_list.append(spo_i)
+                sample["open_spo_list"] = new_spo_list
 
         return pred_data
 
