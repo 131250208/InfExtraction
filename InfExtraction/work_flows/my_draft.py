@@ -2,6 +2,7 @@ import json
 import os
 from InfExtraction.modules.preprocess import Preprocessor, WhiteWordTokenizer
 from InfExtraction.modules.utils import load_data, save_as_json_lines, merge_spans
+from InfExtraction.modules import utils
 from tqdm import tqdm
 import random
 from tqdm import tqdm
@@ -13,6 +14,7 @@ import string
 from pattern.en import lexeme, lemma
 import itertools
 import matplotlib.pyplot as plt
+from glob import glob
 
 def get_add_seg(type_set, seed):
     # types
@@ -323,8 +325,7 @@ def preprocess_duie():
                 # drop wrong spo
                 continue
 
-            # recover upper case
-            if spo["subject"] not in text:
+            if spo["subject"] not in text: # if not in, try recover upper case
                 m = re.search(re.escape(spo["subject"].lower()), text.lower())
                 # print("{}----{}".format(spo["subject"], text[m.span()[0]:m.span()[1]]))
                 spo["subject"] = text[m.span()[0]:m.span()[1]]
@@ -1016,76 +1017,88 @@ def trans2dai_dataset():
 
 
 if __name__ == "__main__":
-    s = "string"
-    s.span = [1, 2]
 
-    pass
-    # path = "../../data/ori_data/lsoie_data/lsoie_wiki_test.conll"
-    # with open(path, "r", encoding="utf-8") as file_in:
-    #     data = []
-    #     word_list = []
-    #     tag_list = []
-    #     lines = []
-    #     for line in file_in:
-    #         line = line.strip("\n")
-    #         line = line.strip()
-    #         lines.append(line)
-    #         if line != "":
-    #             items = line.split("\t")
-    #             word = items[1]
-    #             tag = items[-1]
-    #             word_list.append(word)
-    #             tag_list.append(tag)
-    #         else:
-    #             data.append({
-    #                 "text": " ".join(word_list),
-    #                 "word_list": word_list,
-    #                 "tag_list": tag_list,
-    #                 "lines": lines,
-    #             })
-    #             word_list = []
-    #             tag_list = []
-    #             lines = []
-    #     if len(word_list) > 0:
-    #         data.append({
-    #             "text": " ".join(word_list),
-    #             "word_list": word_list,
-    #             "tag_list": tag_list,
-    #             "lines": lines,
-    #         })
-    #         word_list = []
-    #         tag_list = []
-    #         lines = []
+    # train_data = load_data("../../data/normal_data/saoke/train_data.json")
+    # for sample in train_data:
+    #     if sample["id"] == 44629:
+    #         print(sample["text"])
+
+    # text = "2013年11月11日出席SNH48 Team组建授旗仪式，升格为SNH48 Team N队（Team NⅡ）24名成员之一。"
+    # target_seg = "SNH48 Team N队24名成员之一"
+    # sps, _ = Preprocessor.search_char_spans_fr_txt(target_seg, text, "ch")
+    # print(sps)
+    # print(Preprocessor.extract_ent_fr_txt_by_char_sp(sps[0], text))
+    # pprint([text[sps[0][idx]:sps[0][idx + 1]] for idx in range(0, len(sps[0]), 2)])
     #
-    #     count = 0
-    #     final_data = []
-    #     for idx, sample in enumerate(data):
-    #         word_list = sample["word_list"]
-    #         tag_list = sample["tag_list"]
-    #         role_tags, bio_tags = [], []
-    #         for tag in tag_list:
-    #             tag_split = tag.split("-")
-    #             role_tags.append(tag_split[0])
-    #             bio_tags.append(tag_split[-1])
+    # text = '徐特立曾说：“培养一个县委书记、地委书记容易，培养一个速记员难”。'
+    # target_seg = '培养一个县委书记地委书记'
+    # sps, _ = Preprocessor.search_char_spans_fr_txt(target_seg, text, "ch")
+    # print(sps)
+    # print(Preprocessor.extract_ent_fr_txt_by_char_sp(sps[0], text))
+    # pprint([text[sps[0][idx]:sps[0][idx + 1]] for idx in range(0, len(sps[0]), 2)])
+
+    text = '冲刺班的任课教师均多年带过体育、艺术生高考文化课的冲刺班，富有教学经验，针对体育、艺术生文化课基础薄弱和学习时间短暂的实际情况，研究制定了一套科学的、切实可行的教学方案，使用一套适合体育、艺术生的教材，自编自印了各科《快速复习攻略》能够让学生尽快地、最大程度地掌握文化知识，提高高考成绩。'
+    target_seg = '一套适合[体育|艺术]生的教材'
+    # print(utils.search_segs(target_seg, text))
+    sps, _ = Preprocessor.search_char_spans_fr_txt(target_seg, text, "ch")
+    print(sps)
+    print(Preprocessor.extract_ent_fr_txt_by_char_sp(sps[0], text))
+    pprint([text[sps[0][idx]:sps[0][idx + 1]] for idx in range(0, len(sps[0]), 2)])
+
+    # text = '安装固定电话或拥有移动电话的农户数71户，其中拥有移动电话农户数71户（分别占农户总数的100 %和100%）。'
+    # target_seg = '分别占的100%'
+    # sps, _ = Preprocessor.search_char_spans_fr_txt(target_seg, text, "ch")
+    # print(sps)
+
+    # # 1. 相同词汇按顺序再排一次 2. 按最大匹配分词 3.
+    # def search_segs(search_str, text):
+    #     s_idx = 0
+    #     seg_list = []
+    #     while s_idx != len(search_str):
+    #         start_ids = [m.span()[0] for m in re.finditer(re.escape(search_str[s_idx]), text)]
     #
-    #         wrong_annotation = False
-    #         argument_list = []
-    #         for m in re.finditer("BI*", "".join(bio_tags)):
-    #             try:
-    #                 assert role_tags[m.span()[0]] == role_tags[m.span()[1] - 1]
-    #             except Exception:
-    #                 print("!")
-    #                 count += 1
-    #                 wrong_annotation = True
+    #         e_idx = 0
+    #         while e_idx != len(search_str):
+    #             new_start_ids = []
+    #             for idx in start_ids:
+    #                 if idx + e_idx == len(text) or s_idx + e_idx == len(search_str):
+    #                     continue
+    #                 if text[idx + e_idx] == search_str[s_idx + e_idx]:
+    #                     new_start_ids.append(idx)
+    #             if len(new_start_ids) == 0:
     #                 break
-    #             role = role_tags[m.span()[0]]
-    #             argument_list.append({
-    #                 "text": " ".join(word_list[m.span()[0]:m.span()[1]]),
-    #                 "word_span": [*m.span()],
-    #                 "type": role,
-    #             })
-    #         if wrong_annotation:
-    #             continue
-    #         sample["id"] = idx
-    #         sample["argument_list"] = argument_list
-    #         final_data.append(sample)
+    #             start_ids = new_start_ids
+    #             e_idx += 1
+    #
+    #         seg_list.append(search_str[s_idx: s_idx + e_idx])
+    #         s_idx += e_idx
+    #
+    #     return seg_list
+    #
+    #
+    # print(search_segs(target_seg, text))
+
+    # valid_data = load_data("../../data/normal_data/saoke/valid_data.json")
+    # test_data = load_data("../../data/normal_data/saoke/test_data.json")
+
+    # type2disc_num = {}
+    # disc = []
+    # type2reverse_num = {}
+    # reverse = []
+    # for sample in train_data + valid_data +test_data:
+    #     for spo in sample["open_spo_list"]:
+    #         for arg in spo:
+    #             if len(arg["char_span"]) > 2:
+    #                 type2disc_num[arg["type"]] = type2disc_num.get(arg["type"], 0) + 1
+    #                 disc.append({
+    #                     "arg": arg,
+    #                     "sample": sample,
+    #                 })
+    #             if any(pos < arg["char_span"][idx - 1] for idx, pos in enumerate(arg["char_span"]) if idx != 0):
+    #                 type2reverse_num[arg["type"]] = type2reverse_num.get(arg["type"], 0) + 1
+    #                 reverse.append({
+    #                     "arg": arg,
+    #                     "sample": sample,
+    #                 })
+    #
+    # err_reverse = [s for s in reverse if len(s["arg"]["char_span"]) > 6]

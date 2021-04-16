@@ -65,7 +65,7 @@ def get_dataloader(data,
                    ):
 
     if combine:
-        data = Preprocessor.combine(data, 512)
+        data = Preprocessor.combine(data, 1024)
 
     data = Preprocessor.split_into_short_samples(data,
                                                  max_seq_len,
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     data_in_dir = settings.data_in_dir
     data_out_dir = settings.data_out_dir
 
-    ori_train_data = settings.train_data
+    train_data = settings.train_data
     ori_valid_data = settings.valid_data
     ori_data4checking = settings.data4checking
     filename2ori_test_data = settings.filename2ori_test_data
@@ -223,8 +223,8 @@ if __name__ == "__main__":
     # ...
 
     # choose features and spans by token level
-    ori_train_data = Preprocessor.choose_features_by_token_level(ori_train_data, token_level, do_lower_case)
-    ori_train_data = Preprocessor.choose_spans_by_token_level(ori_train_data, token_level)
+    train_data = Preprocessor.choose_features_by_token_level(train_data, token_level, do_lower_case)
+    train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
 
     ori_valid_data = Preprocessor.choose_features_by_token_level(ori_valid_data, token_level, do_lower_case)
     ori_valid_data = Preprocessor.choose_spans_by_token_level(ori_valid_data, token_level)
@@ -237,10 +237,13 @@ if __name__ == "__main__":
 
     # # copy original data to do following operations,
     # to maintain the original data clean for evaluation (should not be changed by preprocessing)
-    train_data = copy.deepcopy(ori_train_data)
+    # train_data = copy.deepcopy(ori_train_data)
+
+    print("copy ...")
     valid_data = copy.deepcopy(ori_valid_data)
     data4checking = copy.deepcopy(ori_data4checking)
     filename2test_data = copy.deepcopy(filename2ori_test_data)
+    print("done copy!")
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # tagger

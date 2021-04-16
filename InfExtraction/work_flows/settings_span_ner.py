@@ -1,5 +1,5 @@
 import os
-device_num = 1 
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -47,14 +47,14 @@ tagger_name = "Tagger4SpanNER"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "biobert-large-cased-pubmed-58k"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
+use_wandb = True
 note = ""
 epochs = 100
 lr = 3e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
 drop_neg_samples = False
-combine = False  # combine splits
+combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
 model_bag_size = 0

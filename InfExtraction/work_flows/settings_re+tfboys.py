@@ -1,5 +1,5 @@
 import os
-device_num = 0
+device_num = 1
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -54,7 +54,7 @@ lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
 drop_neg_samples = False
-combine = True # combine splits
+combine = True
 scheduler = "CAWR"
 use_ghm = False
 model_bag_size = 0  # if no saving, set to 0
@@ -127,13 +127,13 @@ for key, val in dicts.items():
 # additional preprocessing
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
-    "classify_entities_by_relation": False,  # ee, re
-    "add_nested_relation": False,  # ner
-    "add_same_type_relation": False,  # ner
+    "classify_entities_by_relation": False,
+    "dtm_arg_type_by_edges": True,
 }
 
 # tagger config
 tagger_config = {
+    "dtm_arg_type_by_edges": addtional_preprocessing_config["dtm_arg_type_by_edges"],
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "add_h2t_n_t2h_links": False,
     "language": "en",
@@ -267,7 +267,7 @@ model_settings = {
     "use_attns4rel": use_attns4rel,
     "ent_dim": 1024,
     "rel_dim": 1024,
-    "do_span_len_emb": True,
+    "span_len_emb_dim": 64,
     "emb_ent_info2rel": False,
     "golden_ent_cla_guide": False,
     "loss_func": "mce_loss",

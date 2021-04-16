@@ -1,5 +1,5 @@
 import os
-device_num = 1 
+device_num = 1
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -38,34 +38,34 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "webnlg_star"
-language = "en"
+exp_name = "duie_comp2021"
+language = "ch"
 stage = "train"  # inference
 task_type = "re"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "bert-base-cased"
+pretrained_model_name = "chinese_roberta_wwm_ext_pytorch"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
-note = "use attns"
+use_wandb = True
+note = ""
 epochs = 100
 lr = 5e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
-drop_neg_samples = True
+drop_neg_samples = False
 combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 0
+model_bag_size = 5
 
-batch_size_train = 6
-batch_size_valid = 12
-batch_size_test = 12 
+batch_size_train = 16
+batch_size_valid = 32
+batch_size_test = 32
 
-max_seq_len_train = 100
-max_seq_len_valid = 100
-max_seq_len_test = 100
+max_seq_len_train = 72
+max_seq_len_valid = 128
+max_seq_len_test = 128
 
 sliding_len_train = 20
 sliding_len_valid = 20
@@ -82,7 +82,7 @@ dep_gcn = False
 
 word_encoder = False
 subwd_encoder = True
-use_attns4rel = True  # used only if subwd_encoder (bert) is True
+use_attns4rel = False  # used only if subwd_encoder (bert) is True
 flair = False
 elmo = False
 top_attn = False
@@ -98,7 +98,7 @@ random.shuffle(data4checking)
 checking_num = 1000
 data4checking = data4checking[:checking_num]
 
-test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+test_data_list = [] # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
 for test_data_path in test_data_list:
     filename = test_data_path.split("/")[-1]
@@ -128,9 +128,7 @@ for key, val in dicts.items():
 # additional preprocessing
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
-    "classify_entities_by_relation": False,  # ee, re
-    "add_nested_relation": False,  # ner
-    "add_same_type_relation": False,  # ner
+    "classify_entities_by_relation": False,
 }
 
 # tagger config
@@ -291,11 +289,11 @@ model_settings = {
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
     "rel_dim": 768,
-    "do_span_len_emb": True,
+    "span_len_emb_dim": 64,
     "emb_ent_info2rel": False,
     "golden_ent_cla_guide": False,
     "loss_weight": 0.5,
-    "loss_weight_recover_steps": 0,
+    "loss_weight_recover_steps": 6000,
     "loss_func": "mce_loss",
     "pred_threshold": 0.,
 }

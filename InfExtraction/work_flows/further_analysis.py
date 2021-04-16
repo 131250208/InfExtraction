@@ -9,10 +9,11 @@ import os
 
 fig, ax = plt.subplots()
 
-dai_pred_file_path = "../../data/res_data/dai_disc_ner/elmo/share_14_uncbase/869/test_data.json"
-our_pred_file_path = "../../data/res_data/macd_res/share_14/test_data.json"
-gold_file_path = "../../data/normal_data/share_14_clinic/test_data.json"
-save_dir = "../../data/res_data/analysis/share_14"
+# 14: 869, 13: 50542, cadec: 353778
+dai_pred_file_path = "../../data/res_data/dai_disc_ner/elmo/cadec4uncbase/353778/test_data.json"
+our_pred_file_path = "../../data/res_data/macd_res/cadec/test_data.json"
+gold_file_path = "../../data/normal_data/cadec4yelp/test_data.json"
+save_dir = "../../data/res_data/analysis/cadec"
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 

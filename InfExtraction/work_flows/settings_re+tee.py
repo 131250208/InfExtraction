@@ -54,7 +54,7 @@ lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
 drop_neg_samples = False
-combine = True # combine splits
+combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
 model_bag_size = 0  # if no saving, set to 0
@@ -126,7 +126,7 @@ for key, val in dicts.items():
 # additional preprocessing
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
-    "classify_entities_by_relation": True,  # ee, re
+    "classify_entities_by_relation": False,  # ee, re
     "add_nested_relation": False,  # ner
     "add_same_type_relation": False,  # ner
 }
