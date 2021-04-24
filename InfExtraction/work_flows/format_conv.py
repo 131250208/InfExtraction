@@ -11,7 +11,6 @@ import copy
 import re
 import jieba
 import string
-from pattern.en import lexeme, lemma
 import itertools
 import matplotlib.pyplot as plt
 import time
@@ -167,11 +166,8 @@ def postprocess_duee():
     save_as_json_lines(test_data2submit, out_path)
 
 
-def preprocess_oie4():
+def trans_oie4():
     data_in_dir = "../../data/ori_data/oie4_bk"
-    data_out_dir = "../../data/ori_data/oie4"
-    if not os.path.exists(data_out_dir):
-        os.makedirs(data_out_dir)
 
     train_filename = "openie4_labels"
     valid_filename = "dev.tsv"
@@ -179,10 +175,6 @@ def preprocess_oie4():
     train_path = os.path.join(data_in_dir, train_filename)
     valid_path = os.path.join(data_in_dir, valid_filename)
     test_path = os.path.join(data_in_dir, test_filename)
-
-    train_save_path = os.path.join(data_out_dir, "train_data.json")
-    valid_save_path = os.path.join(data_out_dir, "valid_data.json")
-    test_save_path = os.path.join(data_out_dir, "test_data.json")
 
     train_data = []
     with open(train_path, "r", encoding="utf-8") as file_in:
@@ -229,18 +221,7 @@ def preprocess_oie4():
                     type2indices[tag] = []
                 type2indices[tag].append(idx)
 
-            spo = {"predicate": {"text": "",
-                                 "complete": "",
-                                 "predefined": False,
-                                 "prefix": "",
-                                 "suffix": "",
-                                 "char_span": [0, 0],
-                                 },
-                   "subject": {"text": "", "char_span": [0, 0]},
-                   "object": {"text": "", "char_span": [0, 0]},
-                   "other_args": []}
-            add_text = None
-            other_args = []
+            spo = []
             for type_, ids in type2indices.items():
                 wd_spans = []
                 pre = -10
@@ -253,28 +234,23 @@ def preprocess_oie4():
                 wd_spans = wd_spans[1:]
 
                 ch_spans = Preprocessor.tok_span2char_span(wd_spans, tok2char_span)
-                arg_text = Preprocessor.extract_ent_fr_toks(wd_spans, word_list, "en")
-                arg_text_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(ch_spans, text, "en")
-                assert arg_text_extr == arg_text
+                extr_arg_text_tok = Preprocessor.extract_ent_fr_txt_by_tok_sp(wd_spans, tok2char_span, text, "en")
+                extr_arg_text_ch = Preprocessor.extract_ent_fr_txt_by_char_sp(ch_spans, text, "en")
+
+                assert extr_arg_text_ch == extr_arg_text_tok
 
                 type_map = {
                     "REL": "predicate",
                     "ARG1": "subject",
                     "ARG2": "object",
-                    "ADD": "add",
+                    # "ADD": "additional_info",
                     "TIME": "time",
                     "LOC": "location",
                 }
-                if type_ in {"REL", "ARG1", "ARG2"}:
-                    spo[type_map[type_]] = {
-                        "text": arg_text,
-                        "char_span": ch_spans,
-                        "word_span": wd_spans,
-                    }
-                elif type_ in {"TIME", "LOC"}:
-                    other_args.append({
+                if type_ != "ADD":
+                    spo.append({
                         "type": type_map[type_],
-                        "text": arg_text,
+                        "text": extr_arg_text_tok,
                         "char_span": ch_spans,
                     })
                 else:
@@ -283,43 +259,28 @@ def preprocess_oie4():
                         "[unused2]": "be-of",
                         "[unused3]": "be-from",
                     }
-                    add_text = add_info_map[arg_text]
+                    add_text = add_info_map[extr_arg_text_tok]
 
-            if "predicate" not in spo:
-                if add_text == "be-none":
-                    spo["predicate"] = {
-                        "predefined": True,
+                    add_type = "predicate" if "REL" not in type2indices else "predicate_prefix"
+                    spo.append({
+                        "type": add_type,
                         "text": "be",
-                        "complete": "be",
-                        "prefix": "",
-                        "suffix": "",
-                        "char_span": [0, 0]
-                    }
-                else:
-                    spo["predicate"] = {
-                        "predefined": True,
-                        "text": "",
-                        "complete": "DEFAULT",
-                        "prefix": "",
-                        "suffix": "",
-                        "char_span": [0, 0]
-                    }
-                    raise Exception
-            else:
-                spo["predicate"]["prefix"] = ""
-                spo["predicate"]["suffix"] = ""
-                spo["predicate"]["predefined"] = False
-                if add_text is not None:
-                    spo["predicate"]["prefix"] = "be"
+                        "char_span": [],
+                    })
+
                     if add_text == "be-of":
-                        spo["predicate"]["suffix"] = "of"
-                    if add_text == "be-from":
-                        spo["predicate"]["suffix"] = "from"
-                spo["predicate"]["complete"] = " ".join([spo["predicate"]["prefix"],
-                                                         spo["predicate"]["text"],
-                                                         spo["predicate"]["suffix"]]).strip()
-                spo["other_args"] = other_args
-                open_spo_list.append(spo)
+                        spo.append({
+                            "type": "predicate_suffix",
+                            "text": "of",
+                            "char_span": [],
+                        })
+                    elif add_text == "be-from":
+                        spo.append({
+                            "type": "predicate_suffix",
+                            "text": "from",
+                            "char_span": [],
+                        })
+            open_spo_list.append(spo)
 
         word_list = word_list[:-3]
         text = " ".join(word_list)
@@ -328,14 +289,16 @@ def preprocess_oie4():
         sample["word_list"] = word_list
         sample["open_spo_list"] = open_spo_list
         for spo in open_spo_list:
-            for key, val in spo.items():
-                if key == "other_args":
-                    for arg in spo[key]:
-                        arg_text_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(arg["char_span"], text, "en")
-                        assert arg_text_extr == arg["text"]
-                else:
-                    arg_text_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(val["char_span"], text, "en")
-                    assert arg_text_extr == val["text"]
+            for arg in spo:
+                if len(arg["char_span"]) == 0:
+                    continue
+                extr_arg_text_ch = Preprocessor.extract_ent_fr_txt_by_char_sp(arg["char_span"], text, "en")
+                assert extr_arg_text_ch == arg["text"]
+            if any(arg["type"] == "object" for arg in spo):
+                for arg in spo:
+                    if arg["type"] == "predicate" and len(arg["char_span"]) > 0:
+                        arg["text"] += " [OBJ]"
+        del sample["tag_lines"]
 
     # valid and test
     def get_val_test_data(path):
@@ -368,28 +331,22 @@ def preprocess_oie4():
                 text = line[0]
                 if text not in text2anns:
                     text2anns[text] = []
-                spo = {"predicate": {"text": line[1],
-                                     "complete": line[1],
-                                     "predefined": False,
-                                     "prefix": "",
-                                     "suffix": "",
-                                     "char_span": [0, 0],
-                                     },
-                       "subject": {"text": line[2], "char_span": [0, 0]},
-                       "object": {"text": "", "char_span": [0, 0]},
-                       "other_args": []}
+                spo = [
+                    {"type": "predicate", "text": line[1]},
+                    {"type": "subject", "text": line[2]}
+                ]
 
                 if len(line) >= 4:
                     if "C :" not in line[3]:
-                        spo["object"] = {"text": line[3], }
+                        spo.append({"type": "object", "text": line[3]})
                 if len(line) >= 5:
                     if "C :" not in line[4]:
                         arg = re.sub("T : |L : ", "", line[4])
-                        spo["other_args"].append({"text": arg, "type": "time/loc_1"})
+                        spo.append({"type": "time/loc", "text": arg})
                 if len(line) == 6:
                     if "C :" not in line[5]:
                         arg = re.sub("T : |L : ", "", line[5])
-                        spo["other_args"].append({"text": arg, "type": "time/loc_2"})
+                        spo.append({"type": "time/loc", "text": arg})
                 text2anns[text].append(spo)
 
         data = []
@@ -398,159 +355,11 @@ def preprocess_oie4():
                 "text": text,
                 "open_spo_list": anns,
             })
-
-        # spans
-        predefined_p_set = {"belong to",
-                            "come from",
-                            "have a", "have",
-                            "will be",
-                            "exist",
-                            "be", "be a", "be in", "be on", "be at", "be of", "be from", "be for", "be with"}
-        prefix_set = {
-            "be", "will", "will be", "have", "have no", "must", "do not", "that",
-        }
-        suffix_set = {"in", "by", "of", "to", "from", "at"}
-        samples_w_tl = []
-
-        def my_lexeme(ori_word):
-            lexeme_ws = lexeme(ori_word)
-            lexeme_ws += [ori_word[0].upper() + ori_word[1:]]
-            lexeme_ws += [ori_word.lower()]
-            lexeme_ws += [ori_word.upper()]
-
-            if ori_word[-2:] == "ly":
-                lexeme_ws += [ori_word[:-2]]
-            if re.match("[A-Z]", ori_word[0]) is not None:
-                lexeme_ws += [ori_word + "'s"]
-            if ori_word == "pursued":
-                lexeme_ws += ["Pursuit"]
-            if ori_word == "approve":
-                lexeme_ws += ["approval"]
-            if ori_word == "goes":
-                lexeme_ws += ["exit onto"]
-            return lexeme_ws
-
-        def try_best2get_spans(target_str, text):
-            candidate_spans, add_text = Preprocessor.search_char_spans_fr_txt(target_str, text, "en")
-            spans = candidate_spans[0]
-            fin_spans = None
-            if add_text.strip("_ ") == "" and len(spans) != 0:  # if exact match
-                fin_spans = spans
-            else:
-                pre_add_text = add_text
-                # find words need to alter
-                words2lexeme = re.findall("[^_\s]+", add_text)
-                # lexeme all words
-                words_list = [my_lexeme(w) for w in words2lexeme]
-                # enumerate all possible alternative words
-                alt_words_list = [[w] for w in words_list[0]] if len(words_list) == 1 else itertools.product(
-                    *words_list)
-
-                match_num2spans = {}
-                max_match_num = 0
-                for alt_words in alt_words_list:
-                    chs = list(target_str)
-                    add_text_cp = pre_add_text[:]
-                    for wid, alt_w in enumerate(alt_words):
-                        # search the span of the word need to alter
-                        m4alt = re.search("[^_\s]+", add_text_cp)
-                        sp = m4alt.span()
-                        if alt_w == m4alt.group():  # same word, skip
-                            continue
-                        # alter the word
-                        chs[sp[0]:sp[1]] = list(alt_w)
-                        # mask the positions, will be ignore when getting m4alt next time
-                        add_text_cp_ch_list = list(add_text_cp)
-                        add_text_cp_ch_list[sp[0]:sp[1]] = ["_"] * len(alt_w)
-                        add_text_cp = "".join(add_text_cp_ch_list)
-                    # alternative text
-                    alt_txt = "".join(chs)
-
-                    # try to get spans
-                    candidate_spans, add_text = Preprocessor.search_char_spans_fr_txt(alt_txt, text, "en")
-                    spans = candidate_spans[0]
-                    # cal how many words are matched this time
-                    match_num = len(re.findall("_+", add_text)) - len(re.findall("_+", pre_add_text))
-                    if match_num > 0:  # some words matched
-                        match_num2spans[match_num] = spans
-                        max_match_num = max(max_match_num, match_num)
-                if max_match_num > 0:  # if there are any successful cases
-                    fin_spans = match_num2spans[max_match_num]  # use the longest match
-
-            if fin_spans is None or len(fin_spans) == 0:  # if still can not match, take partial match instead
-                candidate_spans, add_text = Preprocessor.search_char_spans_fr_txt(target_str, text, "en")
-                fin_spans = candidate_spans[0]
-            return fin_spans
-
-        for sample in tqdm(data, "add char span to val/test"):
-            text = sample["text"]
-            for spo in sample["open_spo_list"]:
-                if len(spo) >= 4:
-                    samples_w_tl.append(spo)
-                for key, val in spo.items():
-                    if key == "predicate":
-                        predicate = spo["predicate"]["text"]
-                        p_words = predicate.split()
-                        p_lemma_words = [lemma(w) for w in p_words]
-                        p_lemma = " ".join(p_lemma_words)
-
-                        if p_lemma in predefined_p_set:
-                            spo["predicate"]["predefined"] = True
-                            spo["predicate"]["text"] = ""
-                            spo["predicate"]["complete"] = p_lemma
-                            spo["predicate"]["char_span"] = [0, 0]
-                            continue
-
-                        candidate_spans, add_text = Preprocessor.search_char_spans_fr_txt(predicate, text, "en")
-                        spans = candidate_spans[0]
-                        if add_text.strip("_ ") == "" and len(spans) != 0:
-                            spo["predicate"]["char_span"] = spans
-                            continue
-
-                        # take prefix and suffix out
-                        if re.search("[A-Za-z0-9]$", add_text):
-                            for suffix in sorted(suffix_set, key=lambda a: len(a), reverse=True):
-                                if re.search(" {}$".format(suffix), p_lemma):
-                                    spo["predicate"]["text"] = " ".join(
-                                        spo["predicate"]["text"].split()[:len(p_words) - len(suffix.split())])
-                                    spo["predicate"]["suffix"] = suffix
-                                    break
-                        if re.search("^[A-Za-z0-9]", add_text):
-                            for prefix in sorted(prefix_set, key=lambda a: len(a), reverse=True):
-                                if re.search("^{} ".format(prefix), p_lemma):
-                                    spo["predicate"]["text"] = " ".join(
-                                        spo["predicate"]["text"].split()[len(prefix.split()):])
-                                    spo["predicate"]["prefix"] = prefix
-                                    break
-
-                    elif key != "other_args":
-                        arg = spo[key]
-                        if arg is not None:
-                            arg["char_span"] = try_best2get_spans(arg["text"], text)
-                            seg_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(arg["char_span"], text, "en")
-                            # if seg_extr != arg["text"]:
-                            #     print(sample["text"])
-                            #     print("target_seg: {}".format(arg["text"]))
-                            #     print("extr_seg: {}".format(seg_extr))
-                            #     pprint(spo)
-                            #     print("===============")
-                    else:
-                        for arg in spo[key]:
-                            arg["char_span"] = try_best2get_spans(arg["text"], text)
-                            seg_extr = Preprocessor.extract_ent_fr_txt_by_char_sp(arg["char_span"], text, "en")
-                            # if seg_extr != arg["text"]:
-                            #     print(sample["text"])
-                            #     print("target_seg: {}".format(arg["text"]))
-                            #     print("extr_seg: {}".format(seg_extr))
-                            #     pprint(spo)
-                            #     print("===============")
         return data
 
     valid_data = get_val_test_data(valid_path)
     test_data = get_val_test_data(test_path)
-    save_as_json_lines(train_data, train_save_path)
-    save_as_json_lines(valid_data, valid_save_path)
-    save_as_json_lines(test_data, test_save_path)
+
     return train_data, valid_data, test_data
 
 
@@ -1103,7 +912,8 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
             if text == '这种观点的大多数是具有使命感的资本家，还有主张进行自由式民主改革的人。' and spo["predicate"] == '主张进行':
                 spo["subject"] = '人'
 
-            if text == "前期投资只需要传统压缩机空调的一半，中期运行耗电量只需要传统空调的[/b]1/8[/b]——[/b]1/10[/b]，后期维护费用低。" and spo["predicate"] == "只需要X的[/b]1/8[/b]——[/b]1/10[/b]":
+            if text == "前期投资只需要传统压缩机空调的一半，中期运行耗电量只需要传统空调的[/b]1/8[/b]——[/b]1/10[/b]，后期维护费用低。" and spo[
+                "predicate"] == "只需要X的[/b]1/8[/b]——[/b]1/10[/b]":
                 text = "前期投资只需要传统压缩机空调的一半，中期运行耗电量只需要传统空调的1/8——1/10，后期维护费用低。"
                 spo["predicate"] = "只需要X的1/8——1/10"
 
@@ -1929,7 +1739,8 @@ def preprocess_duie():
                 "text"] = "影片信息电视剧影片名称：舞动芝加哥第二季  影片类型：欧美剧  影片语言：英语  上映年份：2012 演员表剧情介绍美国芝加哥，单亲女孩CeCe（Bella Thorne饰）和闺蜜Rocky（Zendaya Coleman饰）原本只是两个爱跳舞的普通初中生"
             # sample["postag"] = [{"word": w, } for w in jieba.cut(sample["text"])]
         if text == "http://news.sohu.com/20081221/n261333381.shtml 12月20日，西北政法大学动物保护法研究中心挂牌成立 同时，由西北政法大学和中国社会科学院法学研究所共同主办的“中国《动物保护法》研究项目”正式启动 　　图为西北政法大学动物保护法研究中心主任孙江(左一)从西北政法大学校长贾宇教授(左二)手中接过“西北政法大学动物保护研究中心”的牌匾":
-            sample["text"] = "2008，西北政法大学动物保护法研究中心挂牌成立 同时，由西北政法大学和中国社会科学院法学研究所共同主办的“中国《动物保护法》研究项目”正式启动 　　图为西北政法大学动物保护法研究中心主任孙江(左一)从西北政法大学校长贾宇教授(左二)手中接过“西北政法大学动物保护研究中心”的牌匾"
+            sample[
+                "text"] = "2008，西北政法大学动物保护法研究中心挂牌成立 同时，由西北政法大学和中国社会科学院法学研究所共同主办的“中国《动物保护法》研究项目”正式启动 　　图为西北政法大学动物保护法研究中心主任孙江(左一)从西北政法大学校长贾宇教授(左二)手中接过“西北政法大学动物保护研究中心”的牌匾"
         if text in {"于卫涛，1976年出生于河南省通许县，2013年携手刘洋创办河南欣赏网络科技集团，任该集团董事长，专注于我国大中小型企业提供专业的网络服务，带动很多企业网络方向的转型",
                     "1962年周明牂在中国植物保护学会成立大会上，作了《我国害虫农业防治研究现状和展望》的学术报告，1963年在《人民日报》上发表《结合耕作防治害虫》一文"}:
             new_spo_list = [spo for spo in sample["spo_list"] if spo["predicate"] != "所属专辑"]
@@ -1942,7 +1753,7 @@ def preprocess_duie():
 
         for spo in sample["spo_list"]:
             if text == '比如张艺谋的两届威尼斯国际电影节金狮奖 ，第38届柏林国际电影节金熊奖 ，两届英国电影学院奖最佳外语片 ，第55届台湾电影金马奖最佳导演奖 ，第05届中国电影华表奖最佳导演奖 ，2008影响世界华人大奖' and \
-                spo["object"]["@value"] == '中国电影华表奖最佳导演奖' and spo["object"]["period"] == "5":
+                    spo["object"]["@value"] == '中国电影华表奖最佳导演奖' and spo["object"]["period"] == "5":
                 spo["object"]["period"] = "05"
             if text == '陈思诚，曾获得第三届英国万像国际华语电影节优秀男配角奖，第21届北京大学生电影节最佳导演处女作奖，第23届北京大学生电影节最佳编剧奖等奖项，前两年背叛佟丽娅一事也是闹得人尽皆知' \
                     and spo["object"]["@value"] == '英国万像国际华语电影节优秀男配角奖' and spo["object"]["period"] == "3":
@@ -1951,10 +1762,12 @@ def preprocess_duie():
                     and spo["object"]["@value"] == '香港电影金像奖最佳男主角奖' and spo["object"]["period"] == "1":
                 spo["object"]["period"] = "一"
             if text == '亚洲电影大奖终身成就奖:第02届，2008年:山田洋次第04届，2010年:阿米达巴彻第05届，2011年:邹文怀第06届，2012年:许鞍华第08届，2014年:侯孝贤第09届，2015年:林权泽第10届，2016年:树木希林&袁和平第11届，2017年:徐克第12届，2018年:张艾嘉第13届，2019年:李沧东' \
-                    and spo["object"]["@value"] == '亚洲电影大奖终身成就奖' and "period" in spo["object"] and spo["object"]["period"] == "9":
+                    and spo["object"]["@value"] == '亚洲电影大奖终身成就奖' and "period" in spo["object"] and spo["object"][
+                "period"] == "9":
                 spo["object"]["period"] = "09"
             if text == '亚洲电影大奖终身成就奖:第02届，2008年:山田洋次第04届，2010年:阿米达巴彻第05届，2011年:邹文怀第06届，2012年:许鞍华第08届，2014年:侯孝贤第09届，2015年:林权泽第10届，2016年:树木希林&袁和平第11届，2017年:徐克第12届，2018年:张艾嘉第13届，2019年:李沧东' \
-                    and spo["object"]["@value"] == '亚洲电影大奖终身成就奖' and "period" in spo["object"] and spo["object"]["period"] == "6":
+                    and spo["object"]["@value"] == '亚洲电影大奖终身成就奖' and "period" in spo["object"] and spo["object"][
+                "period"] == "6":
                 spo["object"]["period"] = "06"
             if text == '《007》、《谍影重重》作为曾经的特工片，燃爆了整个好莱坞，前者至今收获约70亿美元，后者至今收获约11亿美元，在收获不菲票房的同时，也赢尽了口碑' \
                     and spo["object"]["@value"] == '70亿美元' and spo["subject"] == "7":
@@ -1966,22 +1779,22 @@ def preprocess_duie():
                     and spo["object"]["@value"] == '中国电影金鸡奖最佳女主角' and spo["object"]["period"] == "8":
                 spo["object"]["period"] = "八"
             if text == "出生于1984年9月26日，河南郑州，学历：本科，特长：主持、朗诵、表演、国画、平面模特、童声模仿 毕业院校/专业：中国传媒大学/播音与主持艺术专业，管文君，中央电视台体育频道（CCTV5）体育晨报《天气体育》主持人，同时，还主持中央电视台经济频道（CCTV2）《第一印象》、中央电视台农业频道《农业气象》和中国气象频道《天气直播间》等栏目" \
-                and spo["object"]["@value"] == "" and spo["predicate"] == "毕业院校":
+                    and spo["object"]["@value"] == "" and spo["predicate"] == "毕业院校":
                 spo["object"]["@value"] = "中国传媒大学"
             if text == "《白色梦幻》是一部于1998年1月1日出品的电视剧，由太纲导演，由田岷、许亚军、盖丽丽 和何晴主演，一共有20集，每集48分钟" \
-                and spo["object"]["@value"] == "" and spo["predicate"] == "上映时间":
+                    and spo["object"]["@value"] == "" and spo["predicate"] == "上映时间":
                 spo["object"]["@value"] = "1998年1月1日"
                 spo["subject"] = "白色梦幻"
             if text == "《闪点行动第五季》是一部由编剧Stephanie Morgenstern编写的一部动作剧情电视剧，出品时间为2012年09月20日" \
-                and spo["object"]["@value"] == "" and spo["predicate"] == "上映时间":
+                    and spo["object"]["@value"] == "" and spo["predicate"] == "上映时间":
                 spo["object"]["@value"] = "2012年09月20日"
                 spo["subject"] = "闪点行动第五季"
 
             if text == "第六名 刘悦 1982.1.25 江苏淮安 ——2001年10月 首届百事全国新星大赛江苏地区选拔赛一等奖 最佳激情奖 明日之星称号，2002年6月 中韩新星选秀大赛独唱组特等奖，2004年6月 中央电视台《非常6+1》， 湖南卫视超级女生成都赛区前10 ， 2011年 第一届华人星光大道第七名 用灵魂唱歌的歌手，唱的无数听众流泪，不愧“小刘欢”，因此成功拜师大刘欢 9 S" \
-                and spo["predicate"] == "获奖" and "period" in spo["object"] and spo["object"]["period"] == "":
+                    and spo["predicate"] == "获奖" and "period" in spo["object"] and spo["object"]["period"] == "":
                 spo["object"]["period"] = "首"
             if text == "2010年获Music Radio中国Top排行榜内地最佳创作歌手奖，第八届东南劲爆音乐榜颁奖典礼劲爆内地最佳唱作歌手奖、劲爆最佳作曲人奖李健以重庆为起点，开启2018-2020“不止 是李健”世界巡回演唱会" \
-                and spo["predicate"] == "获奖" and "period" in spo["object"] and spo["object"]["period"] == "":
+                    and spo["predicate"] == "获奖" and "period" in spo["object"] and spo["object"]["period"] == "":
                 spo["object"]["period"] = "八"
 
             if spo["predicate"] in {"专业代码", "邮政编码"} and text[
@@ -2037,17 +1850,139 @@ def preprocess_duie():
     save_as_json_lines(test_data, test_data_path)
 
 
+def trans2duee_format(pred_data):
+    new_pred_data = []
+    for sample in pred_data:
+        new_event_list = []
+        for event in sample["event_list"]:
+            new_arg_list = []
+            for arg in event["argument_list"]:
+                new_arg_list.append({
+                    "role": arg["type"],
+                    "argument": arg["text"],
+                })
+            if len(new_arg_list) > 0:
+                new_event_list.append({
+                    "event_type": event["event_type"],
+                    "arguments": new_arg_list
+                })
+        new_sample = {
+            "id": sample["id"],
+            "event_list": new_event_list,
+        }
+        new_pred_data.append(new_sample)
+    return new_pred_data
+
+
+def trans2duie2_format(pred_data):
+    scheme = {
+        "毕业院校": {"object_type": {"@value": "学校"}, "predicate": "毕业院校", "subject_type": "人物"},
+        "嘉宾": {"object_type": {"@value": "人物"}, "predicate": "嘉宾", "subject_type": "电视综艺"},
+        "配音": {"object_type": {"inWork": "影视作品", "@value": "人物"}, "predicate": "配音", "subject_type": "娱乐人物"},
+        "主题曲": {"object_type": {"@value": "歌曲"}, "predicate": "主题曲", "subject_type": "影视作品"},
+        "代言人": {"object_type": {"@value": "人物"}, "predicate": "代言人", "subject_type": "企业/品牌"},
+        "所属专辑": {"object_type": {"@value": "音乐专辑"}, "predicate": "所属专辑", "subject_type": "歌曲"},
+        "父亲": {"object_type": {"@value": "人物"}, "predicate": "父亲", "subject_type": "人物"},
+        "作者": {"object_type": {"@value": "人物"}, "predicate": "作者", "subject_type": "图书作品"},
+        "上映时间": {"object_type": {"inArea": "地点", "@value": "Date"}, "predicate": "上映时间", "subject_type": "影视作品"},
+        "母亲": {"object_type": {"@value": "人物"}, "predicate": "母亲", "subject_type": "人物"},
+        "专业代码": {"object_type": {"@value": "Text"}, "predicate": "专业代码", "subject_type": "学科专业"},
+        "占地面积": {"object_type": {"@value": "Number"}, "predicate": "占地面积", "subject_type": "机构"},
+        "邮政编码": {"object_type": {"@value": "Text"}, "predicate": "邮政编码", "subject_type": "行政区"},
+        "票房": {"object_type": {"inArea": "地点", "@value": "Number"}, "predicate": "票房", "subject_type": "影视作品"},
+        "注册资本": {"object_type": {"@value": "Number"}, "predicate": "注册资本", "subject_type": "企业"},
+        "主角": {"object_type": {"@value": "人物"}, "predicate": "主角", "subject_type": "文学作品"},
+        "妻子": {"object_type": {"@value": "人物"}, "predicate": "妻子", "subject_type": "人物"},
+        "编剧": {"object_type": {"@value": "人物"}, "predicate": "编剧", "subject_type": "影视作品"},
+        "气候": {"object_type": {"@value": "气候"}, "predicate": "气候", "subject_type": "行政区"},
+        "歌手": {"object_type": {"@value": "人物"}, "predicate": "歌手", "subject_type": "歌曲"},
+        "获奖": {"object_type": {"inWork": "作品", "onDate": "Date", "@value": "奖项", "period": "Number"}, "predicate": "获奖",
+               "subject_type": "娱乐人物"},
+        "校长": {"object_type": {"@value": "人物"}, "predicate": "校长", "subject_type": "学校"},
+        "创始人": {"object_type": {"@value": "人物"}, "predicate": "创始人", "subject_type": "企业"},
+        "首都": {"object_type": {"@value": "城市"}, "predicate": "首都", "subject_type": "国家"},
+        "丈夫": {"object_type": {"@value": "人物"}, "predicate": "丈夫", "subject_type": "人物"},
+        "朝代": {"object_type": {"@value": "Text"}, "predicate": "朝代", "subject_type": "历史人物"},
+        "饰演": {"object_type": {"inWork": "影视作品", "@value": "人物"}, "predicate": "饰演", "subject_type": "娱乐人物"},
+        "面积": {"object_type": {"@value": "Number"}, "predicate": "面积", "subject_type": "行政区"},
+        "总部地点": {"object_type": {"@value": "地点"}, "predicate": "总部地点", "subject_type": "企业"},
+        "祖籍": {"object_type": {"@value": "地点"}, "predicate": "祖籍", "subject_type": "人物"},
+        "人口数量": {"object_type": {"@value": "Number"}, "predicate": "人口数量", "subject_type": "行政区"},
+        "制片人": {"object_type": {"@value": "人物"}, "predicate": "制片人", "subject_type": "影视作品"},
+        "修业年限": {"object_type": {"@value": "Number"}, "predicate": "修业年限", "subject_type": "学科专业"},
+        "所在城市": {"object_type": {"@value": "城市"}, "predicate": "所在城市", "subject_type": "景点"},
+        "董事长": {"object_type": {"@value": "人物"}, "predicate": "董事长", "subject_type": "企业"},
+        "作词": {"object_type": {"@value": "人物"}, "predicate": "作词", "subject_type": "歌曲"},
+        "改编自": {"object_type": {"@value": "作品"}, "predicate": "改编自", "subject_type": "影视作品"},
+        "出品公司": {"object_type": {"@value": "企业"}, "predicate": "出品公司", "subject_type": "影视作品"},
+        "导演": {"object_type": {"@value": "人物"}, "predicate": "导演", "subject_type": "影视作品"},
+        "作曲": {"object_type": {"@value": "人物"}, "predicate": "作曲", "subject_type": "歌曲"},
+        "主演": {"object_type": {"@value": "人物"}, "predicate": "主演", "subject_type": "影视作品"},
+        "主持人": {"object_type": {"@value": "人物"}, "predicate": "主持人", "subject_type": "电视综艺"},
+        "成立日期": {"object_type": {"@value": "Date"}, "predicate": "成立日期", "subject_type": "机构"},
+        "简称": {"object_type": {"@value": "Text"}, "predicate": "简称", "subject_type": "机构"},
+        "海拔": {"object_type": {"@value": "Number"}, "predicate": "海拔", "subject_type": "地点"},
+        "号": {"object_type": {"@value": "Text"}, "predicate": "号", "subject_type": "历史人物"},
+        "国籍": {"object_type": {"@value": "国家"}, "predicate": "国籍", "subject_type": "人物"},
+        "官方语言": {"object_type": {"@value": "语言"}, "predicate": "官方语言", "subject_type": "国家"},
+    }
+    new_pred_data = []
+    for sample in pred_data:
+        new_spo_list = []
+        spe_rel_map = {}
+        spe_key2predicate = {
+            "inWork": {"配音", "获奖", "饰演"},
+            "inArea": {"票房", "上映时间"},
+            "onDate": {"获奖"},
+            "period": {"获奖"}
+        }
+        for spo in sample["relation_list"]:
+            if spo["predicate"] in spe_key2predicate:
+                spe_rel_map.setdefault(spo["predicate"], {})
+                spe_rel_map[spo["predicate"]].setdefault(spo["subject"], set()).add(spo["object"])
+        for spo in sample["relation_list"]:
+            if spo["predicate"] not in spe_key2predicate:
+                new_spo = {
+                    "predicate": spo["predicate"],
+                    "subject": spo["subject"],
+                    "object": {"@value": spo["object"], },
+                }
+                for spe_k, pred_set in spe_key2predicate.items():
+                    if spo["predicate"] in pred_set and spe_k in spe_rel_map and \
+                            spo["subject"] in spe_rel_map[spe_k] and spo["object"] in spe_rel_map[spe_k]:
+                        inter_set = spe_rel_map[spe_k][spo["subject"]].intersection(
+                            spe_rel_map[spe_k][spo["object"]])
+                        if len(inter_set) > 0:
+                            new_spo["object"][spe_k] = inter_set.pop()
+                sch = scheme[spo["predicate"]]
+                new_spo["subject_type"] = sch["subject_type"]
+                new_spo["object_type"] = {k: v for k, v in sch["object_type"].items()
+                                          if k in new_spo["object"]}
+                new_spo_list.append(new_spo)
+
+        new_sample = {
+            "text": sample["text"],
+            "spo_list": Preprocessor.unique_list(new_spo_list),
+        }
+        new_pred_data.append(new_sample)
+    return new_pred_data
+
+
 if __name__ == "__main__":
-    # preprocess_duie()
+    train_data, valid_data, test_data = trans_oie4()
 
-    train_data, valid_data, test_data = trans_saoke()
-    save_dir = "../../data/ori_data/saoke"
+    data_out_dir = "../../data/ori_data/oie4"
+    if not os.path.exists(data_out_dir):
+        os.makedirs(data_out_dir)
+    train_save_path = os.path.join(data_out_dir, "train_data.json")
+    valid_save_path = os.path.join(data_out_dir, "valid_data.json")
+    test_save_path = os.path.join(data_out_dir, "test_data.json")
+    save_as_json_lines(train_data, train_save_path)
+    save_as_json_lines(valid_data, valid_save_path)
+    save_as_json_lines(test_data, test_save_path)
 
-    train_data_path = os.path.join(save_dir, "train_data.json")
-    valid_data_path = os.path.join(save_dir, "valid_data.json")
-    test_data_path = os.path.join(save_dir, "test_data.json")
-    save_as_json_lines(train_data, train_data_path)
-    save_as_json_lines(valid_data, valid_data_path)
-    save_as_json_lines(test_data, test_data_path)
-
-
+    # in_path = "../../data/res_data/duee_comp2021_mac/re+tfboys+RAIN+TRAIN/1onyp1jl/model_state_dict_15_83.637/test_data_1.json"
+    # out_path = "../../data/res_data/duee_comp2021_mac/re+tfboys+RAIN+TRAIN/1onyp1jl/model_state_dict_15_83.637/duee.json"
+    # formated_data = trans2duee_format(load_data(in_path))
+    # save_as_json_lines(formated_data, out_path)
+    pass

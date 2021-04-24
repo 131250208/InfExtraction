@@ -9,9 +9,7 @@ import networkx as nx
 from InfExtraction.modules.metrics import MetricsCalculator
 # from InfExtraction.modules.ancient_eval4oie import OIEMetrics
 import logging
-from pprint import pprint
-from collections import defaultdict
-import time
+
 
 class Tagger(metaclass=ABCMeta):
     @classmethod
@@ -272,6 +270,7 @@ class HandshakingTagger4TPLPlus(Tagger):
         self.tags = sorted(self.tags)
         self.tag2id = {t: idx for idx, t in enumerate(self.tags)}
         self.id2tag = {idx: t for t, idx in self.tag2id.items()}
+        print(">>>>>>>>>>>>>>>>>>>>> tag_size: {} >>>>>>>>>>>>>>>>>>>>>>>".format(len(self.tag2id)))
 
     def get_tag_size(self):
         return len(self.tag2id)
@@ -472,6 +471,8 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         self.ent_tag2id = self.ent2id
         self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
 
+        print(">>>>>>>>>>>>>>>> ent_tag_size: {}; rel_tag_size: {} >>>>>>>>>>>>>>>>>>>>".format(len(self.ent_tag2id), len(self.rel_tag2id)))
+
     def get_tag_size(self):
         return len(self.ent_tag2id), len(self.rel_tag2id)
 
@@ -491,6 +492,9 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         if "entity_list" in sample:
             for ent in sample["entity_list"]:
                 tag = ent["type"]
+                if tag not in self.ent_tag2id:
+                    logging.warning("ent_type: {} is not in training set".format(tag))
+                    continue
                 point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
                          self.ent_tag2id[tag],
                          )
@@ -503,7 +507,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 rel = rel["predicate"]
 
                 if rel not in self.rel2id:
-                    logging.warning("{} is not in predefined relations of the training set".format(rel))
+                    logging.warning("rel: {} is not in the training set".format(rel))
                     continue
 
                 # add related boundaries
@@ -971,13 +975,14 @@ def create_rebased_tfboys_tagger(base_class):
         def __init__(self, data, *args, **kwargs):
             super(REBasedTFBoysTagger, self).__init__(data, *args, **kwargs)
             self.event_type2arg_rols = {}
+            self.combine_spans = False
             for sample in data:
                 for event in sample["event_list"]:
                     event_type = event["event_type"]
                     for arg in event["argument_list"]:
-                        if event_type not in self.event_type2arg_rols:
-                            self.event_type2arg_rols[event_type] = set()
-                        self.event_type2arg_rols[event_type].add(arg["type"])
+                        self.event_type2arg_rols.setdefault(event_type, set()).add(arg["type"])
+                        if type(arg["char_span"][0]) is list:
+                            self.combine_spans = True
 
             self.dtm_arg_type_by_edges = kwargs["dtm_arg_type_by_edges"]
 
@@ -1005,32 +1010,52 @@ def create_rebased_tfboys_tagger(base_class):
                         arg_list += [pseudo_arg]
 
                     for i, arg_i in enumerate(arg_list):
-                        fin_ent_list.append({
-                            "text": arg_i["text"],
-                            "type": "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
-                            "char_span": arg_i["char_span"],
-                            "tok_span": arg_i["tok_span"],
-                        })
-                        for j, arg_j in enumerate(arg_list):
-                            fin_rel_list.append({
-                                "subject": arg_i["text"],
-                                "subj_char_span": arg_i["char_span"],
-                                "subj_tok_span": arg_i["tok_span"],
-                                "object": arg_j["text"],
-                                "obj_char_span": arg_j["char_span"],
-                                "obj_tok_span": arg_j["tok_span"],
-                                "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
+                        ch_sp_list_i = arg_i["char_span"]
+                        tk_sp_list_i = arg_i["tok_span"]
+                        if type(arg_i["char_span"][0]) is not list:
+                            ch_sp_list_i = [arg_i["char_span"], ]
+                            tk_sp_list_i = [arg_i["tok_span"], ]
+
+                        for sp_idx, ch_sp in enumerate(ch_sp_list_i):
+                            tk_sp = tk_sp_list_i[sp_idx]
+                            fin_ent_list.append({
+                                "text": arg_i["text"],
+                                "type": "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
+                                "char_span": ch_sp,
+                                "tok_span": tk_sp,
                             })
-                            if kwargs["dtm_arg_type_by_edges"]:
-                                fin_rel_list.append({
-                                    "subject": arg_i["text"],
-                                    "subj_char_span": arg_i["char_span"],
-                                    "subj_tok_span": arg_i["tok_span"],
-                                    "object": arg_j["text"],
-                                    "obj_char_span": arg_j["char_span"],
-                                    "obj_tok_span": arg_j["tok_span"],
-                                    "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
-                                })
+
+                        for j, arg_j in enumerate(arg_list):
+                            ch_sp_list_j = arg_j["char_span"]
+                            tk_sp_list_j = arg_j["tok_span"]
+                            if type(arg_j["char_span"][0]) is not list:
+                                ch_sp_list_j = [arg_j["char_span"], ]
+                                tk_sp_list_j = [arg_j["tok_span"], ]
+
+                            for sp_idx_i, ch_sp_i in enumerate(ch_sp_list_i):
+                                for sp_idx_j, ch_sp_j in enumerate(ch_sp_list_j):
+                                    tk_sp_i = tk_sp_list_i[sp_idx_i]
+                                    tk_sp_j = tk_sp_list_j[sp_idx_j]
+
+                                    fin_rel_list.append({
+                                        "subject": arg_i["text"],
+                                        "subj_char_span": ch_sp_i,
+                                        "subj_tok_span": tk_sp_i,
+                                        "object": arg_j["text"],
+                                        "obj_char_span": ch_sp_j,
+                                        "obj_tok_span": tk_sp_j,
+                                        "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
+                                    })
+                                    if kwargs["dtm_arg_type_by_edges"]:
+                                        fin_rel_list.append({
+                                            "subject": arg_i["text"],
+                                            "subj_char_span": ch_sp_i,
+                                            "subj_tok_span": tk_sp_i,
+                                            "object": arg_j["text"],
+                                            "obj_char_span": ch_sp_j,
+                                            "obj_tok_span": tk_sp_j,
+                                            "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
+                                        })
 
                 # if "relation_list" in sample:
                 #     fin_rel_list.extend(sample["relation_list"])
@@ -1038,6 +1063,7 @@ def create_rebased_tfboys_tagger(base_class):
                 #     fin_ent_list.extend(sample["entity_list"])
                 sample["entity_list"] = fin_ent_list
                 sample["relation_list"] = fin_rel_list
+
             new_data = super().additional_preprocess(new_data, data_type, **kwargs)
             return new_data
 
@@ -1140,29 +1166,50 @@ def create_rebased_tfboys_tagger(base_class):
                                 role_set = role_set_fin
 
                         for role in role_set:
-                            if role == "Trigger":
-                                event["trigger"] = arg_text
-                                event["trigger_tok_span"] = tok_span
-                                event["trigger_char_span"] = char_span
-                            else:
-                                if role in self.event_type2arg_rols[event_type]:
-                                    arguments.append({
-                                        "text": arg_text,
-                                        "type": role,
-                                        "char_span": char_span,
-                                        "tok_span": tok_span,
-                                    })
+                            if role in self.event_type2arg_rols[event_type] or role == "Trigger":
+                                arguments.append({
+                                    "text": arg_text,
+                                    "type": role,
+                                    "char_span": char_span,
+                                    "tok_span": tok_span,
+                                })
+
+                    if self.combine_spans:
+                        arguments_combined = []
+                        arg_text2args = {}
+                        for arg in arguments:
+                            arg_text2args.setdefault(separator.join([arg["type"], arg["text"]]), []).append(arg)
+                        for role_argtext, args in arg_text2args.items():
+                            new_tk_sps = [a["tok_span"] for a in args]
+                            new_ch_sps = [a["char_span"] for a in args]
+                            role, arg_text = role_argtext.split(separator)
+                            arguments_combined.append({
+                                "text": arg_text,
+                                "type": role,
+                                "char_span": new_ch_sps,
+                                "tok_span": new_tk_sps,
+                            })
+                        arguments = arguments_combined
+
+                    # find trigger
+                    new_argument_list = []
+                    for arg in arguments:
+                        if arg["type"] == "Trigger":
+                            event["trigger"] = arg["text"]
+                            event["trigger_tok_span"] = arg["tok_span"]
+                            event["trigger_char_span"] = arg["char_span"]
+                        else:
+                            new_argument_list.append(arg)
 
                     # if the role sets corresponding to the nodes are all empty,
                     # this clique is invalid and the corresponding event without argument list and trigger
                     # will not be appended into the event list.
-                    if len(arguments) > 0 or "trigger" in event:
-                        event["argument_list"] = arguments
+                    if len(new_argument_list) > 0 or "trigger" in event:
+                        event["argument_list"] = new_argument_list
                         event_list.append(event)
 
-            pred_sample = copy.deepcopy(sample)
-            pred_sample["event_list"] = event_list
-            return pred_sample
+            sample["event_list"] = event_list
+            return sample
     return REBasedTFBoysTagger
 
 
@@ -1745,12 +1792,6 @@ def create_rebased_oie_tagger(base_class):
     # return REBasedOIETagger
 
     class REBasedOIETagger(base_class):
-        '''
-        1. 非连续实体 -> role type clique:
-        2. in spo
-        3. 类型边，非连续实体也只连首尾，用于区分重叠类型
-        4. next 边，解决obj位置对应问题
-        '''
 
         def __init__(self, *arg, **kwargs):
             super(REBasedOIETagger, self).__init__(*arg, **kwargs)
@@ -1763,31 +1804,40 @@ def create_rebased_oie_tagger(base_class):
 
             new_tag_sep = "\u2E82"
             new_data = []
-            predefined_p_set = {"DESC", "ISA", "IN", "BIRTH", "DEATH", "=", "NOT"}
 
             for sample in data:
                 new_sample = copy.deepcopy(sample)
                 text = sample["text"]
-                sample_id = sample["id"]
+                # sample_id = sample["id"]
                 # if sample_id == 8195:
                 #     print("sample_id")
-                new_role_list = []
+                new_ent_list = []
                 new_rel_list = []
                 for spo in sample["open_spo_list"]:
                     seg_list = []
                     obj_list = []
                     pred = None
+                    predicate_prefix = None
+                    predicate_suffix = None
 
                     # segment list and next edge
                     for arg in spo:
                         arg_type = arg["type"]
-                        if arg_type == "predicate":
+                        if arg_type == "predicate_prefix":
+                            predicate_prefix = arg["text"]
+                            continue
+                        elif arg_type == "predicate_suffix":
+                            predicate_suffix = arg["text"]
+                            continue
+                        elif arg_type == "predicate":
                             pred = arg
-                            if pred["text"] in predefined_p_set:  # if predefined predicate, no char span
+                            if len(pred["char_span"]) == 0:  # if no char span and type == "predicate",
+                                                             # it is a predefined predicate that does not exist in the text,
                                 continue
-                        if arg_type == "object":
+                        elif arg_type == "object":
                             obj_list.append(arg)
 
+                        # append segments and generate next edges
                         for idx_i in range(0, len(arg["tok_span"]), 2):
                             tok_sp_i = [arg["tok_span"][idx_i], arg["tok_span"][idx_i + 1]]
                             ch_sp_i = [arg["char_span"][idx_i], arg["char_span"][idx_i + 1]]
@@ -1813,8 +1863,9 @@ def create_rebased_oie_tagger(base_class):
                                     "predicate": "NEXT",
                                 })
 
-                    new_role_list.extend(seg_list)
+                    new_ent_list.extend(seg_list)
 
+                    # generate edges between segments
                     for seg_i in seg_list:
                         for seg_j in seg_list:
                             # spo clique
@@ -1828,7 +1879,7 @@ def create_rebased_oie_tagger(base_class):
                                 "predicate": new_tag_sep.join(["ROLE_PAIR", seg_i["type"], seg_j["type"]]),  # "IN_SPO",
                             })
                             # if predefined predicate
-                            if pred is not None and pred["text"] in predefined_p_set:
+                            if pred is not None and len(pred["char_span"]) == 0:
                                 new_rel_list.append({
                                     "subject": seg_i["text"],
                                     "subj_char_span": seg_i["char_span"],
@@ -1839,8 +1890,27 @@ def create_rebased_oie_tagger(base_class):
                                     "predicate": new_tag_sep.join(["PREDEFINED_CLI", pred["text"]]),
                                 })
 
-                    # predicate to object edges
                     if pred is not None:
+                        # predicate prefix/suffix
+                        if predicate_prefix is not None:
+                            pred_tok_sp_b = pred["tok_span"][:2]
+                            pred_ch_sp_b = pred["char_span"][:2]
+                            new_ent_list.append({
+                                "type": new_tag_sep.join(["PRED_PREFIX", predicate_prefix]),
+                                "text": text[pred_ch_sp_b[0]:pred_ch_sp_b[1]],
+                                "char_span": pred_ch_sp_b,
+                                "tok_span": pred_tok_sp_b,
+                            })
+                        if predicate_suffix is not None:
+                            pred_tok_sp_e = pred["tok_span"][-2:]
+                            pred_ch_sp_e = pred["char_span"][-2:]
+                            new_ent_list.append({
+                                "type": new_tag_sep.join(["PRED_SUFFIX", predicate_suffix]),
+                                "text": text[pred_ch_sp_e[0]:pred_ch_sp_e[1]],
+                                "char_span": pred_ch_sp_e,
+                                "tok_span": pred_tok_sp_e,
+                            })
+                        # predicate to object edges
                         pred_cp = pred["text"][:]
                         obj_pre_list = []  # for predicate segment before an object
                         for idx in range(0, len(pred["char_span"]), 2):
@@ -1849,6 +1919,7 @@ def create_rebased_oie_tagger(base_class):
 
                             p_txt = text[ch_sp_start:ch_sp_end]
                             pred_cp = pred_cp.lstrip(p_txt)
+                            pred_cp = pred_cp.lstrip(" ")
                             if pred_cp[:5] == "[OBJ]":
                                 obj_pre_list.append({
                                     "text": p_txt,
@@ -1868,8 +1939,7 @@ def create_rebased_oie_tagger(base_class):
                                 "predicate": "PRED_TO_OBJ",
                             })
 
-
-                new_sample["entity_list"] = new_role_list
+                new_sample["entity_list"] = new_ent_list
                 new_sample["relation_list"] = new_rel_list
                 new_data.append(new_sample)
             return new_data
@@ -1899,6 +1969,7 @@ def create_rebased_oie_tagger(base_class):
             next_edge_set = set()
             pred2obj_set = set()
             edge2role_pair = {}
+            prefix_map, suffix_map = {}, {}
 
             for rel in rel_list:
                 offset_str_seg_i = "{},{}".format(*rel["subj_tok_span"])
@@ -1925,10 +1996,14 @@ def create_rebased_oie_tagger(base_class):
             # seg2roles
             for seg in ent_list:
                 offset_str_seg = "{},{}".format(*seg["tok_span"])
+                if "PRED_PREFIX" in seg["type"]:
+                    _, prefix = seg["type"].split(new_tag_sep)
+                    prefix_map[offset_str_seg] = prefix
+                if "PRED_SUFFIX" in seg["type"]:
+                    _, suffix = seg["type"].split(new_tag_sep)
+                    suffix_map[offset_str_seg] = suffix
                 spo_graph.add_node(offset_str_seg)
-                if offset_str_seg not in seg2roles:
-                    seg2roles[offset_str_seg] = set()
-                seg2roles[offset_str_seg].add(seg["type"])
+                seg2roles.setdefault(offset_str_seg, set()).add(seg["type"])
 
             # predefined predicate
             cli2pred = {}
@@ -1994,7 +2069,7 @@ def create_rebased_oie_tagger(base_class):
                         cand_roles = get_role(offset_str, cli)
                         tok_span = [int(idx) for idx in offset_str.split(",")]
                         char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-                        arg_txt = text[char_span[0]:char_span[1]]
+                        # arg_txt = text[char_span[0]:char_span[1]]
 
                         # 循环next链接直到末尾
                         mem = [offset_str, ]
@@ -2012,7 +2087,6 @@ def create_rebased_oie_tagger(base_class):
                                 new_ch_sp = Preprocessor.tok_span2char_span(new_tok_sp, tok2char_span)
                                 tok_span.extend(new_tok_sp)
                                 char_span.extend(new_ch_sp)
-                                arg_txt += text[new_ch_sp[0]:new_ch_sp[1]]
                                 point = next_seg_offset_str
                             else:
                                 break
@@ -2023,7 +2097,7 @@ def create_rebased_oie_tagger(base_class):
                             arg = {
                                 "tok_span": tok_span,
                                 "char_span": char_span,
-                                "text": arg_txt,
+                                "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text),
                                 "type": role,
                             }
                             if role == "predicate":
@@ -2034,22 +2108,41 @@ def create_rebased_oie_tagger(base_class):
                                 arg_list.append(arg)
                 # add [OBJ] to predicate
                 if predicate is not None:  # if predicate exists, append objects according to [OBJ]s in the predicate
-                    new_pred_txt = ""
+                    new_pred_segs = []
                     for idx in range(0, len(predicate["char_span"]), 2):
                         ch_sp_start, ch_sp_end = predicate["char_span"][idx], predicate["char_span"][idx + 1]
                         tok_sp_start, tok_sp_end = predicate["tok_span"][idx], predicate["tok_span"][idx + 1]
 
-                        new_pred_txt += text[ch_sp_start:ch_sp_end]
+                        new_pred_segs.append(text[ch_sp_start:ch_sp_end])
                         p_sub_offset_str = "{},{}".format(tok_sp_start, tok_sp_end)
                         for obj_star_offset_str, obj in start_sp2obj.items():
                             if "-".join([p_sub_offset_str, obj_star_offset_str]) in pred2obj_set:
-                                new_pred_txt += "[OBJ]"
+                                new_pred_segs.append("[OBJ]")
                                 arg_list.append(obj)
 
-                    predicate["text"] = new_pred_txt
+                    predicate["text"] = utils.joint_segs(new_pred_segs)
                     arg_list.append(predicate)
-                else:  # if no predicate, append objects directly
+
+                    pred_tok_b = "{},{}".format(*predicate["tok_span"][:2])
+                    pred_tok_e = "{},{}".format(*predicate["tok_span"][-2:])
+                    if pred_tok_b in prefix_map:
+                        arg_list.append({
+                            "text": prefix_map[pred_tok_b],
+                            "type": "predicate_prefix",
+                            "tok_span": [],
+                            "char_span": [],
+                        })
+                    if pred_tok_e in suffix_map:
+                        arg_list.append({
+                            "text": suffix_map[pred_tok_e],
+                            "type": "predicate_suffix",
+                            "tok_span": [],
+                            "char_span": [],
+                        })
+                else:
+                    # if no predicate, append objects directly
                     arg_list.extend(start_sp2obj.values())
+                    # if a predefined predicate exists
                     if str(sorted(cli)) in cli2pred:
                         arg_list.append({
                             "tok_span": [],
@@ -2059,8 +2152,18 @@ def create_rebased_oie_tagger(base_class):
                         })
                 open_spo_list.append(arg_list)
 
-            pred_sample = copy.deepcopy(ori_sample)
-            pred_sample["open_spo_list"] = open_spo_list
+            pred_sample = ori_sample
+            filtered_open_spo_list = []
+            for spo in open_spo_list:
+                type_map = {}
+                for arg in spo:
+                    type_map[arg["type"]] = type_map.get(arg["type"], 0) + 1
+                if len(set(type_map.keys()).intersection({"subject", "object", "predicate"})) < 2:
+                    continue
+                if type_map.get("subject", 0) > 1 or type_map.get("predicate", 0) > 1:
+                    continue
+                filtered_open_spo_list.append(spo)
+            pred_sample["open_spo_list"] = filtered_open_spo_list
             return pred_sample
 
     return REBasedOIETagger

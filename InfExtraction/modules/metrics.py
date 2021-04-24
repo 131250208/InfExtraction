@@ -1,9 +1,10 @@
 import torch
 import re
 import copy
-from IPython.core.debugger import set_trace
 from InfExtraction.modules import utils
+from InfExtraction.modules.preprocess import ChineseWordTokenizer
 from torch import nn
+from InfExtraction.modules.eval4oie import OIEMetrics
 
 
 class MetricsCalculator:
@@ -125,9 +126,17 @@ class MetricsCalculator:
         arg_link_iden_set, arg_link_class_set = set(), set()  # for trigger-free
         event_type_set = set()
 
+        offset_must_metrics = True
+        # if num of spans > 1, they are auto-annotated and offset-must metrics should not be calculated
+        if any(type(arg["char_span"][0]) is list for event in event_list for arg in event["argument_list"]):
+            offset_must_metrics = False
+
         for event in event_list:
             event_type = event["event_type"]
             event_type_set.add(event_type)
+
+            if offset_must_metrics is False:
+                continue
 
             # trigger-based metrics
             trigger_offset = None
@@ -423,26 +432,163 @@ class MetricsCalculator:
             MetricsCalculator.cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
 
     @staticmethod
+    def get_ch_tf_ee_cpg(pred_sample_list, golden_sample_list):
+        '''
+        tf: trigger free
+        ch: char level f1
+        :param pred_sample_list:
+        :param golden_sample_list:
+        :return:
+        '''
+        gold_num = 0
+        predict_num = 0
+        correct_score = 0
+
+        tokenize = lambda t: t.split()  # en
+        if any(re.search("[\u4e00-\u9fa5]", arg["text"]) is not None
+               for sample in golden_sample_list for event in sample["event_list"] for arg in event["argument_list"]):
+            tokenize = ChineseWordTokenizer.tokenize
+
+        for sample_idx, gold_line in enumerate(golden_sample_list):
+            pred_line = pred_sample_list[sample_idx]
+
+            current_gold_num = 0
+            current_predict_num = 0
+            current_correct_score = 0
+
+            gold_dict = {}
+            for event_line in gold_line["event_list"]:
+                event_type = event_line["event_type"]
+                for argument_dict in event_line["argument_list"]:
+                    role = argument_dict["type"]
+                    entity_text = argument_dict["text"]
+                    gold_dict_key = "{}\u2E80{}".format(event_type, role)
+                    gold_dict.setdefault(gold_dict_key, set()).add(entity_text)
+
+            pred_dict = {}
+            for event_line in pred_line["event_list"]:
+                event_type = event_line["event_type"]
+                for argument_dict in event_line["argument_list"]:
+                    role = argument_dict["type"]
+                    entity_text = argument_dict["text"]
+                    pred_dict_key = "{}\u2E80{}".format(event_type, role)
+                    pred_dict.setdefault(pred_dict_key, set()).add(entity_text)
+
+            for event_role, gold_argument_tuple in gold_dict.items():
+                current_gold_num += len(gold_argument_tuple)
+
+            for event_role, predict_argument_tuple in pred_dict.items():
+                gold_argument_tuple = gold_dict.get(event_role, set())
+                current_predict_num += len(predict_argument_tuple)
+
+                for predict_argument in predict_argument_tuple:
+                    max_score = 0
+                    for gold_argument in gold_argument_tuple:
+                        predict_tokens = tokenize(predict_argument)
+                        gold_tokens = tokenize(gold_argument)
+                        correct_tk_num = len([i for i in predict_tokens if i in gold_tokens])
+
+                        tok_pre, tok_rec, tok_f1 = MetricsCalculator.get_prf_scores(correct_tk_num,
+                                                                                    len(predict_tokens),
+                                                                                    len(gold_tokens))
+                        max_score = max(max_score, tok_f1)
+                    current_correct_score += max_score
+
+            correct_score += current_correct_score
+            predict_num += current_predict_num
+            gold_num += current_gold_num
+        return correct_score, predict_num, gold_num
+
+    @staticmethod
+    def get_ee_cpg_most_similar(pred_sample_list, golden_sample_list):
+        def event2set(event_list):
+            event_type2event_set = {}
+            event_type2mem_set = {}
+
+            for event in event_list:
+                event_set = set()
+                for arg in event["argument_list"]:
+                    event_set.add("{},{}".format(arg["type"], arg["text"]))
+
+                mem_str = ";".join(sorted(event_set))
+                if event["event_type"] in event_type2mem_set and mem_str in event_type2mem_set[event["event_type"]]:
+                    continue  # skip duplicated event
+                if len(event_set) > 0:
+                    event_type2event_set.setdefault(event["event_type"], []).append(event_set)
+                    event_type2mem_set.setdefault(event["event_type"], set()).add(mem_str)
+            return event_type2event_set
+
+        gold_num = 0
+        predict_num = 0
+        correct_num = 0
+        for sample_idx, gold_sample in enumerate(golden_sample_list):
+            pred_sample = pred_sample_list[sample_idx]
+
+            gold_event_type2event_sets = event2set(gold_sample["event_list"])
+            pred_event_type2event_sets = event2set(pred_sample["event_list"])
+            pred_event_type2event_sets4debug = copy.deepcopy(pred_event_type2event_sets)
+
+            current_gold_num = 0
+            current_predict_num = 0
+            current_correct_num = 0
+
+            for event_type, gold_event_sets in gold_event_type2event_sets.items():
+                for e in gold_event_sets:
+                    current_gold_num += len(e)
+
+                if event_type in pred_event_type2event_sets:
+                    pred_event_sets = pred_event_type2event_sets[event_type]
+                    for e in pred_event_sets:
+                        current_predict_num += len(e)
+
+                    for e_i in gold_event_sets:
+                        max_arg_common_num = 0
+                        selected_pred_e_set = None
+                        for e_j in pred_event_sets:
+                            arg_common_num = len(e_i.intersection(e_j))
+                            if arg_common_num > max_arg_common_num:
+                                max_arg_common_num = arg_common_num
+                                selected_pred_e_set = e_j
+                        current_correct_num += max_arg_common_num
+                        if selected_pred_e_set is not None and max_arg_common_num > 0:
+                            pred_event_sets.remove(selected_pred_e_set)
+
+            if not (current_gold_num == current_predict_num == current_correct_num):
+                print("metric error")
+            correct_num += current_correct_num
+            predict_num += current_predict_num
+            gold_num += current_gold_num
+        return correct_num, predict_num, gold_num
+
+    @staticmethod
     def get_ee_cpg_dict(pred_sample_list, golden_sample_list):
         ee_cpg_dict = {
-            "trigger_iden": [0, 0, 0],
-            "trigger_class": [0, 0, 0],
-            "arg_soft_iden": [0, 0, 0],
-            "arg_soft_class": [0, 0, 0],
-            "arg_hard_iden": [0, 0, 0],
-            "arg_hard_class": [0, 0, 0],
-            "arg_link_iden": [0, 0, 0],
-            "arg_link_class": [0, 0, 0],
             "event_type": [0, 0, 0],
         }
+        offset_must_metrics = {"trigger_iden", "trigger_class", "arg_soft_iden", "arg_soft_class",
+                               "arg_hard_iden", "arg_hard_class", "arg_link_iden", "arg_link_class"}
+        if any(type(arg["char_span"][0]) is list for golden_sample in golden_sample_list
+               for event in golden_sample["event_list"] for arg in event["argument_list"]):
+            pass
+        else:
+            for key in offset_must_metrics:
+                ee_cpg_dict[key] = [0, 0, 0]
+
         for idx, pred_sample in enumerate(pred_sample_list):
             gold_sample = golden_sample_list[idx]
             pred_event_list = pred_sample["event_list"]
             gold_event_list = gold_sample["event_list"]
+
             # try:
             MetricsCalculator.cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
             # except Exception as e:
             #     print("event error!")
+
+        # baidu competition metrics for the event extraction tasks
+        ee_cpg_dict["arg_soft_class_char_level"] = MetricsCalculator.get_ch_tf_ee_cpg(pred_sample_list,
+                                                                                      golden_sample_list)
+        ee_cpg_dict["arg_soft_class_most_similar"] = MetricsCalculator.get_ee_cpg_most_similar(pred_sample_list,
+                                                                                               golden_sample_list)
         return ee_cpg_dict
 
     def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list):
@@ -515,27 +661,26 @@ class MetricsCalculator:
 
         return prf_dict, statistics
 
-    # def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
-    #     from InfExtraction.modules.ancient_eval4oie import OIEMetrics
-    #     auc, prfc, _ = OIEMetrics.compare(pred_sample_list,
-    #                                       golden_sample_list,
-    #                                       OIEMetrics.binary_linient_tuple_match)
-    #
-    #     return {
-    #         "auc": auc,
-    #         "precision": prfc[0],
-    #         "recall": prfc[1],
-    #         "f1": prfc[2],
-    #         "confidence_threshold": prfc[3],
-    #     }
-
     def get_ioe_score_dict(self, pred_sample_list, golden_sample_list):
-        from InfExtraction.modules.saoke_eval4oie import OIEMetrics
-        correct_num, pred_num, gold_num = OIEMetrics.compare(
+        auc, prfc, _ = OIEMetrics.compare_oie4(pred_sample_list,
+                                               golden_sample_list,
+                                               OIEMetrics.binary_linient_tuple_match)
+
+        correct_num, pred_num, gold_num = OIEMetrics.compare_saoke(
             pred_sample_list, golden_sample_list, 0.85)
         precision, recall, f1 = MetricsCalculator.get_prf_scores(
             correct_num, pred_num, gold_num)
-        return {"precision": precision, "recall": recall, "f1": f1}
+
+        return {
+            "oie4_auc": auc,
+            "oie4_precision": prfc[0],
+            "oie4_recall": prfc[1],
+            "oie4_f1": prfc[2],
+            "oie_4confidence_threshold": prfc[3],
+            "saoke_precision": precision,
+            "saoke_recall": recall,
+            "saoke_f1": f1
+        }
 
     @staticmethod
     def get_prf_scores(correct_num, pred_num, gold_num):

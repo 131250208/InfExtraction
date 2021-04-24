@@ -17,8 +17,6 @@ from InfExtraction.modules.preprocess import Indexer
 from InfExtraction.modules.utils import MyMatrix
 from gensim.models import KeyedVectors
 import logging
-from IPython.core.debugger import set_trace
-import time
 import torch.nn.functional as F
 from flair.embeddings import StackedEmbeddings
 from flair.data import Sentence

@@ -89,19 +89,21 @@ top_attn = False
 # data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
-train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-valid_data = load_data(os.path.join(data_in_dir, exp_name, "test_data.json"))
+train_path = os.path.join(data_in_dir, exp_name, "train_data.json")
+val_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
+max_lines = None  # None
+train_data = load_data(train_path, lines=max_lines)
+valid_data = load_data(val_path, lines=max_lines)
 
-data4checking = copy.deepcopy(valid_data)
-random.shuffle(data4checking)
 checking_num = 1000
-data4checking = data4checking[:checking_num]
+data4checking = copy.deepcopy(valid_data[:checking_num])
+random.shuffle(data4checking)
 
 test_data_list = [] # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
 for test_data_path in test_data_list:
     filename = test_data_path.split("/")[-1]
-    ori_test_data = load_data(test_data_path)
+    ori_test_data = load_data(test_data_path, lines=max_lines)
     filename2ori_test_data[filename] = ori_test_data
 
 dicts = "dicts.json"
@@ -123,16 +125,6 @@ key_map = {
 key2dict = {}
 for key, val in dicts.items():
     key2dict[key_map[key]] = val
-
-# # additional preprocessing
-# addtional_preprocessing_config = {
-#     "add_default_entity_type": False,
-# }
-#
-# # tagger config
-# tagger_config = {
-#     "language": language,
-# }
 
 # optimizers and schedulers
 optimizer_config = {

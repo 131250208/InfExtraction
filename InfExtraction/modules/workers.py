@@ -1,13 +1,9 @@
 from InfExtraction.modules.utils import DefaultLogger
 from InfExtraction.modules.preprocess import Preprocessor
-import os
 import torch
 import wandb
-from pprint import pprint
 from tqdm import tqdm
-from glob import glob
 import time
-import re
 
 
 class Trainer:
@@ -221,6 +217,13 @@ class Evaluator:
             id_ = sample["id"]
             pred_data.append(merged_pred_samples[id_])
 
+        def arg_to_str(arg):
+            if type(arg["tok_span"][0]) is list:
+                arg_str = "-".join([arg["type"], arg["text"]])
+            else:
+                arg_str = "-".join([arg["type"], *[str(idx) for idx in arg["tok_span"]]])
+            return arg_str
+
         for sample in pred_data:
             if "entity_list" in sample:
                 sample["entity_list"] = Preprocessor.unique_list(sample["entity_list"])
@@ -228,13 +231,31 @@ class Evaluator:
                 sample["relation_list"] = Preprocessor.unique_list(sample["relation_list"])
             if "event_list" in sample:
                 sample["event_list"] = Preprocessor.unique_list(sample["event_list"])
+
+                # filter redundant event
+                new_event_list = []
+
+                # if sample["id"] == 'ad6ce7c4f547c93efc184bd1c0b2a154':
+                #     print("???!!!!")
+
+                def to_e_set(event):
+                    arg_list = event["argument_list"] + [{"type": "Trigger", "tok_span": event["trigger_tok_span"], "text": event["trigger"]}, ] \
+                        if "trigger" in event else event["argument_list"]
+                    event_set = {arg_to_str(arg) for arg in arg_list}
+                    return event_set
+                for e_i in sample["event_list"]:
+                    event_set_i = to_e_set(e_i)
+                    if any(event_set_i.issubset(to_e_set(e_j))
+                           and len(event_set_i) < len(to_e_set(e_j))
+                           for e_j in sample["event_list"]):  # if spo_i is a proper subset of another spo, skip
+                        continue
+                    new_event_list.append(e_i)
+                sample["event_list"] = new_event_list
+
             if "open_spo_list" in sample:
                 sample["open_spo_list"] = Preprocessor.unique_list(sample["open_spo_list"])
 
                 # filter redundant spo
-                def arg_to_str(arg):
-                    return "-".join([*[str(idx) for idx in arg["tok_span"]], arg["type"]])
-
                 new_spo_list = []
                 for spo_i in sample["open_spo_list"]:
                     spo_set_i = {arg_to_str(arg) for arg in spo_i}

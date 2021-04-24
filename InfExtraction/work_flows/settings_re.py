@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 2
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -40,7 +40,7 @@ from glob import glob
 # Frequent changes
 exp_name = "duie_comp2021"
 language = "ch"
-stage = "train"  # inference
+stage = "train"  # inference, train
 task_type = "re"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
@@ -60,8 +60,8 @@ use_ghm = False
 model_bag_size = 5
 
 batch_size_train = 16
-batch_size_valid = 32
-batch_size_test = 32
+batch_size_valid = 8
+batch_size_test = 8
 
 max_seq_len_train = 72
 max_seq_len_valid = 128
@@ -82,7 +82,7 @@ dep_gcn = False
 
 word_encoder = False
 subwd_encoder = True
-use_attns4rel = False  # used only if subwd_encoder (bert) is True
+use_attns4rel = True  # used only if subwd_encoder (bert) is True
 flair = False
 elmo = False
 top_attn = False
@@ -90,19 +90,22 @@ top_attn = False
 # data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
-train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
+train_path = os.path.join(data_in_dir, exp_name, "train_data.json")
+val_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
+max_lines = None  # None
+train_data = load_data(train_path, lines=max_lines)
+valid_data = load_data(val_path, lines=max_lines)
 
 data4checking = copy.deepcopy(valid_data)
 random.shuffle(data4checking)
 checking_num = 1000
 data4checking = data4checking[:checking_num]
 
-test_data_list = [] # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+test_data_list = []  # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
 for test_data_path in test_data_list:
     filename = test_data_path.split("/")[-1]
-    ori_test_data = load_data(test_data_path)
+    ori_test_data = load_data(test_data_path, lines=max_lines)
     filename2ori_test_data[filename] = ori_test_data
 
 dicts = "dicts.json"
@@ -182,10 +185,10 @@ model_state_dict_path = None
 
 # for test
 model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
-target_run_ids = ["eyu8cm6x", ]
+target_run_ids = ["2v4vqjpn", ]
 top_k_models = 1
-metric4testing = "trigger_class_f1"
-main_test_set_name = "test_data.json"
+metric4testing = "rel_exact_text_f1"
+main_test_set_name = "test_data_1.json"
 cal_scores = True  # set False if the test sets are not annotated
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -263,7 +266,7 @@ top_multi_attn_config = {
 }
 
 handshaking_kernel_config = {
-    "ent_shaking_type": "cln+lstm",
+    "ent_shaking_type": "cln+bilstm",
     "rel_shaking_type": "cln",
 }
 
@@ -293,7 +296,7 @@ model_settings = {
     "emb_ent_info2rel": False,
     "golden_ent_cla_guide": False,
     "loss_weight": 0.5,
-    "loss_weight_recover_steps": 6000,
+    "loss_weight_recover_steps": 0,
     "loss_func": "mce_loss",
     "pred_threshold": 0.,
 }

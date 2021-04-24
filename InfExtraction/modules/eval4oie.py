@@ -1,8 +1,12 @@
 import numpy as np
 from sklearn.metrics import auc
-from copy import copy
 from _collections import defaultdict
+from InfExtraction.modules import utils
 from pattern.en import lexeme, lemma
+utils.patch_pattern()
+import difflib
+import copy
+
 
 class Extraction:
     """
@@ -23,6 +27,7 @@ class Extraction:
     def add_arg(self, arg):
         self.args.append(arg)
 
+
 class OIEMetrics:
     PREPS = ['above', 'across', 'against', 'along', 'among', 'around', 'at', 'before', 'behind', 'below', 'beneath',
              'beside', 'between', 'by', 'for', 'from', 'in', 'into', 'near', 'of', 'off', 'on', 'to', 'toward', 'under',
@@ -34,18 +39,39 @@ class OIEMetrics:
         for sample in data:
             text = sample["text"]
             for spo in sample["open_spo_list"]:
-                extr_spo = Extraction(pred=spo["predicate"]["complete"],
+                pred = ""
+                pred_prefix = ""
+                pred_suffix = ""
+                subj = ""
+                obj = ""
+                other_args = []
+                for arg in spo:
+                    if arg["type"] == "predicate":
+                        pred = arg["text"]
+                    elif arg["type"] == "predicate_prefix":
+                        pred_prefix = arg["text"]
+                    elif arg["type"] == "predicate_suffix":
+                        pred_suffix = arg["text"]
+                    elif arg["type"] == "subject":
+                        subj = arg["text"]
+                    elif arg["type"] == "object":
+                        obj = arg["text"]
+                    else:
+                        other_args.append(arg["text"])
+
+                pred_comp = utils.joint_segs([pred_prefix, pred, pred_suffix])
+                extr_spo = Extraction(pred=pred_comp,
                                       head_pred_index=None,
                                       sent=text,
                                       confidence=1.)
-                extr_spo.add_arg(spo["subject"]["text"])
-                object_ = " ".join([spo["object"]["text"]] + [arg["text"] for arg in spo["other_args"]])
+                extr_spo.add_arg(subj)
+                object_ = utils.joint_segs([obj] + [arg_text for arg_text in other_args])
                 extr_spo.add_arg(object_)
-                for arg in spo["other_args"]:
-                    extr_spo.add_arg(arg["text"])
-                if text not in text2spo:
-                    text2spo[text] = []
-                text2spo[text].append(extr_spo)
+                # for arg_text in other_args:
+                #     extr_spo.add_arg(arg_text)
+
+                text2spo.setdefault(text, []).append(extr_spo)
+
         return text2spo
 
     @staticmethod
@@ -125,12 +151,12 @@ class OIEMetrics:
     @staticmethod
     def binary_linient_tuple_match(ref, ex):
         if len(ref.args) >= 2:
-            r = copy(ref)
+            r = copy.copy(ref)
             r.args = [ref.args[0], ' '.join(ref.args[1:])]
         else:
             r = ref
         if len(ex.args) >= 2:
-            e = copy(ex)
+            e = copy.copy(ex)
             e.args = [ex.args[0], ' '.join(ex.args[1:])]
         else:
             e = ex
@@ -147,7 +173,7 @@ class OIEMetrics:
             return stright_match
         else:
             if len(ex.args) >= 2:
-                e = copy(ex)
+                e = copy.copy(ex)
                 e.args = [' '.join(ex.args[1:]), ex.args[0]]
             else:
                 e = ex
@@ -156,7 +182,7 @@ class OIEMetrics:
             return max(stright_match, reverse_match)
 
     @staticmethod
-    def compare(pred_data, gold_data, matchingFunc, binary=False, strategy='sm'):
+    def compare_oie4(pred_data, gold_data, matchingFunc, binary=False, strategy='sm'):
         pred_data = OIEMetrics.trans_2extra_obj(pred_data)
         gold_data = OIEMetrics.trans_2extra_obj(gold_data)
 
@@ -320,7 +346,7 @@ class OIEMetrics:
         for sent, extr in extrs.items():
             for ex in extr:
                 # Add (a1, r, a2)
-                temp = copy(ex)
+                temp = copy.copy(ex)
                 temp.args = ex.args[:2]
                 res[sent].append(temp)
 
@@ -345,3 +371,88 @@ class OIEMetrics:
     @staticmethod
     def f1(prec, rec):
         return 2 * prec * rec / (prec + rec + 1e-20)
+
+    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    '''
+    metric for saoke
+    @yubowen
+    '''
+
+    @staticmethod
+    def trans(spo):
+        new_spo = {}
+        for arg in spo:
+            if arg["type"] != "object":
+                new_spo[arg["type"]] = arg
+            else:
+                if "object" not in new_spo:
+                    new_spo["object"] = []
+                new_spo["object"].append(arg)
+        return new_spo
+
+    @staticmethod
+    def match(predicted_ex, gold_ex):
+        match_score = 0
+        element_num = 1e-20
+
+        for key in set(predicted_ex.keys()).union(set(gold_ex.keys())):
+            if key != "object":
+                element_num += 1
+            else:
+                predicted_obj_num = len(predicted_ex["object"]) if "object" in predicted_ex else 0
+                gold_obj_num = len(
+                    gold_ex["object"]) if "object" in gold_ex else 0
+                element_num += max(predicted_obj_num, gold_obj_num)
+
+        for tp in predicted_ex:
+            if tp in gold_ex:
+                if tp != "object":
+                    match_score += difflib.SequenceMatcher(
+                        None, predicted_ex[tp]["text"],
+                        gold_ex[tp]["text"]).ratio()
+                else:
+                    min_object_num = min(len(predicted_ex["object"]), len(gold_ex["object"]))
+                    for idx in range(min_object_num):
+                        match_score += difflib.SequenceMatcher(
+                            None, predicted_ex["object"][idx]["text"],
+                            gold_ex["object"][idx]["text"]).ratio()
+
+        return match_score / element_num
+
+    @staticmethod
+    def compare_saoke(pred_data, gold_data, threshold):
+        # 读每个ins，计算每个pair的相似性，
+        total_correct_num = 0
+        total_gold_num = 0
+        total_pred_num = 0
+
+        for sample_idx, pred_sample in enumerate(pred_data):
+            gold_sample = gold_data[sample_idx]
+            pred_spo_list = pred_sample["open_spo_list"]
+            gold_spo_list4debug = gold_sample["open_spo_list"]
+            gold_spo_list = copy.deepcopy(gold_sample["open_spo_list"])
+
+            pred_num = len(pred_spo_list)
+            gold_num = len(gold_spo_list)
+
+            total_gold_num += gold_num
+            total_pred_num += pred_num
+
+            correct_num = 0
+            for predicted_ex in pred_spo_list:
+                ex_score = 0
+                hit_idx = None
+                for spo_idx, gold_ex in enumerate(
+                        gold_spo_list):
+                    match_score = OIEMetrics.match(OIEMetrics.trans(predicted_ex), OIEMetrics.trans(gold_ex))
+                    if match_score > ex_score:
+                        ex_score = match_score
+                        hit_idx = spo_idx
+                if ex_score > threshold:
+                    correct_num += 1
+                    del gold_spo_list[hit_idx]
+            total_correct_num += correct_num
+
+            # if not (correct_num == pred_num == gold_num):
+            #     print("errors in oie evaluation func!")
+        return total_correct_num, total_pred_num, total_gold_num

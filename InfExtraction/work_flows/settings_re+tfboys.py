@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 7
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -38,14 +38,14 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "ace2005_lu"
-language = "en"
+exp_name = "duee_comp2021_mac"
+language = "ch"
 stage = "train"  # inference
 task_type = "re+tfboys"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "bert-base-uncased"
+pretrained_model_name = "macbert-large"
 pretrained_emb_name = "glove.6B.100d.txt"
 use_wandb = False
 note = ""
@@ -54,32 +54,32 @@ lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
 drop_neg_samples = False
-combine = True
+combine = False
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 0  # if no saving, set to 0
+model_bag_size = 5  # if no saving, set to 0
 
 batch_size_train = 12
 batch_size_valid = 12
 batch_size_test = 12
 
 max_seq_len_train = 64
-max_seq_len_valid = 100
-max_seq_len_test = 100
+max_seq_len_valid = 128
+max_seq_len_test = 128
 
-sliding_len_train = 64
-sliding_len_valid = 100
-sliding_len_test = 100
+sliding_len_train = 20
+sliding_len_valid = 70
+sliding_len_test = 70
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
 
-pos_tag_emb = True
-ner_tag_emb = True
-char_encoder = True
+pos_tag_emb = False
+ner_tag_emb = False
+char_encoder = False
 dep_gcn = False
 
-word_encoder = True
+word_encoder = False
 subwd_encoder = True
 use_attns4rel = True  # use only if subwd_encoder (bert) is True
 flair = False
@@ -128,7 +128,7 @@ for key, val in dicts.items():
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
     "classify_entities_by_relation": False,
-    "dtm_arg_type_by_edges": True,
+    "dtm_arg_type_by_edges": False,
 }
 
 # tagger config
@@ -136,7 +136,7 @@ tagger_config = {
     "dtm_arg_type_by_edges": addtional_preprocessing_config["dtm_arg_type_by_edges"],
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "add_h2t_n_t2h_links": False,
-    "language": "en",
+    "language": language,
 }
 
 # optimizers and schedulers
@@ -306,6 +306,7 @@ config_to_log = {
     "tagger_config": tagger_config,
     "split_early_stop": split_early_stop,
     "drop_neg_samples": drop_neg_samples,
-    "combine_split": combine,
+    "combine": combine,
     "use_ghm": use_ghm,
+    "model_bag_size": model_bag_size,
 }

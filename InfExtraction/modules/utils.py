@@ -5,9 +5,78 @@ from torch.utils.data import Dataset
 import torch.nn.functional as F
 from pprint import pprint
 from tqdm import tqdm
-import nltk
-import nltk.data
+# import nltk
+# import nltk.data
 import re
+import unicodedata
+import functools
+
+
+def patch_pattern():
+    from pattern import text
+    original_read = text._read
+
+    @functools.wraps(original_read)
+    def patched_read(*args, **kwargs):
+        try:
+            for r in original_read(*args, **kwargs):
+                yield r
+        except RuntimeError:
+            pass
+    text._read = patched_read
+
+
+ch_jp_kr_pattern = "^[\u4e00-\u9faf|\uff00-\uffef|\u30a0-\u30ff|\u3040-\u309f|\u3000-\u303f]$"
+
+
+def joint_segs(segs):
+    text = segs[0]
+    for seg in segs[1:]:
+        if text == "" or seg == "" or \
+                re.match(ch_jp_kr_pattern, text[-1]) is not None or \
+                re.match(ch_jp_kr_pattern, seg[0]) is not None:
+            pass
+        else:
+            text += " "
+        text += seg
+    return text
+
+
+def extract_ent_fr_txt_by_char_sp(char_span, text):
+    segs = [text[char_span[idx]:char_span[idx + 1]] for idx in range(0, len(char_span), 2)]
+    return joint_segs(segs)
+
+
+def search_best_span4ents(entities, text):
+    ent2spans = {}
+    ent2best_sp = {}
+    for ent in entities:
+        for m in re.finditer(re.escape(ent), text):
+            ent2spans.setdefault(ent, []).append([*m.span()])
+
+    for ent_i, sps_i in ent2spans.items():
+        assert len(sps_i) > 0
+        if len(sps_i) > 1:
+            fin_ch_sp = None
+            fin_dis_score = 9999
+            for ch_sp_i in sps_i:
+                dis_score = 0
+                for ent_j, sps_j in ent2spans.items():
+                    if ent_i == ent_j:
+                        continue
+                    dis_score += min(min(abs(ch_sp_i[0] - ch_sp_j[1]), abs(ch_sp_j[0] - ch_sp_i[1]))
+                                     for ch_sp_j in sps_j if len(ch_sp_j) != 0)
+                if dis_score < fin_dis_score:
+                    fin_dis_score = dis_score
+                    fin_ch_sp = ch_sp_i
+            ent2best_sp[ent_i] = fin_ch_sp
+        else:
+            ent2best_sp[ent_i] = sps_i[0]
+    return ent2best_sp
+
+
+def rm_accents(str):
+    return "".join(c for c in unicodedata.normalize('NFD', str) if unicodedata.category(c) != 'Mn')
 
 
 def search_segs(search_str, text):
@@ -110,15 +179,15 @@ def split_para2sents_ch(para):
     return para.split("\n")
 
 
-def split_para2sents_en(paragraph):
-    '''
-    split English paragraphs to sentences
-    :param paragraph:
-    :return:
-    '''
-    tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
-    sentences = tokenizer.tokenize(paragraph)
-    return sentences
+# def split_para2sents_en(paragraph):
+#     '''
+#     split English paragraphs to sentences
+#     :param paragraph:
+#     :return:
+#     '''
+#     tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
+#     sentences = tokenizer.tokenize(paragraph)
+#     return sentences
 
 
 # def span_contains(span1, span2):
@@ -129,9 +198,10 @@ def split_para2sents_en(paragraph):
 def span_contains(sp1, sp2):
     if len(sp2) == 0:
         return True
-    span1 = sorted(sp1)
-    span2 = sorted(sp2)
+    span1 = sorted(sp1) if len(sp1) > 2 else sp1
+    span2 = sorted(sp2) if len(sp2) > 2 else sp2
     return span1[0] <= span2[0] < span2[-1] <= span1[-1]
+
 
 def ids2span(ids):
     '''
@@ -189,24 +259,24 @@ def merge_spans(spans, text=None):
     return new_spans
 
 
-def load_data(path, total_lines=None):
+def load_data(path, lines=None):
     filename = path.split("/")[-1]
     try:
         print("loading data: {}".format(filename))
         data = json.load(open(path, "r", encoding="utf-8"))
-        if total_lines is not None:
-            print("total number is set: {}".format(total_lines))
-            data = data[:total_lines]
+        if lines is not None:
+            print("total number is set: {}".format(lines))
+            data = data[:lines]
         sample_num = len(data) if type(data) == list else 1
         print("done! {} samples are loaded!".format(sample_num))
     except json.decoder.JSONDecodeError:
+        data = []
         with open(path, "r", encoding="utf-8") as file_in:
-            if total_lines is not None:
-                print("total number is set: {}".format(total_lines))
-            data = []
-            for line in tqdm(file_in, desc="loading data {}".format(filename), total=total_lines):
+            if lines is not None:
+                print("total number is set: {}".format(lines))
+            for line in tqdm(file_in, desc="loading data {}".format(filename), total=lines):
                 data.append(json.loads(line))
-                if total_lines is not None and len(data) == total_lines:
+                if lines is not None and len(data) == lines:
                     break
     return data
 
@@ -296,7 +366,8 @@ class MyMatrix:
 
         matrix_size = MyMaths.handshaking_len2matrix_size(handshaking_seq_len)
         map_ = MyMatrix.get_matrix_idx2shaking_idx(matrix_size)
-        mirror_select_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in range(matrix_size)]
+        mirror_select_ids = [map_[i][j] if i <= j else map_[j][i] for i in range(matrix_size) for j in
+                             range(matrix_size)]
         mirror_select_vec = torch.tensor(mirror_select_ids).to(shaking_seq.device)
 
         # shaking_hiddens = torch.gather(shaking_seq, 1, self.cached_mirror_gather_tensor)
