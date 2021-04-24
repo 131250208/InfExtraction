@@ -47,7 +47,7 @@ To use `pattern.en.lemma`, you need to download several copora from `nltk`:
 >>> nltk.download()
 ```
 Go to the Corpora tab and download the `wordnet`, `wordnet_ic`, `sentiwordnet`.
-You can also download them from my link and put them under:
+You can also download them by our [link](https://drive.google.com/file/d/1wYIHRCyuuPkwaPB2e8Zy8MSMT2pCjBVI/view?usp=sharing) and put them under:
 ```
 Windows C:\Users\<your name>\AppData\Roaming\nltk_data\corpora
 Linux /home/<your name>/nltk_data/corpora
@@ -72,7 +72,14 @@ def patch_pattern():
 
 ## Usage
 ### Data format
-Transform the datasets to our format as below, check out `data_example/data.json` for more details:
+We provided some codes for converting several data formats to ours: 
+```
+casrel, etl_span, raw_nyt, duie_1, duie_2, duee_1, duee_fin
+```
+Check out [TPlinker](https://github.com/131250208/TPlinker-joint-extraction) for the description of `casrel`, `etl_span`, and `raw_nyt`. 
+And `du*` are the Qian Yan datasets provided by Baidu. We provide a fast [link](https://drive.google.com/drive/folders/13cXK0KZYmyhpVKa75m7vcnnlRzZxwSGk?usp=sharing) to download these datasets.
+
+For other datasets, you need to transform your data to our format (check out `data_example/data.json` for more details):
 ```json
 {
     "id": "<id>",
@@ -151,19 +158,19 @@ language = "ch"  # en, ch
 # it is valid only if "word_list" or "word2char_span" are not provided
 word_tokenizer_type = "normal_chinese"  # white (for English), normal_chinese (for Chinese);
 
-pretrained_model_tokenizer_path = "../../data/pretrained_models/bert-base-cased"
+pretrained_model_tokenizer_path = "../../data/pretrained_models/chinese_roberta_wwm_ext_pytorch"
 do_lower_case = True  # transform to lower case and rm accents, only for bert tokenizer and lower the subword_list,
                     # it does not change the original text or word_list,
                     # set True if use uncased BERT
 
-# We have some codes for converting several data format to ours: 
+# We provided some codes for converting several data format to ours: 
 # casrel (webnlg_star, nyt_star), etl_span (webnlg), raw_nyt (nyt), duie_1, duie_2, duee_1, duee_fin
-# Otherwise, you need to transform your data to our format as aforementioned and set "ori_data_format" to "normal".
-ori_data_format = "normal"
+# For other datasets, you need to transform your data to our format as aforementioned and set "ori_data_format" to "normal".
+ori_data_format = "duie_2"
 
 add_id = True  # Set True if "id" is not provided in the data
 
-add_char_span = False  # Set True for data without character level spans
+add_char_span = True  # Set True for data without character level spans
 ignore_subword_match = False # It is valid only if add_char_span is set to True. Add whitespaces around entities when matching and adding character level spans,
 # e.g. if ignore_subword_match is set true, " home " will not match the subword "home" in "hometown"
 # Note that it should be set to False when preprocessing Chinese datasets
@@ -182,26 +189,33 @@ python preprocess.py
 
 Make sure your datasets are put under `data/normal_data`
 
-If use BERT, put it under `data/pretrained_models`
+If use BERT, put it under `data/pretrained_models` and set `pretrained_model_name`.
 
 Set the BERT configuration file `config.json`:
 ```
 "output_hidden_states": true,
 "output_attentions": true,
 ```
+
+If use word embedding, put it under `data/pretrained_emb` and set `pretrained_emb_name`. 
+We support both `*.txt` and `*.bin`.
+
 Set `settings_re.py` for training:
 ```python
 stage = "train" 
 exp_name = "duie_comp2021" # the folder name of your datasets
 pretrained_model_name = "chinese_roberta_wwm_ext_pytorch" # bert name
+test_path_list = []  # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 ...
 ```
+If `test_path_list` is not empty, will also do validation on test sets.
 
 Set `settings_re.py` for evaluation:
 ```python
 stage = "inference" 
 exp_name = "duie_comp2021"
 pretrained_model_name = "chinese_roberta_wwm_ext_pytorch"
+test_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 ...
 
 # valid only if stage == "inference" 
@@ -212,6 +226,7 @@ metric4testing = "rel_exact_text_f1"  # by which metric to choose top k models
 cal_scores = True  # set False if all the test sets are not annotated, then only output the result files without scoring.
 ...
 ```
+Do evaluation on the datasets in `test_path_list`. The result data will be saved under `data/res_data` after evaluation.
 
 Run `train_valid.py` for either training or evaluation:
 ```
