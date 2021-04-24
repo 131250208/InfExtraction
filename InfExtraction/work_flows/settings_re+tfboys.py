@@ -47,7 +47,7 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "macbert-large"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
+use_wandb = True
 note = ""
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
@@ -85,31 +85,28 @@ use_attns4rel = True  # use only if subwd_encoder (bert) is True
 flair = False
 elmo = False
 
-# data
+# load data
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
 
-train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
-test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
-filename2ori_test_data = {}
-for test_data_path in test_data_list:
-    filename = test_data_path.split("/")[-1]
-    ori_test_data = load_data(test_data_path)
-    filename2ori_test_data[filename] = ori_test_data
-
-data4checking = copy.deepcopy(valid_data)
-random.shuffle(data4checking)
+statistics_path = os.path.join(data_in_dir, exp_name, "statistics.json")
+dicts_path = os.path.join(data_in_dir, exp_name, "dicts.json")
+train_path = os.path.join(data_in_dir, exp_name, "train_data.json")
+val_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
+test_path_list = []  # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+max_lines = None  # None
 checking_num = 1000
-data4checking = data4checking[:checking_num]
 
-
-dicts = "dicts.json"
-statistics = "statistics.json"
-statistics_path = os.path.join(data_in_dir, exp_name, statistics)
-dicts_path = os.path.join(data_in_dir, exp_name, dicts)
 statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
+train_data = load_data(train_path, lines=max_lines)
+valid_data = load_data(val_path, lines=max_lines)
+data4checking = copy.deepcopy(valid_data[:checking_num])
+filename2ori_test_data = {}
+for test_data_path in test_path_list:
+    filename = test_data_path.split("/")[-1]
+    ori_test_data = load_data(test_data_path, lines=max_lines)
+    filename2ori_test_data[filename] = ori_test_data
 
 # for index_features()
 key_map = {
