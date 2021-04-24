@@ -9,6 +9,7 @@ Train the model
 # Put the data into a Dataloaders
 # Set optimizer and trainer
 '''
+
 import sys, getopt
 import importlib
 import copy
@@ -17,7 +18,7 @@ import copy
 try:
     opts, args = getopt.getopt(sys.argv[1:], "s:", ["settings="])
 except getopt.GetoptError:
-    print('test.py -s <settings_file> --settings <settings_file>')
+    print('train_valid.py -s <settings_file> --settings <settings_file>')
     sys.exit(2)
 
 settings_name = "settings_default"
@@ -43,7 +44,11 @@ from InfExtraction.modules import taggers
 from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data, save_as_json_lines
+from InfExtraction.modules.utils import DefaultLogger, MyDataset, save_as_json_lines
+
+
+def worker_init_fn(worker_id):
+    np.random.seed(np.random.get_state()[1][0] + worker_id)
 
 
 def get_dataloader(data,
@@ -64,8 +69,8 @@ def get_dataloader(data,
                    drop_neg_samples=False,
                    ):
 
-    if combine:
-        data = Preprocessor.combine(data, 1024)
+    # if combine:
+    #     data = Preprocessor.combine(data, 1024)
 
     data = Preprocessor.split_into_short_samples(data,
                                                  max_seq_len,
@@ -76,6 +81,9 @@ def get_dataloader(data,
                                                  wordpieces_prefix=wdp_prefix,
                                                  early_stop=split_early_stop,
                                                  drop_neg_samples=drop_neg_samples)
+
+    if combine:
+        data = Preprocessor.combine(data, max_seq_len)
 
     # check spans
     sample_id2mismatched = Preprocessor.check_spans(data, language)
@@ -104,10 +112,6 @@ def get_dataloader(data,
     return dataloader
 
 
-def worker_init_fn(worker_id):
-    np.random.seed(np.random.get_state()[1][0] + worker_id)
-
-
 def get_score_fr_path(model_path):
     return float(re.search("_([\d\.]+)\.pt", model_path.split("/")[-1]).group(1))
 
@@ -117,7 +121,7 @@ def get_last_k_paths(path_list, k):
     return path_list[-k:]
 
 
-if __name__ == "__main__":
+def run():
     # task
     exp_name = settings.exp_name
     task_type = settings.task_type
@@ -136,8 +140,6 @@ if __name__ == "__main__":
     ori_data4checking = settings.data4checking
     filename2ori_test_data = settings.filename2ori_test_data
 
-    dicts = settings.dicts
-    statistics = settings.statistics
     key2dict = settings.key2dict  # map from feature key to indexing dict
 
     # additonal preprocessing config
@@ -219,9 +221,6 @@ if __name__ == "__main__":
     # env
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # reset settings from args
-    # ...
-
     # choose features and spans by token level
     train_data = Preprocessor.choose_features_by_token_level(train_data, token_level, do_lower_case)
     train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
@@ -232,12 +231,12 @@ if __name__ == "__main__":
     ori_data4checking = Preprocessor.choose_features_by_token_level(ori_data4checking, token_level, do_lower_case)
     ori_data4checking = Preprocessor.choose_spans_by_token_level(ori_data4checking, token_level)
     for filename, test_data in filename2ori_test_data.items():
-        filename2ori_test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level, do_lower_case)
+        filename2ori_test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level,
+                                                                                       do_lower_case)
         filename2ori_test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
 
-    # # copy original data to do following operations,
-    # to maintain the original data clean for evaluation (should not be changed by preprocessing)
-    # train_data = copy.deepcopy(ori_train_data)
+    # # copy original data
+    # to maintain the original data clean for evaluation (should not be changed by any preprocessing operations)
 
     print("copy ...")
     valid_data = copy.deepcopy(ori_valid_data)
@@ -504,9 +503,14 @@ if __name__ == "__main__":
                         run_id2scores[run_id][model_name][filename] = score_dict
 
         if cal_scores:
+            # # median score of top k models
             # for run_id, m2scr_dict in run_id2scores.items():
             #     if main_test_set_name is None or main_test_set_name not in filename2test_data_loader:
             #         main_test_set_name = list(filename2test_data_loader.keys())[0]
             #     sorted_dicts = sorted(m2scr_dict.values(), key=lambda x: x[main_test_set_name][metric4testing])
             #     run_id2scores[run_id]["median"] = sorted_dicts[len(sorted_dicts) // 2]
             pprint(run_id2scores)
+
+
+if __name__ == "__main__":
+    run()

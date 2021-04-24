@@ -5,9 +5,6 @@ os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
 import random
 import numpy as np
-from datetime import date
-import time
-from InfExtraction.modules.utils import load_data
 
 seed = 2333
 enable_bm = True
@@ -31,6 +28,9 @@ def enable_benchmark():
 set_seed()
 enable_benchmark()
 
+from datetime import date
+import time
+from InfExtraction.modules.utils import load_data
 import string
 import json
 import copy
@@ -59,7 +59,7 @@ scheduler = "CAWR"
 use_ghm = False
 model_bag_size = 0  # if no saving, set to 0
 
-batch_size_train = 12
+batch_size_train = 16
 batch_size_valid = 12
 batch_size_test = 12
 
@@ -67,9 +67,9 @@ max_seq_len_train = 64
 max_seq_len_valid = 100
 max_seq_len_test = 100
 
-sliding_len_train = 20
-sliding_len_valid = 70
-sliding_len_test = 70
+sliding_len_train = 64
+sliding_len_valid = 100
+sliding_len_test = 100
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
@@ -85,33 +85,28 @@ use_attns4rel = True  # use only if subwd_encoder (bert) is True
 flair = False
 elmo = False
 
-# data
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>> load data >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
 
+statistics_path = os.path.join(data_in_dir, exp_name, "statistics.json")
+dicts_path = os.path.join(data_in_dir, exp_name, "dicts.json")
 train_path = os.path.join(data_in_dir, exp_name, "train_data.json")
 val_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
+test_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 max_lines = None  # None
+checking_num = 1000
+
+statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
+dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 train_data = load_data(train_path, lines=max_lines)
 valid_data = load_data(val_path, lines=max_lines)
-
-checking_num = 1000
 data4checking = copy.deepcopy(valid_data[:checking_num])
-random.shuffle(data4checking)
-
-test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
-for test_data_path in test_data_list:
+for test_data_path in test_path_list:
     filename = test_data_path.split("/")[-1]
     ori_test_data = load_data(test_data_path, lines=max_lines)
     filename2ori_test_data[filename] = ori_test_data
-
-dicts = "dicts.json"
-statistics = "statistics.json"
-statistics_path = os.path.join(data_in_dir, exp_name, statistics)
-dicts_path = os.path.join(data_in_dir, exp_name, dicts)
-statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
-dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 
 # for index_features()
 key_map = {
@@ -129,7 +124,7 @@ for key, val in dicts.items():
 # additional preprocessing
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
-    "classify_entities_by_relation": False,  # ee, re
+    "classify_entities_by_relation": True,
 }
 
 # tagger config

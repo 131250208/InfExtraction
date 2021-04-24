@@ -68,8 +68,8 @@ max_seq_len_valid = 128
 max_seq_len_test = 128
 
 sliding_len_train = 20
-sliding_len_valid = 70
-sliding_len_test = 70
+sliding_len_valid = 20
+sliding_len_test = 20
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword

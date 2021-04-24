@@ -1,19 +1,16 @@
-import os
 device_num = 2
-os.environ["TOKENIZERS_PARALLELISM"] = "true"
-os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
-import torch
-import random
-import numpy as np
-from datetime import date
-import time
-from InfExtraction.modules.utils import load_data
-
 seed = 2333
 enable_bm = True
 
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
+os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
+import numpy as np
+import torch
+import random
 
-def set_seed():
+
+def set_seed(seed):
     os.environ['PYTHONHASHSEED'] = str(seed)
     torch.manual_seed(seed)  # cpu
     torch.cuda.manual_seed(seed)  # gpu
@@ -22,15 +19,18 @@ def set_seed():
     random.seed(seed)  # random and transforms
 
 
-def enable_benchmark():
+def enable_benchmark(enable_bm):
     torch.backends.cudnn.enabled = enable_bm
     torch.backends.cudnn.benchmark = enable_bm
     torch.backends.cudnn.deterministic = True
 
+set_seed(seed)
+enable_benchmark(enable_bm)
 
-set_seed()
-enable_benchmark()
 
+from datetime import date
+import time
+from InfExtraction.modules.utils import load_data
 import string
 import json
 import copy
