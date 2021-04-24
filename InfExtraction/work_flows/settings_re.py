@@ -101,9 +101,9 @@ random.shuffle(data4checking)
 checking_num = 1000
 data4checking = data4checking[:checking_num]
 
-test_data_list = []  # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+test_path_list = []  # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
-for test_data_path in test_data_list:
+for test_data_path in test_path_list:
     filename = test_data_path.split("/")[-1]
     ori_test_data = load_data(test_data_path, lines=max_lines)
     filename2ori_test_data[filename] = ori_test_data
