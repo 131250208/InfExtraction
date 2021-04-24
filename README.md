@@ -75,7 +75,8 @@ def patch_pattern():
 ### Data format
 We provided some codes for converting several data formats to ours: 
 ```
-casrel, etl_span, raw_nyt, duie_1, duie_2, duee_1, duee_fin
+casrel (for nyt_star and webnlg_star), etl_span (for webnlg), raw_nyt (for nyt), 
+duie_1, duie_2, duee_1, duee_fin
 ```
 Check out [TPlinker](https://github.com/131250208/TPlinker-joint-extraction) for the description of `casrel`, `etl_span`, and `raw_nyt`. 
 And `du*` are the Qian Yan datasets provided by Baidu. We provide a fast [link](https://drive.google.com/drive/folders/13cXK0KZYmyhpVKa75m7vcnnlRzZxwSGk?usp=sharing) to download these datasets.
