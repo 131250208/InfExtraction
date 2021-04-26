@@ -1982,31 +1982,31 @@ class Preprocessor:
                 if "open_spo_list" in sample:
                     new_sample["open_spo_list"] = []
 
-                # # if "components" exists -> it is a combined sample
-                # if "components" in sample:
-                #     sub_comps_ = []
-                #     for comp in sample["components"]:
-                #         if comp["offset_in_this_comb"][-1] <= start_ind \
-                #                 or comp["offset_in_this_comb"][0] >= end_ind:
-                #             continue
-                #         sub_comps_.append(comp)
-                #
-                #     sub_comps = copy.deepcopy(sub_comps_)
-                #     subcomb_start_tok_id = sub_comps[0]["offset_in_this_comb"][0]
-                #     sub_comps[0]["offset_in_ori_txt"]["tok_level_offset"] = start_ind - subcomb_start_tok_id
-                #     start_char_id = tok2char_span[start_ind][0]
-                #     subcomb_start_char_id = tok2char_span[subcomb_start_tok_id][0]
-                #     sub_comps[0]["offset_in_ori_txt"]["char_level_offset"] = start_char_id - subcomb_start_char_id
-                #
-                #     sub_comps[0]["offset_in_this_comb"][0] = start_ind
-                #     if end_ind < sub_comps[-1]["offset_in_this_comb"][-1]:
-                #         sub_comps[-1]["offset_in_this_comb"][-1] = end_ind
-                #
-                #     for cp in sub_comps:
-                #         cp["offset_in_this_comb"][0] -= start_ind
-                #         cp["offset_in_this_comb"][1] -= start_ind
-                #
-                #     new_sample["components"] = sub_comps
+                # if "components" exists -> it is a combined sample
+                if "components" in sample:
+                    sub_comps_ = []
+                    for comp in sample["components"]:
+                        if comp["offset_in_this_comb"][-1] <= start_ind \
+                                or comp["offset_in_this_comb"][0] >= end_ind:
+                            continue
+                        sub_comps_.append(comp)
+
+                    sub_comps = copy.deepcopy(sub_comps_)
+                    subcomb_start_tok_id = sub_comps[0]["offset_in_this_comb"][0]
+                    sub_comps[0]["offset_in_ori_txt"]["tok_level_offset"] = start_ind - subcomb_start_tok_id
+                    start_char_id = tok2char_span[start_ind][0]
+                    subcomb_start_char_id = tok2char_span[subcomb_start_tok_id][0]
+                    sub_comps[0]["offset_in_ori_txt"]["char_level_offset"] = start_char_id - subcomb_start_char_id
+
+                    sub_comps[0]["offset_in_this_comb"][0] = start_ind
+                    if end_ind < sub_comps[-1]["offset_in_this_comb"][-1]:
+                        sub_comps[-1]["offset_in_this_comb"][-1] = end_ind
+
+                    for cp in sub_comps:
+                        cp["offset_in_this_comb"][0] -= start_ind
+                        cp["offset_in_this_comb"][1] -= start_ind
+
+                    new_sample["components"] = sub_comps
 
                 # if train or debug, filter annotations
                 if data_type not in {"train", "debug"}:
