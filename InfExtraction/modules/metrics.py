@@ -553,8 +553,8 @@ class MetricsCalculator:
                         if selected_pred_e_set is not None and max_arg_common_num > 0:
                             pred_event_sets.remove(selected_pred_e_set)
 
-            if not (current_gold_num == current_predict_num == current_correct_num):
-                print("metric error")
+            # if not (current_gold_num == current_predict_num == current_correct_num):
+            #     print("metric error")
             correct_num += current_correct_num
             predict_num += current_predict_num
             gold_num += current_gold_num
