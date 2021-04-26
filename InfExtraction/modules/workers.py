@@ -218,10 +218,11 @@ class Evaluator:
             pred_data.append(merged_pred_samples[id_])
 
         def arg_to_str(arg):
-            if type(arg["tok_span"][0]) is list:
+            if len(arg["tok_span"]) > 0 and type(arg["tok_span"][0]) is list:
                 arg_str = "-".join([arg["type"], arg["text"]])
             else:
-                arg_str = "-".join([arg["type"], *[str(idx) for idx in arg["tok_span"]]])
+                s = ",".join([str(idx) for idx in arg["tok_span"]]) if len(arg["tok_span"]) > 0 else arg["text"]
+                arg_str = "-".join([arg["type"], s])
             return arg_str
 
         for sample in pred_data:

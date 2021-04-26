@@ -69,8 +69,8 @@ def get_dataloader(data,
                    drop_neg_samples=False,
                    ):
 
-    # if combine:
-    #     data = Preprocessor.combine(data, 1024)
+    if combine and data_type == "train":
+        data = Preprocessor.combine(data, 1024)
 
     data = Preprocessor.split_into_short_samples(data,
                                                  max_seq_len,
@@ -82,7 +82,7 @@ def get_dataloader(data,
                                                  early_stop=split_early_stop,
                                                  drop_neg_samples=drop_neg_samples)
 
-    if combine:
+    if combine and data_type != "train":
         data = Preprocessor.combine(data, max_seq_len)
 
     # check spans

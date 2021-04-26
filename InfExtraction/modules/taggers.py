@@ -1951,14 +1951,6 @@ def create_rebased_oie_tagger(base_class):
         def _trans(self, ori_sample):
             new_tag_sep = "\u2E82"
             sample_id = ori_sample["id"]
-            # if sample_id in {
-            #     # 21425,  # p少了一个obj
-            #     # 19820,  # 多解出一个
-            #     # 20362,  # 少解很多
-            #     # 5229,
-            #     1737  # p中多了一个obj，由[OBJ]组成 -> 由[OBJ][OBJ]组成: 极端情况下极大团搜索的歧义
-            #                 }:
-            #     print("id")
             text = ori_sample["text"]
             tok2char_span = ori_sample["features"]["tok2char_span"]
             ent_list, rel_list = ori_sample["entity_list"], ori_sample["relation_list"]
@@ -2080,7 +2072,8 @@ def create_rebased_oie_tagger(base_class):
                                 break
 
                             # 指向的下一个元素必须与第一个元素类型一致，否则丢弃
-                            if get_role(next_seg_offset_str, cli) == cand_roles:
+                            next_seg_role = get_role(next_seg_offset_str, cli)
+                            if next_seg_role == cand_roles:
                                 mem.append(next_seg_offset_str)
 
                                 new_tok_sp = [int(idx) for idx in next_seg_offset_str.split(",")]
