@@ -155,6 +155,8 @@ class SingleSourceHandshakingKernel(nn.Module):
 
         if "cat" in shaking_type:
             self.cat_fc = nn.Linear(hidden_size * 2, hidden_size)
+        if "cmm" in shaking_type:
+            self.cat_fc = nn.Linear(hidden_size * 4, hidden_size)
         if "cln" in shaking_type:
             self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
         if "lstm" in shaking_type:
@@ -256,6 +258,11 @@ class SingleSourceHandshakingKernel(nn.Module):
 
         if "cat" in self.shaking_type:
             tp_cat_pre = torch.cat([guide, visible], dim=-1)
+            tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
+            shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+
+        if "cmm" in self.shaking_type:  # cat, minus, multiple
+            tp_cat_pre = torch.cat([guide, visible, torch.abs(guide - visible), torch.mul(guide, visible)], dim=-1)
             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
             shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
 

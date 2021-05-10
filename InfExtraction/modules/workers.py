@@ -4,6 +4,8 @@ import torch
 import wandb
 from tqdm import tqdm
 import time
+import numpy as np
+from InfExtraction.work_flows import format_conv
 
 
 class Trainer:
@@ -233,12 +235,7 @@ class Evaluator:
             if "event_list" in sample:
                 sample["event_list"] = Preprocessor.unique_list(sample["event_list"])
 
-                # filter redundant event
                 new_event_list = []
-
-                # if sample["id"] == 'ad6ce7c4f547c93efc184bd1c0b2a154':
-                #     print("???!!!!")
-
                 def to_e_set(event):
                     arg_list = event["argument_list"] + [{"type": "Trigger", "tok_span": event["trigger_tok_span"], "text": event["trigger"]}, ] \
                         if "trigger" in event else event["argument_list"]
@@ -248,7 +245,7 @@ class Evaluator:
                     event_set_i = to_e_set(e_i)
                     if any(event_set_i.issubset(to_e_set(e_j))
                            and len(event_set_i) < len(to_e_set(e_j))
-                           for e_j in sample["event_list"]):  # if spo_i is a proper subset of another spo, skip
+                           for e_j in sample["event_list"]):  # if ei is a proper subset of another event, skip
                         continue
                     new_event_list.append(e_i)
                 sample["event_list"] = new_event_list
@@ -266,9 +263,16 @@ class Evaluator:
                         continue
                     new_spo_list.append(spo_i)
                 sample["open_spo_list"] = new_spo_list
-
+        
+        # >>>>>>>>>>>>>>>>>>>>> merge events for document level EE task >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        if any(type(arg["tok_span"][0]) is list
+               for sample in golden_data
+               for event in sample.get("event_list", [])
+               for arg in event["argument_list"]):  # if document level event extraction
+            for sample in pred_data:
+                sample["event_list"] = format_conv.merge_events4doc_ee(sample["event_list"], 0.6)
         return pred_data
-
+    
     def predict(self, dataloader, golden_data):
         # predict
         self.model.eval()

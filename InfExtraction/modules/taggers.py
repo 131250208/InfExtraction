@@ -5,6 +5,7 @@ from tqdm import tqdm
 from InfExtraction.modules.preprocess import Indexer, Preprocessor
 from InfExtraction.modules import utils
 import numpy as np
+import torch.nn.functional as F
 import networkx as nx
 from InfExtraction.modules.metrics import MetricsCalculator
 # from InfExtraction.modules.ancient_eval4oie import OIEMetrics
@@ -42,13 +43,13 @@ class Tagger(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def decode(self, sample, pred_tags):
+    def decode(self, sample, pred_tags, pred_outs=None):
         '''
         decoding function: to extract results by the predicted tag
-
         :param sample: an example (to offer text, tok2char_span for decoding)
         :param pred_tags: predicted tag id tensors converted from the outputs of the forward function,
                           it is a tuple or a single tag tensor
+        :param pred_outs: the outputs of the forward function
         :return: predicted example
         '''
         pass
@@ -58,7 +59,9 @@ class Tagger(metaclass=ABCMeta):
         for ind in range(len(sample_list)):
             sample = sample_list[ind]
             pred_tags = [batch_pred_tag[ind] for batch_pred_tag in batch_pred_tags]
-            pred_sample = self.decode(sample, pred_tags)  # decoding one sample
+            pred_outs = [batch_pred_out[ind] for batch_pred_out in batch_pred_outputs] \
+                if batch_pred_outputs is not None else None
+            pred_sample = self.decode(sample, pred_tags, pred_outs)  # decoding one sample
             pred_sample_list.append(pred_sample)
         return pred_sample_list
 
@@ -76,6 +79,8 @@ class Tagger4SpanNER(Tagger):
         ent_type_set = sorted(ent_type_set)
         self.ent_tag2id = {ent: idx for idx, ent in enumerate(ent_type_set)}
         self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
+
+        self.pred_threshold = kwargs["pred_threshold"]
 
     def get_tag_size(self):
         return len(self.ent_tag2id)
@@ -103,7 +108,7 @@ class Tagger4SpanNER(Tagger):
             sample["ent_points"] = self.get_tag_points(sample)
         return data
 
-    def decode(self, sample, pred_tags):
+    def decode(self, sample, pred_tags, pred_outs=None):
         rel_list, ent_list = [], []
         predicted_shaking_tag = pred_tags[0]
         shk_points = Indexer.shaking_seq2points(predicted_shaking_tag)
@@ -325,7 +330,7 @@ class HandshakingTagger4TPLPlus(Tagger):
 
         return matrix_points
 
-    def decode(self, sample, pred_tags):
+    def decode(self, sample, pred_tags, pred_outs=None):
         '''
         sample: to provide tok2char_span map and text
         pred_tags: predicted tags
@@ -524,153 +529,20 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
 
         return Preprocessor.unique_list(ent_matrix_points), Preprocessor.unique_list(rel_matrix_points)
 
-    # def decode(self, sample, pred_tags):
-    #     '''
-    #     sample: to provide tok2char_span map and text
-    #     pred_tags: predicted tags
-    #     '''
-    #     rel_list, ent_list = [], []
-    #     pred_ent_tag, pred_rel_tag = pred_tags[0], pred_tags[1]
-    #     ent_points = Indexer.shaking_seq2points(pred_ent_tag)
-    #     rel_points = Indexer.matrix2points(pred_rel_tag)
-    #
-    #     sample_idx, text = sample["id"], sample["text"]
-    #     tok2char_span = sample["features"]["tok2char_span"]
-    #
-    #     # entity
-    #     head_ind2entities = {}
-    #     for pt in ent_points:
-    #         ent_tag = self.id2ent_tag[pt[2]]
-    #         # ent_type, link_type = ent_tag.split(self.separator)
-    #         # for an entity, the start position can not be larger than the end pos.
-    #         # assert link_type == "EH2ET" and pt[0] <= pt[1]
-    #         # if link_type == "EH2ET":
-    #         ent_type = ent_tag
-    #         tok_sp = [pt[0], pt[1] + 1]
-    #         char_span_list = tok2char_span[tok_sp[0]:tok_sp[1]]
-    #         char_sp = [char_span_list[0][0], char_span_list[-1][1]]
-    #         ent_text = text[char_sp[0]:char_sp[1]]
-    #
-    #         entity = {
-    #             "type": ent_type,
-    #             "text": ent_text,
-    #             "tok_span": tok_sp,
-    #             "char_span": char_sp,
-    #         }
-    #         ent_list.append(entity)
-    #
-    #         head_key = "{},{}".format(ent_type, str(pt[0])) if self.classify_entities_by_relation else str(pt[0])
-    #         if head_key not in head_ind2entities:
-    #             head_ind2entities[head_key] = []
-    #         head_ind2entities[head_key].append(entity)
-    #
-    #     # tail link
-    #     tail_link_memory_set = set()
-    #     for pt in rel_points:
-    #         tag = self.id2rel_tag[pt[2]]
-    #         rel, link_type = tag.split(self.separator)
-    #
-    #         if link_type == "ST2OT":
-    #             tail_link_memory = self.separator.join([rel, str(pt[0]), str(pt[1])])
-    #             tail_link_memory_set.add(tail_link_memory)
-    #         elif link_type == "OT2ST":
-    #             tail_link_memory = self.separator.join([rel, str(pt[1]), str(pt[0])])
-    #             tail_link_memory_set.add(tail_link_memory)
-    #         else:
-    #             continue
-    #
-    #     # head link
-    #     for pt in rel_points:
-    #         tag = self.id2rel_tag[pt[2]]
-    #         rel, link_type = tag.split(self.separator)
-    #
-    #         if link_type == "SH2OH":
-    #             if self.classify_entities_by_relation:
-    #                 subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[0])), "REL:{},{}".format(rel,
-    #                                                                                                       str(pt[1]))
-    #             else:
-    #                 subj_head_key, obj_head_key = str(pt[0]), str(pt[1])
-    #         elif link_type == "OH2SH":
-    #             if self.classify_entities_by_relation:
-    #                 subj_head_key, obj_head_key = "REL:{},{}".format(rel, str(pt[1])), "REL:{},{}".format(rel,
-    #                                                                                                       str(pt[0]))
-    #             else:
-    #                 subj_head_key, obj_head_key = str(pt[1]), str(pt[0])
-    #         else:
-    #             continue
-    #
-    #         if subj_head_key not in head_ind2entities or obj_head_key not in head_ind2entities:
-    #             # no entity start with subj_head_key or obj_head_key
-    #             continue
-    #
-    #         # all entities start with this subject head
-    #         subj_list = Preprocessor.unique_list(head_ind2entities[subj_head_key])
-    #         # all entities start with this object head
-    #         obj_list = Preprocessor.unique_list(head_ind2entities[obj_head_key])
-    #
-    #         # go over all subj-obj pair to check whether the tail link exists
-    #         for subj in subj_list:
-    #             for obj in obj_list:
-    #                 tail_link_memory = self.separator.join(
-    #                     [rel, str(subj["tok_span"][1] - 1), str(obj["tok_span"][1] - 1)])
-    #                 if tail_link_memory not in tail_link_memory_set:
-    #                     # no such relation
-    #                     continue
-    #                 rel_list.append({
-    #                     "subject": subj["text"],
-    #                     "object": obj["text"],
-    #                     "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
-    #                     "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
-    #                     "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
-    #                     "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
-    #                     "predicate": rel,
-    #                 })
-    #
-    #     if self.add_h2t_n_t2h_links:
-    #         # fitler wrong relations by Head 2 Tail and Tail to Head tags
-    #         head2tail_link_set = set()
-    #         tail2head_link_set = set()
-    #         for pt in rel_points:
-    #             tag = self.id2rel_tag[pt[2]]
-    #             rel, link_type = tag.split(self.separator)
-    #             if link_type == "SH2OT":
-    #                 head2tail_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
-    #             elif link_type == "OT2SH":
-    #                 head2tail_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
-    #             if link_type == "ST2OH":
-    #                 tail2head_link_set.add(self.separator.join([rel, str(pt[0]), str(pt[1])]))
-    #             elif link_type == "OH2ST":
-    #                 tail2head_link_set.add(self.separator.join([rel, str(pt[1]), str(pt[0])]))
-    #         filtered_rel_list = []
-    #         for spo in rel_list:
-    #             subj_tok_span = spo["subj_tok_span"]
-    #             obj_tok_span = spo["obj_tok_span"]
-    #             h2t = self.separator.join([spo["predicate"], str(subj_tok_span[0]), str(obj_tok_span[1] - 1)])
-    #             t2h = self.separator.join([spo["predicate"], str(subj_tok_span[1] - 1), str(obj_tok_span[0])])
-    #             if h2t not in head2tail_link_set or t2h not in tail2head_link_set:
-    #                 continue
-    #             filtered_rel_list.append(spo)
-    #         rel_list = filtered_rel_list
-    #
-    #     pred_sample = copy.deepcopy(sample)
-    #     # filter extra relations
-    #     pred_sample["relation_list"] = Preprocessor.unique_list(
-    #         [rel for rel in rel_list if "EXT:" not in rel["predicate"]])
-    #     # filter extra entities
-    #     ent_types2filter = {"REL:", "EXT:"}
-    #     ent_filter_pattern = "({})".format("|".join(ent_types2filter))
-    #     pred_sample["entity_list"] = Preprocessor.unique_list(
-    #         [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None])
-    #
-    #     return pred_sample
-
-    def decode(self, sample, pred_tags):
+    def decode(self, sample, pred_tags, pred_outs=None):
         '''
         sample: to provide tok2char_span map and text
         pred_tags: predicted tags
         '''
         rel_list, ent_list = [], []
         pred_ent_tag, pred_rel_tag = pred_tags[0], pred_tags[1]
+        pred_ent_conf, pred_rel_conf = None, None
+        matrix_idx2shaking_idx = None
+        if pred_outs is not None:
+            pred_ent_conf, pred_rel_conf = F.sigmoid(pred_outs[0]), F.sigmoid(pred_outs[1])
+            shaking_seq_len = pred_ent_conf.size()[0]
+            matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
+            matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
         ent_points = Indexer.shaking_seq2points(pred_ent_tag)
         rel_points = Indexer.matrix2points(pred_rel_tag)
 
@@ -684,14 +556,19 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
             tok_sp = [pt[0], pt[1] + 1]
             char_span_list = tok2char_span[tok_sp[0]:tok_sp[1]]
             char_sp = [char_span_list[0][0], char_span_list[-1][1]]
-            if char_sp[1] == 0:  # if [PAD] tokens are included, char_sp would be [x, 0]
+            if char_sp[1] == 0:  # if [PAD] tokens are included, char_sp would be [*, 0]
                 continue
             ent_text = text[char_sp[0]:char_sp[1]]
+            conf = 1.
+            if pred_ent_conf is not None:
+                shaking_idx = matrix_idx2shaking_idx[pt[0]][pt[1]]
+                conf = pred_ent_conf[shaking_idx][pt[2]].item()
             entity = {
                 "type": ent_type,
                 "text": ent_text,
                 "tok_span": tok_sp,
                 "char_span": char_sp,
+                "conf": round(conf, 5),
             }
             ent_list.append(entity)
 
@@ -700,6 +577,8 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
             "DEFAULT": []
         }
         for ent in ent_list:
+            if "MASK:" in ent["type"]:
+                continue
             if self.classify_entities_by_relation:
                 if "REL:" in ent["type"]:
                     new_ent = copy.deepcopy(ent)
@@ -718,8 +597,9 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 rel2link_type_map[rel] = {}
             index_pair = "{},{}".format(pt[0], pt[1])
             if index_pair not in rel2link_type_map[rel]:
-                rel2link_type_map[rel][index_pair] = set()
-            rel2link_type_map[rel][index_pair].add(link_type)
+                rel2link_type_map[rel][index_pair] = {}
+            rel2link_type_map[rel][index_pair][link_type] = pred_rel_conf[pt[0]][pt[1]][pt[2]].item() \
+                if pred_rel_conf is not None else 1.
 
         for rel, link_type_map in rel2link_type_map.items():
             cand_ent_list4rel = rel2candidate_ents.get(rel, []) \
@@ -732,16 +612,20 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                     t2h_ids = "{},{}".format(subj["tok_span"][1] - 1, obj["tok_span"][0])
 
                     rel_exist = False
+                    edge_conf = 1.
                     if self.add_h2t_n_t2h_links:
                         if h2h_ids in link_type_map and "SH2OH" in link_type_map[h2h_ids] and \
                                 t2t_ids in link_type_map and "ST2OT" in link_type_map[t2t_ids] and \
                                 h2t_ids in link_type_map and "SH2OT" in link_type_map[h2t_ids] and \
                                 t2h_ids in link_type_map and "ST2OH" in link_type_map[t2h_ids]:
                             rel_exist = True
+                            edge_conf = (link_type_map[h2h_ids]["SH2OH"] * link_type_map[t2t_ids]["ST2OT"]
+                                        * link_type_map[h2t_ids]["SH2OT"] * link_type_map[t2h_ids]["ST2OH"]) ** 0.25
                     else:
                         if h2h_ids in link_type_map and "SH2OH" in link_type_map[h2h_ids] and \
                                 t2t_ids in link_type_map and "ST2OT" in link_type_map[t2t_ids]:
                             rel_exist = True
+                            edge_conf = (link_type_map[h2h_ids]["SH2OH"] * link_type_map[t2t_ids]["ST2OT"]) ** 0.5
 
                     if rel_exist:
                         rel_list.append({
@@ -752,6 +636,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                             "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
                             "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
                             "predicate": rel,
+                            "conf": round((edge_conf * subj["conf"] * obj["conf"]) ** (1 / 3), 5)
                         })
 
         pred_sample = sample
@@ -764,6 +649,9 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         ent_filter_pattern = "({})".format("|".join(ent_types2filter))
         pred_sample["entity_list"] = Preprocessor.unique_list(
             [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None])
+
+        # if pred_outs is not None and len(rel_list) != 0:
+        #     print("debug!")
 
         return pred_sample
 
@@ -827,8 +715,8 @@ def create_rebased_ee_tagger(base_class):
             new_data = super().additional_preprocess(new_data, data_type, **kwargs)
             return new_data
 
-        def decode(self, sample, pred_outs):
-            pred_sample = super(REBasedEETagger, self).decode(sample, pred_outs)
+        def decode(self, sample, pred_tags, pred_outs=None):
+            pred_sample = super(REBasedEETagger, self).decode(sample, pred_tags, pred_outs)
             pred_sample["event_list"] = self._trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
             # filter extra entities and relations
             pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
@@ -970,6 +858,247 @@ def create_rebased_ee_tagger(base_class):
     return REBasedEETagger
 
 
+def create_rebased_tfboys4doc_ee_tagger(base_class):
+    class REBasedTFBoys4DocEETagger(base_class):
+        def __init__(self, data, *args, **kwargs):
+            super(REBasedTFBoys4DocEETagger, self).__init__(data, *args, **kwargs)
+            self.event_type2arg_rols = {}
+            for sample in data:
+                for event in sample["event_list"]:
+                    event_type = event["event_type"]
+                    for arg in event["argument_list"]:
+                        self.event_type2arg_rols.setdefault(event_type, set()).add(arg["type"])
+
+            self.dtm_arg_type_by_edges = kwargs["dtm_arg_type_by_edges"]
+
+        @classmethod
+        def additional_preprocess(cls, data, data_type, **kwargs):
+            if data_type not in {"train", "debug"}:
+                return data
+
+            new_data = copy.deepcopy(data)
+            separator = "\u2E82"
+            for sample in tqdm(new_data, desc="additional preprocessing"):
+                fin_ent_list = []
+                fin_rel_list = []
+                for event in sample["event_list"]:
+                    event_type = event["event_type"]
+                    arg_list = copy.deepcopy(event["argument_list"])
+
+                    if "trigger" in event:
+                        pseudo_arg = {
+                            "type": "Trigger",
+                            "char_span": event["trigger_char_span"],
+                            "tok_span": event["trigger_tok_span"],
+                            "text": event["trigger"],
+                        }
+                        arg_list += [pseudo_arg]
+
+                    for i, arg_i in enumerate(arg_list):
+                        ch_sp_list_i = arg_i["char_span"]
+                        tk_sp_list_i = arg_i["tok_span"]
+                        if type(arg_i["char_span"][0]) is not list:
+                            ch_sp_list_i = [arg_i["char_span"], ]
+                            tk_sp_list_i = [arg_i["tok_span"], ]
+
+                        for sp_idx, ch_sp in enumerate(ch_sp_list_i):
+                            tk_sp = tk_sp_list_i[sp_idx]
+                            fin_ent_list.append({
+                                "text": arg_i["text"],
+                                "type": "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
+                                "char_span": ch_sp,
+                                "tok_span": tk_sp,
+                            })
+
+                        for j, arg_j in enumerate(arg_list):
+                            assert type(arg_j["char_span"][0]) is list
+                            ch_sp_list_j = arg_j["char_span"]
+                            tk_sp_list_j = arg_j["tok_span"]
+                            # if type(arg_j["char_span"][0]) is not list:
+                            #     ch_sp_list_j = [arg_j["char_span"], ]
+                            #     tk_sp_list_j = [arg_j["tok_span"], ]
+
+                            for sp_idx_i, ch_sp_i in enumerate(ch_sp_list_i):
+                                for sp_idx_j, ch_sp_j in enumerate(ch_sp_list_j):
+                                    tk_sp_i = tk_sp_list_i[sp_idx_i]
+                                    tk_sp_j = tk_sp_list_j[sp_idx_j]
+
+                                    fin_rel_list.append({
+                                        "subject": arg_i["text"],
+                                        "subj_char_span": ch_sp_i,
+                                        "subj_tok_span": tk_sp_i,
+                                        "object": arg_j["text"],
+                                        "obj_char_span": ch_sp_j,
+                                        "obj_tok_span": tk_sp_j,
+                                        "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
+                                    })
+                                    if kwargs["dtm_arg_type_by_edges"]:
+                                        fin_rel_list.append({
+                                            "subject": arg_i["text"],
+                                            "subj_char_span": ch_sp_i,
+                                            "subj_tok_span": tk_sp_i,
+                                            "object": arg_j["text"],
+                                            "obj_char_span": ch_sp_j,
+                                            "obj_tok_span": tk_sp_j,
+                                            "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
+                                        })
+
+                # if "relation_list" in sample:
+                #     fin_rel_list.extend(sample["relation_list"])
+                # if "entity_list" in sample:
+                #     fin_ent_list.extend(sample["entity_list"])
+                sample["entity_list"] = fin_ent_list
+                sample["relation_list"] = fin_rel_list
+
+            new_data = super().additional_preprocess(new_data, data_type, **kwargs)
+            return new_data
+
+        def decode(self, sample, pred_tags, pred_outs=None):
+            pred_sample = super(REBasedTFBoys4DocEETagger, self).decode(sample, pred_tags, pred_outs)
+            pred_sample = self._trans(pred_sample)
+
+            # pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
+            # pred_sample["relation_list"] = [rel for rel in pred_sample["relation_list"] if
+            #                                 "EE:" not in rel["predicate"]]
+            del pred_sample["entity_list"]
+            del pred_sample["relation_list"]
+            return pred_sample
+
+        def _trans(self, sample):
+            rel_list = sample["relation_list"]
+            ent_list = sample["entity_list"]
+
+            # choose tags with EE:
+            new_rel_list, new_ent_list = [], []
+            for rel in rel_list:
+                if rel["predicate"].split(":")[0] == "EE":
+                    new_rel = copy.deepcopy(rel)
+                    new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
+                    new_rel_list.append(new_rel)
+            for ent in ent_list:
+                if ent["type"].split(":")[0] == "EE":
+                    new_ent = copy.deepcopy(ent)
+                    new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
+                    new_ent_list.append(new_ent)
+
+            # decoding
+            tok2char_span = sample["features"]["tok2char_span"]
+            text = sample["text"]
+            separator = "\u2E82"
+            event2graph = {}
+            offsets2arg_pair_rel = {}
+            for rel in new_rel_list:
+                subj_offset_str = "{},{}".format(*rel["subj_tok_span"])
+                obj_offset_str = "{},{}".format(*rel["obj_tok_span"])
+
+                if "IN_SAME_EVENT" in rel["predicate"]:
+                    _, event_type = rel["predicate"].split(separator)
+                    if event_type not in event2graph:
+                        event2graph[event_type] = nx.Graph()
+                    event2graph[event_type].add_edge(subj_offset_str, obj_offset_str)
+                else:
+                    offset_str4arg_pair = separator.join([subj_offset_str, obj_offset_str])
+                    if offset_str4arg_pair not in offsets2arg_pair_rel:
+                        offsets2arg_pair_rel[offset_str4arg_pair] = set()
+                    offsets2arg_pair_rel[offset_str4arg_pair].add(rel["predicate"])
+
+            event2role_map = {}
+            for ent in new_ent_list:
+                event_type, role = ent["type"].split(separator)
+                offset_str = "{},{}".format(*ent["tok_span"])
+                if event_type not in event2role_map:
+                    event2role_map[event_type] = {}
+                if offset_str not in event2role_map[event_type]:
+                    event2role_map[event_type][offset_str] = set()
+                event2role_map[event_type][offset_str].add(role)
+
+                if event_type not in event2graph:
+                    event2graph[event_type] = nx.Graph()
+                event2graph[event_type].add_node(offset_str)
+
+            # find events (cliques) under every event type
+            event_list = []
+            for event_type, graph in event2graph.items():
+                role_map = event2role_map.get(event_type, dict())
+                cliques = list(nx.find_cliques(graph))  # all maximal cliques
+
+                for cli in cliques:
+                    event = {
+                        "event_type": event_type,
+                    }
+                    arguments = []
+                    for offset_str in cli:
+                        start, end = offset_str.split(",")
+                        tok_span = [int(start), int(end)]
+                        char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+                        arg_text = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text)
+                        role_set = role_map.get(offset_str, set())
+
+                        if self.dtm_arg_type_by_edges:
+                            role_set_fin = set()
+                            if len(role_set) == 1:
+                                role_set_fin.add(list(role_set)[0])
+                            else:  # determine the role by the edge
+                                min_edge_num = 1 << 31
+                                can_role_set = set()
+                                for offset_str_j in cli:
+                                    arg_p_set = offsets2arg_pair_rel.get(separator.join([offset_str, offset_str_j]), set())
+                                    if len(arg_p_set) != 0 and len(arg_p_set) < min_edge_num:
+                                        min_edge_num = len(arg_p_set)
+                                        can_role_set = {arg_p.split(separator)[0] for arg_p in arg_p_set}
+                                role_set_fin = can_role_set
+
+                            if len(role_set_fin) == 1:
+                                role_set = role_set_fin
+
+                        for role in role_set:
+                            if role in self.event_type2arg_rols[event_type] or role == "Trigger":
+                                arguments.append({
+                                    "text": arg_text,
+                                    "type": role,
+                                    "char_span": char_span,
+                                    "tok_span": tok_span,
+                                })
+
+                    # combine arg spans:
+                    arguments_combined = []
+                    arg_text2args = {}
+                    for arg in arguments:
+                        arg_text2args.setdefault(separator.join([arg["type"], arg["text"]]), []).append(arg)
+                    for role_argtext, args in arg_text2args.items():
+                        new_tk_sps = [a["tok_span"] for a in args]
+                        new_ch_sps = [a["char_span"] for a in args]
+                        role, arg_text = role_argtext.split(separator)
+                        arguments_combined.append({
+                            "text": arg_text,
+                            "type": role,
+                            "char_span": new_ch_sps,
+                            "tok_span": new_tk_sps,
+                        })
+                    arguments = arguments_combined
+
+                    # find trigger
+                    new_argument_list = []
+                    for arg in arguments:
+                        if arg["type"] == "Trigger":
+                            event["trigger"] = arg["text"]
+                            event["trigger_tok_span"] = arg["tok_span"]
+                            event["trigger_char_span"] = arg["char_span"]
+                        else:
+                            new_argument_list.append(arg)
+
+                    # if the role sets corresponding to the nodes are all empty,
+                    # this clique is invalid and the corresponding event without argument list and trigger
+                    # will not be appended into the event list.
+                    if len(new_argument_list) > 0 or "trigger" in event:
+                        event["argument_list"] = new_argument_list
+                        event_list.append(event)
+
+            sample["event_list"] = event_list
+            return sample
+    return REBasedTFBoys4DocEETagger
+
+
 def create_rebased_tfboys_tagger(base_class):
     class REBasedTFBoysTagger(base_class):
         def __init__(self, data, *args, **kwargs):
@@ -1067,8 +1196,8 @@ def create_rebased_tfboys_tagger(base_class):
             new_data = super().additional_preprocess(new_data, data_type, **kwargs)
             return new_data
 
-        def decode(self, sample, pred_outs):
-            pred_sample = super(REBasedTFBoysTagger, self).decode(sample, pred_outs)
+        def decode(self, sample, pred_tags, pred_outs):
+            pred_sample = super(REBasedTFBoysTagger, self).decode(sample, pred_tags, pred_outs)
             pred_sample = self._trans(pred_sample)
 
             # pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
@@ -1305,8 +1434,8 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                 new_data.append(new_sample)
             return new_data
 
-        def decode(self, sample, pred_outs):
-            pred_sample = super(REBasedDiscontinuousNERTagger, self).decode(sample, pred_outs)
+        def decode(self, sample, pred_tags, pred_outs):
+            pred_sample = super(REBasedDiscontinuousNERTagger, self).decode(sample, pred_tags, pred_outs)
             return self._trans(pred_sample)
 
         def _trans(self, ori_sample):
@@ -1441,361 +1570,14 @@ def create_rebased_discontinuous_ner_tagger(base_class):
 
 
 def create_rebased_oie_tagger(base_class):
-    # class REBasedOIETagger(base_class):
-    #
-    #     def __init__(self, *arg, **kwargs):
-    #         super(REBasedOIETagger, self).__init__(*arg, **kwargs)
-    #         self.language = kwargs["language"]
-    #         # self.seg_tag_scheme = kwargs["seg_tag_scheme"]
-    #
-    #     @classmethod
-    #     def additional_preprocess(cls, data, data_type, **kwargs):
-    #         if data_type not in {"train", "debug"}:
-    #             return data
-    #
-    #         new_tag_sep = "\u2E82"
-    #         new_data = []
-    #         for sample in data:
-    #             new_sample = copy.deepcopy(sample)
-    #             text = sample["text"]
-    #             new_role_list = []
-    #             new_rel_list = []
-    #             for spo in sample["open_spo_list"]:
-    #                 type_set = set([role["type"] for role in spo])
-    #                 if len(type_set.intersection(set(["subject", "object", "predicate"]))) < 2:
-    #                     continue
-    #                 tmp_new_role_list = []
-    #                 for role in spo:
-    #                     role_type = role["type"]
-    #                     for idx_i in range(0, len(role["char_span"]), 2):
-    #                         seg_i_ch_span = [
-    #                             role["char_span"][idx_i],
-    #                             role["char_span"][idx_i + 1]
-    #                         ]
-    #                         seg_i_tok_span = [
-    #                             role["tok_span"][idx_i], role["tok_span"][idx_i + 1]
-    #                         ]
-    #
-    #                         position_tag = None
-    #                         # if seg_tag_scheme == "BIS":
-    #                         #     if idx_i == 0:
-    #                         #         position_tag = "B"
-    #                         #     else:
-    #                         #         position_tag = "I"
-    #                         # elif seg_tag_scheme == "I":
-    #                         #     position_tag = "I"
-    #                         position_tag = "I"
-    #
-    #                         new_role_type = "{}{}{}".format(role_type, new_tag_sep,
-    #                                                         position_tag)
-    #                         tmp_new_role_list.append({
-    #                             "text":
-    #                             text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                             "type":
-    #                             new_role_type,
-    #                             "char_span":
-    #                             seg_i_ch_span,
-    #                             "tok_span":
-    #                             seg_i_tok_span
-    #                         })
-    #                         for idx_j in range(idx_i + 2,
-    #                                            len(role["char_span"]), 2):
-    #                             seg_j_ch_span = [
-    #                                 role["char_span"][idx_j],
-    #                                 role["char_span"][idx_j + 1]
-    #                             ]
-    #                             seg_j_tok_span = [
-    #                                 role["tok_span"][idx_j],
-    #                                 role["tok_span"][idx_j + 1]
-    #                             ]
-    #                             new_rel_list.append({
-    #                                 "subject":
-    #                                 text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                                 "subj_char_span":
-    #                                 seg_i_ch_span,
-    #                                 "subj_tok_span":
-    #                                 seg_i_tok_span,
-    #                                 "object":
-    #                                 text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-    #                                 "obj_char_span":
-    #                                 seg_j_ch_span,
-    #                                 "obj_tok_span":
-    #                                 seg_j_tok_span,
-    #                                 "predicate":
-    #                                 "{}{}{}".format(role_type, new_tag_sep, role_type)
-    #                             })
-    #
-    #                             new_rel_list.append({
-    #                                 "subject":
-    #                                 text[seg_j_ch_span[0]:seg_j_ch_span[1]],
-    #                                 "subj_char_span":
-    #                                 seg_j_ch_span,
-    #                                 "subj_tok_span":
-    #                                 seg_j_tok_span,
-    #                                 "object":
-    #                                 text[seg_i_ch_span[0]:seg_i_ch_span[1]],
-    #                                 "obj_char_span":
-    #                                 seg_i_ch_span,
-    #                                 "obj_tok_span":
-    #                                 seg_i_tok_span,
-    #                                 "predicate":
-    #                                 "{}{}{}".format(role_type, new_tag_sep, role_type)
-    #                             })
-    #                         # ================================================
-    #
-    #                 for new_role_idx_i in range(len(tmp_new_role_list)):
-    #                     for new_role_idx_j in range(new_role_idx_i+1, len(tmp_new_role_list)):
-    #                         new_role_i = tmp_new_role_list[new_role_idx_i]
-    #                         new_role_j = tmp_new_role_list[new_role_idx_j]
-    #                         new_role_i_type = new_role_i["type"].split(new_tag_sep)[0]
-    #                         new_role_j_type = new_role_j["type"].split(new_tag_sep)[0]
-    #                         if new_role_i_type != new_role_j_type:
-    #                             new_rel_list.append({
-    #                                 "subject":
-    #                                 new_role_i["text"],
-    #                                 "subj_char_span":
-    #                                 new_role_i["char_span"],
-    #                                 "subj_tok_span":
-    #                                 new_role_i["tok_span"],
-    #                                 "object":
-    #                                 new_role_j["text"],
-    #                                 "obj_char_span":
-    #                                 new_role_j["char_span"],
-    #                                 "obj_tok_span":
-    #                                 new_role_j["tok_span"],
-    #                                 "predicate":
-    #                                 "{}{}{}".format(new_role_i_type, new_tag_sep, new_role_j_type),
-    #                             })
-    #                             # ============= 0113 ===============
-    #                             new_rel_list.append({
-    #                                 "subject":
-    #                                 new_role_j["text"],
-    #                                 "subj_char_span":
-    #                                 new_role_j["char_span"],
-    #                                 "subj_tok_span":
-    #                                 new_role_j["tok_span"],
-    #                                 "object":
-    #                                 new_role_i["text"],
-    #                                 "obj_char_span":
-    #                                 new_role_i["char_span"],
-    #                                 "obj_tok_span":
-    #                                 new_role_i["tok_span"],
-    #                                 "predicate":
-    #                                 "{}{}{}".format(new_role_j_type, new_tag_sep, new_role_i_type),
-    #                             })
-    #
-    #                 new_role_list.extend(tmp_new_role_list)
-    #             new_sample["entity_list"] = new_role_list
-    #             new_sample["relation_list"] = new_rel_list
-    #             new_data.append(new_sample)
-    #         return new_data
-    #
-    #     def decode(self, sample, pred_outs):
-    #         pred_sample = super(REBasedOIETagger, self).decode(sample, pred_outs)
-    #         return self._trans(pred_sample)
-    #
-    #     def _trans(self, ori_sample):
-    #
-    #         def filter_clique(clique, offset2seg_types):
-    #             new_tag_sep = "\u2E82"
-    #             type_dict = {}
-    #             for node in clique:
-    #                 node_type_set = offset2seg_types[node]
-    #                 for node_type in node_type_set:
-    #                     ent_type, pos_tag = node_type.split(new_tag_sep)
-    #                     if ent_type not in type_dict:
-    #                         type_dict[ent_type] = []
-    #                     type_dict[ent_type].append(pos_tag)
-    #
-    #             for tp in type_dict:
-    #                 if type_dict[tp].count("B") < 1:
-    #                     return False
-    #
-    #             if len(set(type_dict.keys()).intersection(set(["subject", "object", "predicate"]))) < 2:
-    #                 return False
-    #
-    #             return True
-    #
-    #         def check_spo(spo):
-    #             if len(set(spo.keys()).intersection(set(["subject", "object", "predicate"]))) < 2:
-    #                 return False
-    #
-    #             return True
-    #
-    #         def convert(spo, text, language):
-    #             object_list = spo["object"]
-    #             predicate = spo["predicate"]
-    #             if predicate["text"] in ["描述", "是一种", "位于", "生于", "死于", "等于", "不"]:
-    #                 predicate_text = predicate["text"]+"[OBJ]"
-    #             else:
-    #                 predicate_span = predicate["char_span"]
-    #                 special_flags = [False]*(len(predicate_span)//2+1)
-    #                 for obj in object_list:
-    #                     object_span = (obj["char_span"][0], obj["char_span"][-1])
-    #                     if object_span[1] == predicate_span[0]:
-    #                         special_flags[0] = True
-    #                     if object_span[0] == predicate_span[1]:
-    #                         special_flags[-1] = True
-    #                     if len(predicate_span) >= 4:
-    #                         for idx in range(2, len(predicate_span), 2):
-    #                             if object_span[0] == predicate_span[idx] and object_span[1] == predicate_span[idx+1]:
-    #                                 special_flags[idx//2] = True
-    #                 sep = " " if language == "en" else ""
-    #                 segs = []
-    #                 for idx in range(0, len(predicate_span), 2):
-    #                     if special_flags[idx//2]:
-    #                         segs.append("[OBJ]")
-    #                     ch_sp = [predicate_span[idx], predicate_span[idx + 1]]
-    #                     segs.append(text[ch_sp[0]:ch_sp[1]])
-    #                 if special_flags[-1]:
-    #                     segs.append("[OBJ]")
-    #                 predicate_text = sep.join(segs)
-    #             spo["predicate"]["text"] = predicate_text
-    #             return spo
-    #
-    #         # decoding
-    #         ent_list = ori_sample["entity_list"]
-    #         rel_list = ori_sample["relation_list"]
-    #         text = ori_sample["text"]
-    #         tok2char_span = ori_sample["features"]["tok2char_span"]
-    #         new_spo_list = []
-    #         new_tag_sep = "\u2E82"
-    #         anns = {
-    #                     "seg_list": ent_list,
-    #                     "rel_list": []
-    #                 }
-    #
-    #         for rel in rel_list:
-    #             subj_tok_span = rel["subj_tok_span"]
-    #             obj_tok_span = rel["obj_tok_span"]
-    #             if utils.span_contains(subj_tok_span, obj_tok_span) or \
-    #                     utils.span_contains(obj_tok_span, subj_tok_span):
-    #                 continue
-    #             anns["rel_list"].append(rel)
-    #
-    #         offset2seg_types = {}
-    #         graph = nx.Graph()
-    #         for seg in anns["seg_list"]:
-    #             offset_key = "{},{}".format(*seg["tok_span"])
-    #             if offset_key not in offset2seg_types:
-    #                 offset2seg_types[offset_key] = set()
-    #             offset2seg_types[offset_key].add(seg["type"])
-    #             graph.add_node(offset_key)  # add a segment (a node)
-    #
-    #         edge_dict = defaultdict(set)
-    #         for rel in anns["rel_list"]:
-    #             subj_offset_key = "{},{}".format(*rel["subj_tok_span"])
-    #             obj_offset_key = "{},{}".format(*rel["obj_tok_span"])
-    #             # if rel["predicate"] in ["SAME_ROLE", "DIFF_ROLE"]:
-    #             graph.add_edge(
-    #                 subj_offset_key, obj_offset_key)  # add an edge between 2 segments
-    #             edge_dict[(subj_offset_key, obj_offset_key)].add(rel["predicate"])
-    #
-    #         cliques = nx.find_cliques(graph)
-    #
-    #         # 一个segment可能在不同的三元组中有不同的role，这是最大的问题
-    #         # 构建map，从实体类型map到对应的pos，在切分span的部分读取
-    #         for cli in cliques:
-    #             if not filter_clique(cli, offset2seg_types):
-    #                 continue
-    #             type2spans = defaultdict(list)
-    #             spans = []
-    #             for n in cli:
-    #                 start, end = n.split(",")
-    #                 node_type_set = offset2seg_types[n]
-    #                 type2pos = defaultdict(list)
-    #                 for tp in node_type_set:
-    #                     ent_type, pos_type = node_type_set[tp].split(new_tag_sep)
-    #                     type2pos[ent_type].append(pos_type)
-    #                 if len(node_type_set) == 1:
-    #                     ent_type, pos_type = node_type_set[0].split(new_tag_sep)
-    #                     # ent_type = node_type_set[0].split(new_tag_sep)[0]
-    #                 else:
-    #                     type2num = defaultdict(int)
-    #                     for another_n in cli:
-    #                         edge_type = edge_dict[(n, another_n)]
-    #                         type2num[edge_type.split(new_tag_sep)[0]] += 1
-    #                     num = 0
-    #                     for tp in type2num:
-    #                         if type2num[tp] > num:
-    #                             ent_type = tp
-    #                             num = type2num[tp]
-    #                     if ent_type not in type2pos:
-    #                         continue
-    #                     pos_type = type2pos[ent_type][0]
-    #                 if ent_type == "object":
-    #                     type2spans[ent_type].append(
-    #                         [int(start), int(end), pos_type])
-    #                 else:
-    #                     type2spans[ent_type].append([int(start), int(end)])
-    #
-    #                 # 如果是object，对spans进行分割
-    #                 spo = {}
-    #                 for tp in type2spans:
-    #                     if tp != "object":
-    #                         tok_span = []
-    #                         last_end = -10
-    #                         for sp in sorted(spans, key=lambda sp: sp[0]):
-    #                             if sp[0] < last_end:
-    #                                 continue
-    #                             tok_span.extend(sp)
-    #                             last_end = sp[1]
-    #
-    #                         tok_span = utils.merge_spans(tok_span)
-    #                         char_span = Preprocessor.tok_span2char_span(
-    #                             tok_span, tok2char_span)
-    #                         spo[tp] = {
-    #                             "text":
-    #                             Preprocessor.extract_ent_fr_txt_by_char_sp(
-    #                                 char_span, text, self.language),
-    #                             "char_span":
-    #                             char_span,
-    #                             "tok_span":
-    #                             tok_span
-    #                         }
-    #                     else:
-    #                         tok_spans = []
-    #                         tok_span = []
-    #                         last_end = -10
-    #                         for sp in sorted(spans, key=lambda sp: sp[0]):
-    #                             if sp[0] < last_end:
-    #                                 continue
-    #                             if sp[2] == "B" and len(tok_span) > 0:
-    #                                 tok_spans.append(copy.deepcopy(tok_span))
-    #                                 tok_span = []
-    #                             tok_span.extend(sp)
-    #                             last_end = sp[1]
-    #                         if len(tok_span) > 0:
-    #                             tok_spans.append(tok_span)
-    #                         if len(tok_spans) > 0:
-    #                             spo["object"] = []
-    #                         for tok_span in tok_spans:
-    #                             tok_span = utils.merge_spans(tok_span)
-    #                             char_span = Preprocessor.tok_span2char_span(
-    #                                 tok_span, tok2char_span)
-    #                             spo["object"].append({
-    #                                 "text":
-    #                                 Preprocessor.extract_ent_fr_txt_by_char_sp(
-    #                                     char_span, text, self.language),
-    #                                 "char_span":
-    #                                 char_span,
-    #                                 "tok_span":
-    #                                 tok_span
-    #                             })
-    #                 if check_spo(spo):
-    #                     spo = convert(spo, text, self.language)
-    #                     new_spo_list.append(spo)
-    #         pred_sample = copy.deepcopy(ori_sample)
-    #         pred_sample["open_spo_list"] = new_spo_list
-    #         return pred_sample
-    #
-    # return REBasedOIETagger
-
     class REBasedOIETagger(base_class):
 
-        def __init__(self, *arg, **kwargs):
-            super(REBasedOIETagger, self).__init__(*arg, **kwargs)
+        def __init__(self, data, *arg, **kwargs):
+            super(REBasedOIETagger, self).__init__(data, *arg, **kwargs)
             self.language = kwargs["language"]
+            self.add_obj_placeholders = any("[OBJ]" in arg["text"]
+                                            for sample in data for spo in sample["open_spo_list"]
+                                            for arg in spo if arg["type"] == "predicate")
 
         @classmethod
         def additional_preprocess(cls, data, data_type, **kwargs):
@@ -1813,6 +1595,8 @@ def create_rebased_oie_tagger(base_class):
                 #     print("sample_id")
                 new_ent_list = []
                 new_rel_list = []
+                tok2char_span = sample["features"]["tok2char_span"]
+                spo_span_set = set()
                 for spo in sample["open_spo_list"]:
                     seg_list = []
                     obj_list = []
@@ -1865,10 +1649,37 @@ def create_rebased_oie_tagger(base_class):
 
                     new_ent_list.extend(seg_list)
 
+                    # spo visible area
+                    # spo_ch_area = [99999, -1]
+                    spo_tok_area = [99999, -1]
+                    for seg in seg_list:
+                        spo_tok_area[0] = min(seg["tok_span"][0], spo_tok_area[0])
+                        spo_tok_area[1] = max(seg["tok_span"][1], spo_tok_area[1])
+                        # spo_ch_area[0] = min(seg["char_span"][0], spo_ch_area[0])
+                        # spo_ch_area[1] = max(seg["char_span"][1], spo_ch_area[1])
+
+                    # new_ent_list.append({
+                    #     "type": "SPO_AREA",
+                    #     "text": text[spo_ch_area[0]:spo_ch_area[1]],
+                    #     "char_span": spo_ch_area,
+                    #     "tok_span": spo_tok_area,
+                    # })
+                    spo_span_set.add((spo_tok_area[0], spo_tok_area[1]))
+
                     # generate edges between segments
                     for seg_i in seg_list:
                         for seg_j in seg_list:
                             # spo clique
+                            new_rel_list.append({
+                                "subject": seg_i["text"],
+                                "subj_char_span": seg_i["char_span"],
+                                "subj_tok_span": seg_i["tok_span"],
+                                "object": seg_j["text"],
+                                "obj_char_span": seg_j["char_span"],
+                                "obj_tok_span": seg_j["tok_span"],
+                                "predicate": "IN_SPO",
+                            })
+                            # role pair
                             new_rel_list.append({
                                 "subject": seg_i["text"],
                                 "subj_char_span": seg_i["char_span"],
@@ -1939,211 +1750,261 @@ def create_rebased_oie_tagger(base_class):
                                 "predicate": "PRED_TO_OBJ",
                             })
 
+                # spo span area
+                for tok_sp in spo_span_set:
+                    spo_ch_spans = tok2char_span[tok_sp[0]:tok_sp[1]]
+                    # try:
+                    spo_ch_span = [spo_ch_spans[0][0], spo_ch_spans[-1][1]]
+                    # except Exception:
+                    #     print("dec")
+                    new_ent_list.append({
+                        "type": "MASK:SPO_AREA",
+                        "text": text[spo_ch_span[0]:spo_ch_span[1]],
+                        "char_span": spo_ch_span,
+                        "tok_span": tok_sp,
+                    })
+
                 new_sample["entity_list"] = new_ent_list
                 new_sample["relation_list"] = new_rel_list
                 new_data.append(new_sample)
             return new_data
 
-        def decode(self, sample, pred_outs):
-            pred_sample = super(REBasedOIETagger, self).decode(sample, pred_outs)
+        def decode(self, sample, pred_tags, pred_outs):
+            pred_sample = super(REBasedOIETagger, self).decode(sample, pred_tags, pred_outs)
             return self._trans(pred_sample)
 
         def _trans(self, ori_sample):
             new_tag_sep = "\u2E82"
             sample_id = ori_sample["id"]
+
             text = ori_sample["text"]
             tok2char_span = ori_sample["features"]["tok2char_span"]
-            ent_list, rel_list = ori_sample["entity_list"], ori_sample["relation_list"]
             open_spo_list = []
-            predefined_spo_graph_map = {}
-            spo_graph = nx.Graph()
-            seg2roles = {}
-            next_edge_set = set()
-            pred2obj_set = set()
-            edge2role_pair = {}
-            prefix_map, suffix_map = {}, {}
 
-            for rel in rel_list:
-                offset_str_seg_i = "{},{}".format(*rel["subj_tok_span"])
-                offset_str_seg_j = "{},{}".format(*rel["obj_tok_span"])
-
-                if "ROLE_PAIR" in rel["predicate"]:
-                    spo_graph.add_edge(offset_str_seg_i, offset_str_seg_j)
-                    edge_str = "-".join([offset_str_seg_i, offset_str_seg_j])
-                    if edge_str not in edge2role_pair:
-                        edge2role_pair[edge_str] = set()
-                    _, role_i, role_j = rel["predicate"].split(new_tag_sep)
-                    edge2role_pair[edge_str].add(new_tag_sep.join([role_i, role_j]))
-
-                elif rel["predicate"] == "NEXT":
-                    next_edge_set.add("-".join([offset_str_seg_i, offset_str_seg_j]))
-                elif rel["predicate"] == "PRED_TO_OBJ":
-                    pred2obj_set.add("-".join([offset_str_seg_i, offset_str_seg_j]))
-                elif "PREDEFINED_CLI" in rel["predicate"]:
-                    _, predefined_cli = rel["predicate"].split(new_tag_sep)
-                    if predefined_cli not in predefined_spo_graph_map:
-                        predefined_spo_graph_map[predefined_cli] = nx.Graph()
-                    predefined_spo_graph_map[predefined_cli].add_edge(offset_str_seg_i, offset_str_seg_j)
-
-            # seg2roles
-            for seg in ent_list:
-                offset_str_seg = "{},{}".format(*seg["tok_span"])
-                if "PRED_PREFIX" in seg["type"]:
-                    _, prefix = seg["type"].split(new_tag_sep)
-                    prefix_map[offset_str_seg] = prefix
-                if "PRED_SUFFIX" in seg["type"]:
-                    _, suffix = seg["type"].split(new_tag_sep)
-                    suffix_map[offset_str_seg] = suffix
-                spo_graph.add_node(offset_str_seg)
-                seg2roles.setdefault(offset_str_seg, set()).add(seg["type"])
-
-            # predefined predicate
-            cli2pred = {}
-            for pred, graph in predefined_spo_graph_map.items():
-                for cli in nx.find_cliques(graph):
-                    cli2pred[str(sorted(cli))] = pred
-
-            def get_role(seg_offset_str, clique):
-                '''
-                :param seg_offset_str: "3,6"
-                :param clique: for voting
-                :return: the role of the corresponding segment
-                '''
-                # 用seg2roles确定角色类型，有多个角色用角色边
-                cand_roles = seg2roles.get(seg_offset_str, set())
-
-                if len(cand_roles) == 1:
-                    return cand_roles
+            spo_span_set = set()
+            ent_list = []
+            for seg in ori_sample["entity_list"]:
+                if seg["type"] == "MASK:SPO_AREA":
+                    spo_span_set.add((seg["tok_span"][0], seg["tok_span"][1]))
                 else:
-                    # vote
-                    role2votes = {}
-                    for seg_offset_str_j in clique:
-                        if seg_offset_str_j != seg_offset_str:
-                            rps = edge2role_pair.get("-".join([seg_offset_str, seg_offset_str_j]), set())
-                            for rp in rps:
-                                vote_role = rp.split(new_tag_sep)[0]
-                                role2votes[vote_role] = role2votes.get(vote_role, 0) + 1
+                    ent_list.append(seg)
 
-                            rps = edge2role_pair.get("-".join([seg_offset_str_j, seg_offset_str]), set())
-                            for rp in rps:
-                                # try:
-                                vote_role = rp.split(new_tag_sep)[1]
-                                # except Exception:
-                                #     print("!")
-                                role2votes[vote_role] = role2votes.get(vote_role, 0) + 1
+            if sample_id in {40440, 19811, 1928}:
+                print("trans debug")
+                print("????")
 
-                    try:
-                        max_vote_num = sorted(role2votes.items(), key=lambda x: x[1])[-1][1]
-                        cand_roles = {role for role, vt in role2votes.items() if vt == max_vote_num}
-                    except Exception:  # no roles can be decoded from edges
-                        # print(sample_id)
-                        # print(">>>>>>>>>>>>>>>>>>>>>>role>>>>>>>>>>>>>>>>>>>>>>>>>")
+            for spo_span in spo_span_set:
+                sub_ent_list = [ent for ent in ent_list if utils.span_contains(spo_span, ent["tok_span"])]
+                sub_rel_list = [rel for rel in ori_sample["relation_list"]
+                                if utils.span_contains(spo_span, rel["subj_tok_span"])
+                                and utils.span_contains(spo_span, rel["obj_tok_span"])]
+                # sub_ent_list, sub_rel_list = ori_sample["entity_list"], ori_sample["relation_list"]
+                predefined_spo_graph_map = {}
+                spo_graph = nx.Graph()
+                seg2roles = {}
+                next_edge_set = set()
+                pred2obj_set = set()
+                edge2role_pair = {}
+                prefix_map, suffix_map = {}, {}
+
+                for rel in sub_rel_list:
+                    offset_str_seg_i = "{},{}".format(*rel["subj_tok_span"])
+                    offset_str_seg_j = "{},{}".format(*rel["obj_tok_span"])
+
+                    if rel["predicate"] == "IN_SPO":
+                        spo_graph.add_edge(offset_str_seg_i, offset_str_seg_j)
+                    if "ROLE_PAIR" in rel["predicate"]:
+                        edge_str = "-".join([offset_str_seg_i, offset_str_seg_j])
+                        _, role_i, role_j = rel["predicate"].split(new_tag_sep)
+                        edge2role_pair.setdefault(edge_str, set())
+                        edge2role_pair[edge_str].add(new_tag_sep.join([role_i, role_j]))
+
+                    elif rel["predicate"] == "NEXT":
+                        next_edge_set.add("-".join([offset_str_seg_i, offset_str_seg_j]))
+                    elif rel["predicate"] == "PRED_TO_OBJ":
+                        pred2obj_set.add("-".join([offset_str_seg_i, offset_str_seg_j]))
+                    elif "PREDEFINED_CLI" in rel["predicate"]:
+                        _, predefined_cli = rel["predicate"].split(new_tag_sep)
+                        if predefined_cli not in predefined_spo_graph_map:
+                            predefined_spo_graph_map[predefined_cli] = nx.Graph()
+                        predefined_spo_graph_map[predefined_cli].add_edge(offset_str_seg_i, offset_str_seg_j)
+
+                # seg2roles
+                for seg in sub_ent_list:
+                    offset_str_seg = "{},{}".format(*seg["tok_span"])
+                    if "PRED_PREFIX" in seg["type"]:
+                        _, prefix = seg["type"].split(new_tag_sep)
+                        prefix_map[offset_str_seg] = prefix
+                    if "PRED_SUFFIX" in seg["type"]:
+                        _, suffix = seg["type"].split(new_tag_sep)
+                        suffix_map[offset_str_seg] = suffix
+                    spo_graph.add_node(offset_str_seg)
+                    seg2roles.setdefault(offset_str_seg, set()).add(seg["type"])
+
+                # predefined predicate
+                cli2pred = {}
+                for pred, graph in predefined_spo_graph_map.items():
+                    for cli in nx.find_cliques(graph):
+                        cli2pred[str(sorted(cli))] = pred
+
+                def get_role(seg_offset_str, clique):
+                    '''
+                    :param seg_offset_str: "3,6"
+                    :param clique: for voting
+                    :return: the role of the corresponding segment
+                    '''
+                    # 用seg2roles确定角色类型，有多个角色用角色边
+                    cand_roles = seg2roles.get(seg_offset_str, set())
+
+                    if len(cand_roles) == 1:
                         return cand_roles
-                return cand_roles
+                    else:
+                        # vote
+                        role2votes = {}
+                        for seg_offset_str_j in clique:
+                            if seg_offset_str_j != seg_offset_str:
+                                rps = edge2role_pair.get("-".join([seg_offset_str, seg_offset_str_j]), set())
+                                for rp in rps:
+                                    vote_role = rp.split(new_tag_sep)[0]
+                                    role2votes[vote_role] = role2votes.get(vote_role, 0) + 1
 
-            for cli in nx.find_cliques(spo_graph):  # all spo clique
-                # if len(cli) <= 1:
-                #     continue
+                                rps = edge2role_pair.get("-".join([seg_offset_str_j, seg_offset_str]), set())
+                                for rp in rps:
+                                    # try:
+                                    vote_role = rp.split(new_tag_sep)[1]
+                                    # except Exception:
+                                    #     print("!")
+                                    role2votes[vote_role] = role2votes.get(vote_role, 0) + 1
 
-                arg_list = []
-                predicate = None
-                start_sp2obj = {}
-                next_map = {}
-                for e in next_edge_set:
-                    offset_str_seg_i, offset_str_seg_j = e.split("-")
-                    if offset_str_seg_i in cli and offset_str_seg_j in cli \
-                            and get_role(offset_str_seg_i, cli) == get_role(offset_str_seg_j, cli):
-                        next_map[offset_str_seg_i] = offset_str_seg_j
+                        try:
+                            max_vote_num = sorted(role2votes.items(), key=lambda x: x[1])[-1][1]
+                            cand_roles = {role for role, vt in role2votes.items() if vt == max_vote_num}
+                        except Exception:  # no roles can be decoded from edges
+                            # print(sample_id)
+                            # print(">>>>>>>>>>>>>>>>>>>>>>role>>>>>>>>>>>>>>>>>>>>>>>>>")
+                            return cand_roles
+                    return cand_roles
 
-                for offset_str in cli:  # all arguments
-                    if offset_str not in next_map.values():  # if a beginner
-                        # 确定role type
-                        cand_roles = get_role(offset_str, cli)
-                        tok_span = [int(idx) for idx in offset_str.split(",")]
-                        char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-                        # arg_txt = text[char_span[0]:char_span[1]]
+                # if sample_id == 44454:
+                #     print("debug trans")
+                #     print("!")
 
-                        # 循环next链接直到末尾
-                        mem = [offset_str, ]
-                        point = offset_str
-                        while point in next_map:
-                            next_seg_offset_str = next_map[point]
-                            if next_seg_offset_str in mem:  # no circle
-                                break
+                ori_cliques = list(nx.find_cliques(spo_graph))
+                # cliques belong to this spo span
+                cliques = [cli for cli in ori_cliques
+                           if any(int(n.split(",")[0]) == spo_span[0] for n in cli) and\
+                        any(int(n.split(",")[1]) == spo_span[1] for n in cli)]
+                # if len(ori_cliques) != len(cliques):
+                #     print("!!!!")
 
-                            # 指向的下一个元素必须与第一个元素类型一致，否则丢弃
-                            next_seg_role = get_role(next_seg_offset_str, cli)
-                            if next_seg_role == cand_roles:
-                                mem.append(next_seg_offset_str)
+                for cli in cliques:  # all spo clique
+                    # if len(cli) <= 1:
+                    #     continue
 
-                                new_tok_sp = [int(idx) for idx in next_seg_offset_str.split(",")]
-                                new_ch_sp = Preprocessor.tok_span2char_span(new_tok_sp, tok2char_span)
-                                tok_span.extend(new_tok_sp)
-                                char_span.extend(new_ch_sp)
-                                point = next_seg_offset_str
-                            else:
-                                break
+                    arg_list = []
+                    predicate = None
+                    start_sp2obj = {}
+                    next_map = {}
+                    for e in next_edge_set:
+                        offset_str_seg_i, offset_str_seg_j = e.split("-")
+                        if offset_str_seg_i in cli and offset_str_seg_j in cli \
+                                and get_role(offset_str_seg_i, cli) == get_role(offset_str_seg_j, cli):
+                            next_map[offset_str_seg_i] = offset_str_seg_j
 
-                        # generate arguments
-                        # 注意predicate和object要特殊处理：[OBJ]
-                        for role in cand_roles:
-                            arg = {
-                                "tok_span": tok_span,
-                                "char_span": char_span,
-                                "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text),
-                                "type": role,
-                            }
-                            if role == "predicate":
-                                predicate = arg
-                            elif role == "object":
-                                start_sp2obj["{},{}".format(*tok_span)] = arg
-                            else:
-                                arg_list.append(arg)
-                # add [OBJ] to predicate
-                if predicate is not None:  # if predicate exists, append objects according to [OBJ]s in the predicate
-                    new_pred_segs = []
-                    for idx in range(0, len(predicate["char_span"]), 2):
-                        ch_sp_start, ch_sp_end = predicate["char_span"][idx], predicate["char_span"][idx + 1]
-                        tok_sp_start, tok_sp_end = predicate["tok_span"][idx], predicate["tok_span"][idx + 1]
+                    for offset_str in cli:  # all arguments
+                        if offset_str not in next_map.values():  # if a beginner
+                            # 确定role type
+                            cand_roles = get_role(offset_str, cli)
+                            tok_span = [int(idx) for idx in offset_str.split(",")]
+                            char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
+                            # arg_txt = text[char_span[0]:char_span[1]]
 
-                        new_pred_segs.append(text[ch_sp_start:ch_sp_end])
-                        p_sub_offset_str = "{},{}".format(tok_sp_start, tok_sp_end)
-                        for obj_star_offset_str, obj in start_sp2obj.items():
-                            if "-".join([p_sub_offset_str, obj_star_offset_str]) in pred2obj_set:
-                                new_pred_segs.append("[OBJ]")
-                                arg_list.append(obj)
+                            # 循环next链接直到末尾
+                            mem = [offset_str, ]
+                            point = offset_str
+                            while point in next_map:
+                                next_seg_offset_str = next_map[point]
+                                if next_seg_offset_str in mem:  # no circle
+                                    break
 
-                    predicate["text"] = utils.joint_segs(new_pred_segs)
-                    arg_list.append(predicate)
+                                # 指向的下一个元素必须与第一个元素类型一致，否则丢弃
+                                next_seg_role = get_role(next_seg_offset_str, cli)
+                                if next_seg_role == cand_roles:
+                                    mem.append(next_seg_offset_str)
 
-                    pred_tok_b = "{},{}".format(*predicate["tok_span"][:2])
-                    pred_tok_e = "{},{}".format(*predicate["tok_span"][-2:])
-                    if pred_tok_b in prefix_map:
-                        arg_list.append({
-                            "text": prefix_map[pred_tok_b],
-                            "type": "predicate_prefix",
-                            "tok_span": [],
-                            "char_span": [],
-                        })
-                    if pred_tok_e in suffix_map:
-                        arg_list.append({
-                            "text": suffix_map[pred_tok_e],
-                            "type": "predicate_suffix",
-                            "tok_span": [],
-                            "char_span": [],
-                        })
-                else:
-                    # if no predicate, append objects directly
-                    arg_list.extend(start_sp2obj.values())
-                    # if a predefined predicate exists
-                    if str(sorted(cli)) in cli2pred:
-                        arg_list.append({
-                            "tok_span": [],
-                            "char_span": [],
-                            "text": cli2pred[str(sorted(cli))],
-                            "type": "predicate",
-                        })
-                open_spo_list.append(arg_list)
+                                    new_tok_sp = [int(idx) for idx in next_seg_offset_str.split(",")]
+                                    new_ch_sp = Preprocessor.tok_span2char_span(new_tok_sp, tok2char_span)
+                                    tok_span.extend(new_tok_sp)
+                                    char_span.extend(new_ch_sp)
+                                    point = next_seg_offset_str
+                                else:
+                                    break
+
+                            # generate arguments
+                            # 注意predicate和object要特殊处理：[OBJ]
+                            for role in cand_roles:
+                                arg = {
+                                    "tok_span": tok_span,
+                                    "char_span": char_span,
+                                    "text": Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text),
+                                    "type": role,
+                                }
+                                if role == "predicate":
+                                    predicate = arg
+                                elif role == "object":
+                                    start_sp2obj["{},{}".format(*tok_span)] = arg
+                                else:
+                                    arg_list.append(arg)
+                    # add [OBJ] to predicate
+                    if predicate is not None:  # if predicate exists
+                        if self.add_obj_placeholders:  # add placeholders [OBJ]
+                            new_pred_segs = []
+                            for idx in range(0, len(predicate["char_span"]), 2):
+                                ch_sp_start, ch_sp_end = predicate["char_span"][idx], predicate["char_span"][idx + 1]
+                                tok_sp_start, tok_sp_end = predicate["tok_span"][idx], predicate["tok_span"][idx + 1]
+
+                                new_pred_segs.append(text[ch_sp_start:ch_sp_end])
+                                p_sub_offset_str = "{},{}".format(tok_sp_start, tok_sp_end)
+                                for obj_star_offset_str, obj in start_sp2obj.items():
+                                    if "-".join([p_sub_offset_str, obj_star_offset_str]) in pred2obj_set:
+                                        new_pred_segs.append("[OBJ]")
+                                        arg_list.append(obj)  # append objects according to [OBJ]s in the predicate
+
+                            predicate["text"] = utils.join_segs(new_pred_segs)
+                            arg_list.append(predicate)
+                        else:
+                            arg_list.append(predicate)
+                            arg_list.extend(start_sp2obj.values())
+
+                        # add prefix and suffix
+                        pred_tok_b = "{},{}".format(*predicate["tok_span"][:2])
+                        pred_tok_e = "{},{}".format(*predicate["tok_span"][-2:])
+                        if pred_tok_b in prefix_map:
+                            arg_list.append({
+                                "text": prefix_map[pred_tok_b],
+                                "type": "predicate_prefix",
+                                "tok_span": [],
+                                "char_span": [],
+                            })
+                        if pred_tok_e in suffix_map:
+                            arg_list.append({
+                                "text": suffix_map[pred_tok_e],
+                                "type": "predicate_suffix",
+                                "tok_span": [],
+                                "char_span": [],
+                            })
+                    else:
+                        # if no predicate, append objects directly
+                        arg_list.extend(start_sp2obj.values())
+                        # if a predefined predicate exists
+                        if str(sorted(cli)) in cli2pred:
+                            arg_list.append({
+                                "tok_span": [],
+                                "char_span": [],
+                                "text": cli2pred[str(sorted(cli))],
+                                "type": "predicate",
+                            })
+                    open_spo_list.append(arg_list)
 
             pred_sample = ori_sample
             filtered_open_spo_list = []
@@ -2151,8 +2012,8 @@ def create_rebased_oie_tagger(base_class):
                 type_map = {}
                 for arg in spo:
                     type_map[arg["type"]] = type_map.get(arg["type"], 0) + 1
-                if len(set(type_map.keys()).intersection({"subject", "object", "predicate"})) < 2:
-                    continue
+                # if len(set(type_map.keys()).intersection({"subject", "object", "predicate"})) < 2:
+                #     continue
                 if type_map.get("subject", 0) > 1 or type_map.get("predicate", 0) > 1:
                     continue
                 filtered_open_spo_list.append(spo)
@@ -2160,686 +2021,3 @@ def create_rebased_oie_tagger(base_class):
             return pred_sample
 
     return REBasedOIETagger
-
-
-class TableFillingTagger(Tagger):
-    def __init__(self, data):
-        '''
-        :param data: all data, used to generate entity type and relation type dicts
-        '''
-        super().__init__()
-        # generate unified tag
-        tag_set = set()
-        self.separator = "\u2E80"
-        for sample in tqdm(data, desc="generating tag set"):
-            tag_triplets = self._get_tags(sample)
-            tag_set |= {t[-1] for t in tag_triplets}
-
-        self.tag2id = {tag: ind for ind, tag in enumerate(sorted(tag_set))}
-        self.id2tag = {id_: t for t, id_ in self.tag2id.items()}
-
-    def get_tag_size(self):
-        return len(self.tag2id)
-
-    def get_tag_points(self, sample):
-        tag_list = self._get_tags(sample)
-        new_tag_list = []
-        for tag in tag_list:
-            if tag[-1] in self.tag2id:
-                tag[-1] = self.tag2id[tag[-1]]
-                new_tag_list.append(tag)
-            else:
-                logging.warning("out of tag set: {} not in tag2id dict".format(tag[-1]))
-        return new_tag_list
-
-    def tag(self, data):
-        for sample in tqdm(data, desc="tagging"):
-            sample["tag_points"] = self.get_tag_points(sample)
-        return data
-
-    def _get_tags(self, sample):
-        pass
-
-
-# class TriggerFreeLu(TableFillingTagger):
-#     def _get_tags(self, sample):
-#         tag_list = []
-#         event_list = sample["event_list"]
-#
-#         for event in event_list:
-#             event_type = event["trigger_type"]
-#             pseudo_argument = {
-#                 "type": "Trigger",
-#                 "tok_span": event["trigger_tok_span"],
-#             }
-#             argument_list = [pseudo_argument, ] + event["argument_list"]
-#             for guide_arg in argument_list:
-#                 for arg in argument_list:
-#                     arg_type = arg["type"]
-#                     ea_tag = "{}{}{}".format(event_type, self.separator, arg_type)
-#                     for i in range(*guide_arg["tok_span"]):
-#                         for j in range(*arg["tok_span"]):
-#                             pos_tag = "I"
-#                             if j == arg["tok_span"][0]:
-#                                 pos_tag = "B"
-#                             eap_tag = "{}{}{}".format(ea_tag, self.separator, pos_tag)
-#                             tag_list.append([i, j, eap_tag])
-#         return tag_list
-#
-#     def decode(self, sample, pred_tags):
-#         predicted_matrix_tag = pred_tags[0]
-#         matrix_points = Indexer.matrix2points(predicted_matrix_tag)
-#
-#         # matrix_points = [(58, 58, 87), (58, 59, 88), (58, 60, 88), (58, 65, 89), (58, 68, 91), (58, 75, 82), (58, 82, 84),
-#         #                  (59, 58, 87), (59, 59, 88), (59, 60, 88), (59, 65, 89), (59, 68, 91), (59, 75, 82), (59, 82, 84),
-#         #                  (60, 58, 87), (60, 59, 88), (60, 60, 88), (60, 65, 89), (60, 68, 91), (60, 75, 82), (60, 82, 84),
-#         #                  (65, 58, 87), (65, 59, 88), (65, 60, 88), (65, 65, 89), (65, 68, 91), (65, 75, 82), (65, 82, 84),
-#         #                  (68, 58, 87), (68, 59, 88), (68, 60, 88), (68, 65, 89), (68, 68, 91), (68, 75, 82), (68, 82, 84),
-#         #                  (74, 74, 89), (74, 75, 91),
-#         #                  (75, 74, 89), (75, 75, 91),
-#         #                  (75, 58, 87), (75, 59, 88), (75, 60, 88), (75, 65, 89), (75, 68, 91), (75, 75, 82), (75, 82, 84),
-#         #                  (82, 58, 87), (82, 59, 88), (82, 60, 88), (82, 65, 89), (82, 68, 91), (82, 75, 82), (82, 82, 84)]
-#         # matrix_points = set([(7, 7, 26), (7, 9, 36), (7, 24, 30),
-#         #                  (9, 7, 26), (9, 9, 36), (9, 24, 30),
-#         #                  (24, 7, 26), (24, 9, 36), (24, 24, 30),
-#         #
-#         #                  (7, 7, 32), (7, 19, 36), (7, 24, 30),
-#         #                  (19, 7, 32), (19, 19, 36), (19, 24, 30),
-#         #                  (24, 7, 32), (24, 19, 36), (24, 24, 30),
-#         #
-#         #                  (7, 7, 82), (7, 11, 89), (7, 24, 85),
-#         #                  (11, 7, 82), (11, 11, 89), (11, 24, 85),
-#         #                  (24, 7, 82), (24, 11, 89), (24, 24, 85),
-#         #
-#         #                  (70, 70, 89), (70, 81, 84), (70, 84, 91),
-#         #                  (81, 70, 89), (81, 81, 84), (81, 84, 91),
-#         #                  (84, 70, 89), (84, 81, 84), (84, 84, 91),
-#         #
-#         #                  (74, 74, 157), (74, 81, 152), (74, 84, 159),
-#         #                  (81, 74, 157), (81, 81, 152), (81, 84, 159),
-#         #                  (84, 74, 157), (84, 81, 152), (84, 84, 159),
-#         #
-#         #                  (79, 79, 36), (79, 81, 28), (79, 84, 32), (79, 87, 32),
-#         #                  (81, 79, 36), (81, 81, 28), (81, 84, 32), (81, 87, 32),
-#         #                  (84, 79, 36), (84, 81, 28), (84, 84, 32), (84, 87, 32),
-#         #                  (87, 79, 36), (87, 81, 28), (87, 84, 32), (87, 87, 32)])
-#
-#         # tags = [[p[0], p[1], self.id2tag[p[2]]] for p in matrix_points]
-#         tags = matrix_points
-#         sample_idx, text = sample["id"], sample["text"]
-#         tok2char_span = sample["features"]["tok2char_span"]
-#
-#         # decoding
-#
-#         center_tags = []
-#         for tag in tags:
-#             if tag[0] == tag[1]:
-#                 center_tags.append(tag)
-#
-#         event_pieces = []
-#         num_centers = len(center_tags)
-#         index = 0
-#
-#         def center_match(ct_1, ct_2):
-#             # return predicted_matrix_tag[ct_1[0],ct_2[0],ct_2[2]].item() == 1
-#             if ct_1 == ct_2:
-#                 return True
-#             if abs(ct_1[2] - ct_2[2]) > 20:
-#                 return False
-#             left_match, right_match = False, False
-#             for tag in tags:
-#                 if tag[0] == ct_1[0] and tag[1] == ct_2[0] and tag[2] == ct_2[2] and tag[0] != tag[1]:
-#                     # print(tag)
-#                     left_match = True
-#                 if tag[0] == ct_2[0] and tag[1] == ct_1[0] and tag[2] == ct_1[2] and tag[0] != tag[1]:
-#                     # print(tag)
-#                     right_match = True
-#             return right_match and left_match
-#
-#         while True:
-#             if num_centers == 0 or index >= len(center_tags):
-#                 break
-#             if index == 0:
-#                 event_pieces.append([center_tags[index]])
-#                 index += 1
-#             else:
-#                 # pdb.set_trace()
-#                 temp_event_pieces = []
-#                 single_node = True
-#                 for event_piece in event_pieces:
-#                     connected_centers = []
-#                     match_all = True
-#                     for center_tag_ in event_piece:
-#                         if center_match(center_tag_, center_tags[index]):
-#                             connected_centers.append(center_tag_)
-#                             single_node = False
-#                         else:
-#                             match_all = False
-#                     if match_all:
-#                         # pdb.set_trace()
-#                         event_piece.append(center_tags[index])
-#                     else:
-#                         if len(connected_centers) > 0:
-#                             temp_event_pieces.append(connected_centers + [center_tags[index]])
-#                 event_pieces += temp_event_pieces
-#                 if single_node:
-#                     event_pieces.append([center_tags[index]])
-#                 index += 1
-#
-#         deleted_events = []
-#         for i in range(len(event_pieces)):
-#             for j in range(i + 1, len(event_pieces)):
-#                 if len(set(event_pieces[i]) - set(event_pieces[j])) == 0:
-#                     deleted_events.append(i)
-#                 elif len(set(event_pieces[j]) - set(event_pieces[i])) == 0:
-#                     deleted_events.append(j)
-#
-#         event_pieces_ = []
-#         for i in range(len(event_pieces)):
-#             if i in deleted_events:
-#                 continue
-#             else:
-#                 event_piece_list_ = []
-#                 for event_piece in event_pieces[i]:
-#                     event_piece_list_.append((event_piece[0], self.id2tag[event_piece[2]]))
-#                 event_pieces_.append(event_piece_list_)
-#         event_pieces = event_pieces_
-#         # pdb.set_trace()
-#         # event_piece = [offset, tag]
-#         # event_type_set = set([tag.split(self.separator)[0] for tag in self.tag2id])
-#         # tags_ = [[] for _ in range(predicted_matrix_tag.shape[0])]
-#         # for tag in tags:
-#         #     tags_[tag[0]].append([tag[1],tag[2]])
-#         # event_pieces = []
-#         event_list = []
-#         # for i in range(len(tags_)):
-#         #     tags_considered = [False] * len(tags_[i])
-#         #     if len(tags_considered) == 0:
-#         #         continue
-#         #     temp_event_pieces = []
-#         #     for event_piece_list in event_pieces:
-#         #         all_connect = True
-#         #         event_type = event_piece_list[0][1].split(self.separator)[0]
-#         #         connected_pieces = []
-#         #         for event_piece in event_piece_list:
-#         #             connect = False
-#         #             # pdb.set_trace()
-#         #             for j in range(len(tags_[i])):
-#         #                 tag = tags_[i][j]
-#         #                 if tag[0] > i:
-#         #                     continue
-#         #                 if tag[1] == event_piece[1] and tag[0] == event_piece[0]:
-#         #                     connect = True
-#         #                     connected_pieces.append(event_piece)
-#         #                     tags_considered[j] = True
-#         #                     break
-#         #             # pdb.set_trace()
-#         #             if not connect:
-#         #                 all_connect = False
-#         #         if all_connect:
-#         #             # event_piece_list = []
-#         #             for j in range(len(tags_[i])):
-#         #                 piece = tags_[i][j]
-#         #                 if piece[0] != i:
-#         #                     continue
-#         #                 match_all = True
-#         #                 for event_piece in event_piece_list:
-#         #                     offset = event_piece[0]
-#         #                     match = False
-#         #                     for piece_ in tags_[offset]:
-#         #                         if piece[0] == piece_[0] and piece[1] == piece_[1]:
-#         #                             match = True
-#         #                     if not match:
-#         #                         match_all = False
-#         #                 # pdb.set_trace()
-#         #                 if match_all:
-#         #                     event_piece_list.append([i, piece[1]])
-#         #                     tags_considered[j] = True
-#         #
-#         #         else:
-#         #             if len(connected_pieces) > 0:
-#         #                 has_B = False
-#         #                 for j in range(len(tags_[i])):
-#         #                     piece = tags_[i][j]
-#         #                     if piece[0] != i:
-#         #                         continue
-#         #                     if piece[1].split(self.separator)[0] == event_type and piece[0] <= i:
-#         #                         if 'B' == piece[1][-1]:
-#         #                             has_B = True
-#         #
-#         #                         match_all = True
-#         #                         for event_piece in connected_pieces:
-#         #                             offset = event_piece[0]
-#         #                             match = False
-#         #                             for piece_ in tags_[offset]:
-#         #                                 if piece[0] == piece_[0] and piece[1] == piece_[1]:
-#         #                                     match = True
-#         #                             if not match:
-#         #                                 match_all = False
-#         #                         # pdb.set_trace()
-#         #                         if match_all:
-#         #                             connected_pieces.append([i, piece[1]])
-#         #                             tags_considered[j] = True
-#         #
-#         #
-#         #
-#         #                 if has_B:
-#         #                     # pdb.set_trace()
-#         #                     temp_event_pieces.append(connected_pieces)
-#         #
-#         #     event_pieces += temp_event_pieces
-#         #
-#         #     for event_type in event_type_set:
-#         #         connected_pieces = []
-#         #         for j in range(len(tags_considered)):
-#         #             if tags_considered[j]:
-#         #                 continue
-#         #             tag = tags_[i][j]
-#         #             if tag[0] == i and tag[1].split(self.separator)[0] == event_type:
-#         #                 connected_pieces.append([i, tag[1]])
-#         #         if len(connected_pieces) > 0:
-#         #             event_pieces.append(connected_pieces)
-#
-#         for event_piece_list in event_pieces:
-#             event = {
-#             }
-#             event['argument_list'] = []
-#             for i in range(len(event_piece_list)):
-#                 event_piece = event_piece_list[i]
-#                 tag = event_piece[1]
-#                 tag_type = tag[:-2]  # wyc 1208
-#                 event_type, role = tag_type.split(self.separator)  # wyc 1208
-#                 if tag[-1] == 'B':
-#                     end_piece = event_piece
-#                     if 'Trigger' in tag:
-#                         for j in range(i + 1, len(event_piece_list)):
-#                             if 'Trigger' in event_piece_list[j][1]:
-#                                 if event_piece_list[j][1][-1] == 'I' and tag_type in event_piece_list[j][1]:
-#                                     end_piece = event_piece_list[j]
-#                                 else:
-#                                     break
-#                         event['trigger'] = ' '.join(text.split()[event_piece[0]: end_piece[0] + 1])
-#                         event['trigger_tok_span'] = [event_piece[0], end_piece[0] + 1]
-#                         event['trigger_char_span'] = [tok2char_span[event_piece[0]][0], tok2char_span[end_piece[0]][1]]
-#                         event['trigger_type'] = event_type  # wyc 1208
-#                     else:
-#                         for j in range(i + 1, len(event_piece_list)):
-#                             if event_piece_list[j][1][-1] == 'I' and tag_type in event_piece_list[j][1]:
-#                                 end_piece = event_piece_list[j]
-#                             elif (end_piece[0] + 1) < event_piece_list[j][0]:
-#                                 break
-#
-#                         event['argument_list'].append({'text': ' '.join(text.split()[event_piece[0]:end_piece[0] + 1]),
-#                                                        "event_type": event_type,  # wyc 1208
-#                                                        'tok_span': [event_piece[0], end_piece[0] + 1],
-#                                                        'char_span': [tok2char_span[event_piece[0]][0],
-#                                                                      tok2char_span[end_piece[0]][1]],
-#                                                        'type': role,  # wyc 1208
-#                                                        })
-#             # try:
-#             # assert 'trigger' in event
-#             # except:
-#             #     pdb.set_trace()
-#             #     pass
-#             event_list.append(event)  # predicted event list
-#
-#         pred_sample = copy.deepcopy(sample)
-#         # change to the predicted one, if not, will use ground truth to score
-#         pred_sample["event_list"] = event_list
-#         # pdb.set_trace()
-#         return pred_sample
-
-# class Tagger4TFBoys(Tagger):
-#     def __init__(self, data, **kwargs):
-#         node_tag_set, edge_tag_set, role_tag_set = set(), set(), set()
-#         self.separator = "\u2E80"
-#         self.edge_link_types = {
-#             "SH2OH",  # subject head to object head
-#             "ST2OT",  # subject tail to object tail
-#         }
-#         self.add_h2t_n_t2h_links = False
-#         if "add_h2t_n_t2h_links" in kwargs and kwargs["add_h2t_n_t2h_links"] is True:
-#             self.edge_link_types = self.edge_link_types.union({
-#                 "SH2OT",  # subject head to object tail
-#                 "ST2OH",  # subject tail to object head
-#             })
-#             self.add_h2t_n_t2h_links = True
-#         for sample in data:
-#             for event in sample["event_list"]:
-#                 node_tag_set.add(event["event_type"])
-#                 edge_tag_set.union(
-#                     {self.separator.join([event["event_type"], link]) for link in self.edge_link_types})
-#                 role_tag_set.add(self.separator.join(["Trigger", event["event_type"]]))
-#                 for arg in event["argument_list"]:
-#                     role_tag_set.add(arg["type"])
-#
-#         self.node_tag2id = {tag: idx for idx, tag in enumerate(sorted(node_tag_set))}
-#         self.edge_tag2id = {tag: idx for idx, tag in enumerate(sorted(edge_tag_set))}
-#         self.role_tag2id = {tag: idx for idx, tag in enumerate(sorted(role_tag_set))}
-#
-#     # def additional_preprocess(cls, data, data_type, **kwargs):
-#     #     return data
-#
-#     def get_tag_size(self):
-#         return len(self.node_tag2id), len(self.edge_tag2id), len(self.role_tag2id)
-#
-#     def get_tag_points(self, sample):
-#         '''
-#        matrix_points: [(tok_pos1, tok_pos2, tag_id), ]
-#        '''
-#         node_matrix_points, edge_matrix_points, role_matrix_points = [], [], []
-#
-#         for event in sample["event_list"]:
-#             event_type = event["event_type"]
-#             pseudo_arg = {
-#                 "type": self.separator.join(["Trigger", event_type]),
-#                 "tok_span": event["trigger_tok_span"],
-#             }
-#
-#             node_list = event["argument_list"] + [pseudo_arg, ]
-#
-#             role_matrix_points_event = []
-#             # nodes and roles
-#             for node in node_list:
-#                 point = (event["tok_span"][0],
-#                          event["tok_span"][-1] - 1,
-#                          self.node_tag2id[event_type],
-#                          )
-#                 node_matrix_points.append(point)
-#                 point = (event["tok_span"][0],
-#                          event["tok_span"][-1] - 1,
-#                          self.node_tag2id[node["type"]],
-#                          )
-#                 role_matrix_points_event.append(point)
-#             role_matrix_points.append(Preprocessor.unique_list(role_matrix_points_event))
-#
-#             # edges
-#             for n_i in node_list:
-#                 for n_j in node_list:
-#                     subj_tok_span = n_i["tok_span"]
-#                     obj_tok_span = n_j["tok_span"]
-#
-#                     edge_matrix_points.append(
-#                         (subj_tok_span[0], obj_tok_span[0],
-#                          self.edge_tag2id[self.separator.join([event_type, "SH2OH"])]))
-#                     edge_matrix_points.append(
-#                         (subj_tok_span[1] - 1, obj_tok_span[1] - 1,
-#                          self.edge_tag2id[self.separator.join([event_type, "ST2OT"])]))
-#
-#                     if self.add_h2t_n_t2h_links:
-#                         edge_matrix_points.append(
-#                             (subj_tok_span[0], obj_tok_span[1] - 1,
-#                              self.edge_tag2id[self.separator.join([event_type, "SH2OT"])]))
-#                         edge_matrix_points.append(
-#                             (subj_tok_span[1] - 1, obj_tok_span[0],
-#                              self.edge_tag2id[self.separator.join([event_type, "ST2OH"])]))
-#
-#         return Preprocessor.unique_list(node_matrix_points), \
-#                Preprocessor.unique_list(edge_matrix_points), \
-#                role_matrix_points
-#
-#     def tag(self, data):
-#         for sample in tqdm(data, desc="tagging"):
-#             node_points, edge_points, role_points = self.get_tag_points(sample)
-#             sample["node_points"] = node_points
-#             sample["edge_points"] = edge_points
-#             sample["role_points"] = role_points
-#         return data
-#
-#     # to do
-#     def decode(self, sample, pred_tags):
-#         rel_list, ent_list = [], []
-#         pred_ent_tag, pred_rel_tag = pred_tags[0], pred_tags[1]
-#         ent_points = Indexer.shaking_seq2points(pred_ent_tag)
-#         rel_points = Indexer.matrix2points(pred_rel_tag)
-#
-#         sample_idx, text = sample["id"], sample["text"]
-#         tok2char_span = sample["features"]["tok2char_span"]
-#
-#         # entity
-#         for pt in ent_points:
-#             ent_tag = self.id2ent_tag[pt[2]]
-#             ent_type = ent_tag
-#             tok_sp = [pt[0], pt[1] + 1]
-#             char_span_list = tok2char_span[tok_sp[0]:tok_sp[1]]
-#             char_sp = [char_span_list[0][0], char_span_list[-1][1]]
-#             ent_text = text[char_sp[0]:char_sp[1]]
-#
-#             entity = {
-#                 "type": ent_type,
-#                 "text": ent_text,
-#                 "tok_span": tok_sp,
-#                 "char_span": char_sp,
-#             }
-#             ent_list.append(entity)
-#
-#         cand_ent_list4rel = []
-#         for ent in ent_list:
-#             if self.classify_entities_by_relation and "REL:" in ent["type"]:
-#                 new_ent = copy.deepcopy(ent)
-#                 new_ent["type"] = re.sub("REL:", "", new_ent["type"])
-#                 cand_ent_list4rel.append(new_ent)
-#             else:
-#                 cand_ent_list4rel.append(ent)
-#
-#         rel2link_type_map = {}
-#         for pt in rel_points:
-#             tag = self.id2rel_tag[pt[2]]
-#             rel, link_type = tag.split(self.separator)
-#             if rel not in rel2link_type_map:
-#                 rel2link_type_map[rel] = {}
-#             index_pair = "{},{}".format(pt[0], pt[1])
-#             if index_pair not in rel2link_type_map[rel]:
-#                 rel2link_type_map[rel][index_pair] = set()
-#             rel2link_type_map[rel][index_pair].add(link_type)
-#
-#         for rel, link_type_map in rel2link_type_map.items():
-#             for subj in cand_ent_list4rel:
-#                 for obj in cand_ent_list4rel:
-#                     h2h_ids = "{},{}".format(subj["tok_span"][0], obj["tok_span"][0])
-#                     t2t_ids = "{},{}".format(subj["tok_span"][1] - 1, obj["tok_span"][1] - 1)
-#                     h2t_ids = "{},{}".format(subj["tok_span"][0], obj["tok_span"][1] - 1)
-#                     t2h_ids = "{},{}".format(subj["tok_span"][1] - 1, obj["tok_span"][0])
-#
-#                     rel_exist = False
-#                     if self.add_h2t_n_t2h_links:
-#                         if h2h_ids in link_type_map and "SH2OH" in link_type_map[h2h_ids] and \
-#                                 t2t_ids in link_type_map and "ST2OT" in link_type_map[t2t_ids] and \
-#                                 h2t_ids in link_type_map and "SH2OT" in link_type_map[h2t_ids] and \
-#                                 t2h_ids in link_type_map and "ST2OH" in link_type_map[t2h_ids]:
-#                             rel_exist = True
-#                     else:
-#                         if h2h_ids in link_type_map and "SH2OH" in link_type_map[h2h_ids] and \
-#                                 t2t_ids in link_type_map and "ST2OT" in link_type_map[t2t_ids]:
-#                             rel_exist = True
-#                     if rel_exist:
-#                         rel_list.append({
-#                             "subject": subj["text"],
-#                             "object": obj["text"],
-#                             "subj_tok_span": [subj["tok_span"][0], subj["tok_span"][1]],
-#                             "obj_tok_span": [obj["tok_span"][0], obj["tok_span"][1]],
-#                             "subj_char_span": [subj["char_span"][0], subj["char_span"][1]],
-#                             "obj_char_span": [obj["char_span"][0], obj["char_span"][1]],
-#                             "predicate": rel,
-#                         })
-#
-#         pred_sample = copy.deepcopy(sample)
-#         # filter extra relations
-#         pred_sample["relation_list"] = Preprocessor.unique_list(
-#             [rel for rel in rel_list if "EXT:" not in rel["predicate"]])
-#         # filter extra entities
-#         ent_types2filter = {"REL:", "EXT:"}
-#         ent_filter_pattern = "({})".format("|".join(ent_types2filter))
-#         pred_sample["entity_list"] = Preprocessor.unique_list(
-#             [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None])
-#         return 0
-#
-#     def decode_batch(self, sample_list, batch_pred_tags, batch_pred_outputs=None):
-#         pred_sample_list = []
-#         for ind in range(len(sample_list)):
-#             sample = sample_list[ind]
-#             pred_tags = [batch_pred_tag[ind] for batch_pred_tag in batch_pred_tags]
-#             pred_sample = self.decode(sample, pred_tags)  # decoding one sample
-#             pred_sample_list.append(pred_sample)
-#         return pred_sample_list
-
-
-# class NERTagger4RAIN(Tagger):
-#     def __init__(self, data, *args, **kwargs):
-#         '''
-#         :param data: all data, used to generate tags
-#         '''
-#         self.language = kwargs["language"]
-#
-#         self.separator = "\u2E80"
-#         shaking_link_types = {
-#             "EH2ET",  # continuous entity head to tail
-#             "BH2BT",  # discontinuous entity boundary head to boundary tail
-#             # "SH2ST-B",  # segment head to segment tail, Begin
-#             # "SH2ST-I",  # segment head to segment tail, Inside
-#         }
-#         matrix_link_types = {"CLIQUE"}
-#         ent_type_set = set()
-#         for sample in data:
-#             for ent in sample["entity_list"]:
-#                 ent_type_set.add(ent["type"])
-#         self.shaking_tags = {self.separator.join([ent_type, lt]) for ent_type in ent_type_set for lt in
-#                              shaking_link_types}
-#         self.matrix_tags = {self.separator.join([ent_type, lt]) for ent_type in ent_type_set for lt in
-#                             matrix_link_types}
-#
-#         self.shk_tag2id = {t: idx for idx, t in enumerate(sorted(self.shaking_tags))}
-#         self.id2shk_tag = {idx: t for t, idx in self.shk_tag2id.items()}
-#
-#         self.mt_tag2id = {t: idx for idx, t in enumerate(sorted(self.matrix_tags))}
-#         self.id2mt_tag = {idx: t for t, idx in self.mt_tag2id.items()}
-#
-#     def get_tag_size(self):
-#         return len(self.shk_tag2id), len(self.mt_tag2id)
-#
-#     def tag(self, data):
-#         for sample in tqdm(data, desc="tagging"):
-#             ent_points, rel_points = self.get_tag_points(sample)
-#             sample["ent_points"] = ent_points
-#             sample["rel_points"] = rel_points
-#         return data
-#
-#     def get_tag_points(self, sample):
-#         '''
-#         matrix_points: [(tok_pos1, tok_pos2, tag_id), ]
-#         '''
-#         shk_points, mt_points = [], []
-#         for ent in sample["entity_list"]:
-#             ent_type = ent["type"]
-#             if len(ent["tok_span"]) == 2:
-#                 # continuous entity
-#                 point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
-#                          self.shk_tag2id[self.separator.join([ent_type, "EH2ET"])])
-#                 shk_points.append(point)
-#             else:
-#                 # disc boundary
-#                 point = (ent["tok_span"][0], ent["tok_span"][-1] - 1,
-#                          self.shk_tag2id[self.separator.join([ent_type, "BH2BT"])])
-#                 shk_points.append(point)
-#
-#                 # # discontinuous segments
-#                 # for idx_i in range(0, len(ent["char_span"]), 2):
-#                 #     seg_tok_span = [ent["tok_span"][idx_i], ent["tok_span"][idx_i + 1]]
-#                 #
-#                 #     position_tag = "SH2ST-B" if idx_i == 0 else "SH2ST-I"
-#                 #     tag = self.separator.join([ent_type, position_tag])
-#                 #     point = (seg_tok_span[0], seg_tok_span[-1] - 1, self.shk_tag2id[tag])
-#                 #     shk_points.append(point)
-#
-#             # relations
-#             tok_ids = utils.spans2ids(ent["tok_span"])
-#             for i in tok_ids:
-#                 for j in tok_ids:
-#                     # if i == j:
-#                     #     continue
-#                     point = (i, j, self.mt_tag2id[self.separator.join([ent_type, "CLIQUE"])])
-#                     mt_points.append(point)
-#
-#         return Preprocessor.unique_list(shk_points), Preprocessor.unique_list(mt_points)
-#
-#     def decode(self, sample, pred_tags):
-#         '''
-#         sample: to provide tok2char_span map and text
-#         pred_tags: predicted tags
-#         '''
-#
-#         pred_ent_tag, pred_rel_tag = pred_tags[0], pred_tags[1]
-#         shk_points = Indexer.shaking_seq2points(pred_ent_tag)
-#         mt_points = Indexer.matrix2points(pred_rel_tag)
-#
-#         sample_idx, text = sample["id"], sample["text"]
-#         tok2char_span = sample["features"]["tok2char_span"]
-#
-#         ent_list = []
-#         ent_type2boundaries = {}
-#         ent_type2graph = {}
-#         memory = set()
-#         for pt in shk_points:
-#             shk_tag = self.id2shk_tag[pt[2]]
-#             ent_type, link_type = shk_tag.split(self.separator)
-#
-#             if link_type == "BH2BT":
-#                 boundary = [pt[0], pt[1] + 1]
-#                 if ent_type not in ent_type2boundaries:
-#                     ent_type2boundaries[ent_type] = []
-#                 ent_type2boundaries[ent_type].append(boundary)
-#             else:
-#                 assert link_type == "EH2ET"
-#                 tok_span = [pt[0], pt[1] + 1]
-#                 char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-#                 ent_txt = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language)
-#                 mem = "{},{}".format(ent_type, str(char_span))
-#                 if mem not in memory:
-#                     ent_list.append({
-#                         "text": ent_txt,
-#                         "char_span": char_span,
-#                         "tok_span": tok_span,
-#                         "type": ent_type,
-#                     })
-#                     memory.add(mem)
-#
-#         for pt in mt_points:
-#             mt_tag = self.id2mt_tag[pt[2]]
-#             ent_type, link_type = mt_tag.split(self.separator)
-#             if link_type == "CLIQUE":
-#                 if ent_type not in ent_type2graph:
-#                     ent_type2graph[ent_type] = nx.Graph()
-#                 ent_type2graph[ent_type].add_edge(pt[0], pt[1])
-#
-#         for ent_type, boundaries in ent_type2boundaries.items():
-#             if ent_type not in ent_type2graph:
-#                 continue
-#             graph = ent_type2graph[ent_type]
-#             for bd in boundaries:
-#                 tok_ids = list(range(*bd))
-#                 cliques = list(nx.find_cliques(nx.induced_subgraph(graph, tok_ids)))
-#                 cliques = [cli for cli in cliques if tok_ids[0] == min(cli) and tok_ids[-1] == max(cli)]
-#
-#                 for cli in cliques:
-#                     cli = sorted(cli)
-#                     tok_span = utils.ids2span(cli)
-#                     char_span = Preprocessor.tok_span2char_span(tok_span, tok2char_span)
-#                     ent_txt = Preprocessor.extract_ent_fr_txt_by_char_sp(char_span, text, self.language)
-#                     mem = "{},{}".format(ent_type, str(char_span))
-#                     if mem not in memory:
-#                         ent_list.append({
-#                             "text": ent_txt,
-#                             "char_span": char_span,
-#                             "tok_span": tok_span,
-#                             "type": ent_type,
-#                         })
-#                         memory.add(mem)
-#
-#         pred_sample = copy.deepcopy(sample)
-#         pred_sample["entity_list"] = ent_list
-#
-#         # sc_dict = MetricsCalculator.get_ent_cpg_dict([pred_sample], [sample])
-#         # for sck, sc in sc_dict.items():
-#         #     if sc[0] != sc[2] or sc[0] != sc[1]:
-#         #         print("1")
-#         return pred_sample

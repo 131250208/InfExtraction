@@ -59,13 +59,13 @@ class OIEMetrics:
                     else:
                         other_args.append(arg["text"])
 
-                pred_comp = utils.joint_segs([pred_prefix, pred, pred_suffix])
+                pred_comp = utils.join_segs([pred_prefix, pred, pred_suffix])
                 extr_spo = Extraction(pred=pred_comp,
                                       head_pred_index=None,
                                       sent=text,
                                       confidence=1.)
                 extr_spo.add_arg(subj)
-                object_ = utils.joint_segs([obj] + [arg_text for arg_text in other_args])
+                object_ = utils.join_segs([obj] + [arg_text for arg_text in other_args])
                 extr_spo.add_arg(object_)
                 # for arg_text in other_args:
                 #     extr_spo.add_arg(arg_text)

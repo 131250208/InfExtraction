@@ -226,61 +226,68 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         self.dep_config = dep_config
         if dep_config is not None:
             self.dep_type_num = dep_config["dep_type_num"]
-            dep_type_emb_dim = dep_config["dep_type_emb_dim"]
+            self.dep_type_emb_dim = dep_config["dep_type_emb_dim"]
             dep_type_emb_dropout = dep_config["emb_dropout"]
-            self.dep_type_emb = nn.Embedding(self.dep_type_num, dep_type_emb_dim)
+            self.dep_type_emb = nn.Embedding(self.dep_type_num, self.dep_type_emb_dim)
             self.dep_type_emb_dropout = nn.Dropout(p=dep_type_emb_dropout)
 
-            # GCN
-            dep_gcn_dim = dep_config["gcn_dim"]
-            dep_gcn_dropout = dep_config["gcn_dropout"]
-            dep_gcn_layer_num = dep_config["gcn_layer_num"]
-            # aggregate fc
-            self.aggr_fc4gcn = nn.Linear(self.cat_hidden_size, dep_gcn_dim)
-            self.gcn_layers = nn.ModuleList()
-            self.dep_gcn_dropout = nn.Dropout(dep_gcn_dropout)
-            for _ in range(dep_gcn_layer_num):
-                self.gcn_layers.append(GraphConvLayer(dep_type_emb_dim, dep_gcn_dim, "avg"))
-                self.cat_hidden_size += dep_gcn_dim
+            self.use_gcn4deprel = dep_config["gcn"]
+            if self.use_gcn4deprel:
+                # GCN
+                dep_gcn_dim = dep_config["gcn_dim"]
+                dep_gcn_dropout = dep_config["gcn_dropout"]
+                dep_gcn_layer_num = dep_config["gcn_layer_num"]
 
-    def _cat_features(self,
-                      padded_text_list=None,
-                      char_input_ids=None,
-                      word_input_ids=None,
-                      elmo_ids=None,
-                      subword_input_ids=None,
-                      attention_mask=None,
-                      token_type_ids=None,
-                      ner_tag_ids=None,
-                      pos_tag_ids=None,
-                      dep_adj_matrix=None):
+                # aggregate fc
+                self.aggr_fc4gcn = nn.Linear(self.cat_hidden_size, dep_gcn_dim)
+                self.gcn_layers = nn.ModuleList()
+                self.dep_gcn_dropout = nn.Dropout(dep_gcn_dropout)
+                for _ in range(dep_gcn_layer_num):
+                    self.gcn_layers.append(GraphConvLayer(self.dep_type_emb_dim, dep_gcn_dim, "avg"))
+                    self.cat_hidden_size += dep_gcn_dim
+
+    def get_base_features(self,
+                          padded_text_list=None,
+                          char_input_ids=None,
+                          word_input_ids=None,
+                          elmo_ids=None,
+                          subword_input_ids=None,
+                          attention_mask=None,
+                          token_type_ids=None,
+                          ner_tag_ids=None,
+                          pos_tag_ids=None,
+                          dep_adj_matrix=None):
 
         # features
         features = []
+        feature_dict = {}
 
         # ner tag
         if self.ner_tag_emb_config is not None:
             ner_tag_embeddings = self.ner_tag_emb(ner_tag_ids)
             ner_tag_embeddings = self.ner_tag_emb_dropout(ner_tag_embeddings)
             features.append(ner_tag_embeddings)
+            feature_dict["ner_tag_embeddings"] = ner_tag_embeddings
 
         # pos tag
         if self.pos_tag_emb_config is not None:
             pos_tag_embeddings = self.pos_tag_emb(pos_tag_ids)
             pos_tag_embeddings = self.pos_tag_emb_dropout(pos_tag_embeddings)
             features.append(pos_tag_embeddings)
+            feature_dict["pos_tag_embeddings"] = pos_tag_embeddings
 
         # char
         if self.char_encoder_config is not None:
             # char_input_ids: (batch_size, seq_len * max_char_num_in_subword)
             # char_input_emb/char_hiddens: (batch_size, seq_len * max_char_num_in_subword, char_emb_dim)
-            # char_conv_oudtut: (batch_size, seq_len, char_emb_dim)
+            # char_conv_output: (batch_size, seq_len, char_emb_dim)
             char_input_emb = self.char_emb(char_input_ids)
             char_input_emb = self.char_emb_dropout(char_input_emb)
             char_hiddens, _ = self.char_lstm_l1(char_input_emb)
             char_hiddens, _ = self.char_lstm_l2(self.char_lstm_dropout(char_hiddens))
-            char_conv_oudtut = self.char_cnn(char_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
-            features.append(char_conv_oudtut)
+            char_conv_output = self.char_cnn(char_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
+            features.append(char_conv_output)
+            feature_dict["char_conv_output"] = char_conv_output
 
         # word
         if self.word_encoder_config is not None:
@@ -293,16 +300,19 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             word_hiddens, _ = self.word_lstm_l1(word_fts)
             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
             features.append(word_hiddens)
+            feature_dict["word_hiddens"] = word_hiddens
 
         # flair embedding
         if self.flair_config is not None:
             self.flair_emb.embed(padded_text_list)
             flair_embeddings = torch.stack([torch.stack([tok.embedding for tok in sent]) for sent in padded_text_list])
             features.append(flair_embeddings)
+            feature_dict["flair_embeddings"] = flair_embeddings
 
         if self.elmo_config is not None:
             embeddings = self.elmo(elmo_ids)
             features.append(embeddings["elmo_representations"][0])
+            feature_dict["elmo_embeddings"] = embeddings["elmo_representations"][0]
 
         # subword
         if self.subwd_encoder_config is not None:
@@ -314,26 +324,35 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             subword_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_bert:], dim=0),
                                          dim=0)
             features.append(subword_hiddens)
+            feature_dict["subword_hiddens"] = subword_hiddens
 
         # dependencies
         if self.dep_config is not None:
             # dep_adj_matrix: (batch_size, seq_len, seq_len)
-            dep_adj_matrix = torch.transpose(dep_adj_matrix, 1, 2)
-            dep_type_embeddings = self.dep_type_emb(dep_adj_matrix)
-            # dep_type_embeddings: (batch_size, seq_len, seq_len, dep_emb_dim)
-            weight_adj = self.dep_type_emb_dropout(dep_type_embeddings)
-            gcn_outputs = self.aggr_fc4gcn(torch.cat(features, dim=-1))
-            for gcn_l in self.gcn_layers:
-                weight_adj, gcn_outputs = gcn_l(weight_adj, gcn_outputs)  # [batch, seq, dim]
-                gcn_outputs = self.dep_gcn_dropout(gcn_outputs)
-                weight_adj = self.dep_gcn_dropout(weight_adj)
-                features.append(gcn_outputs)
+            # -> deprel_embeddings: (batch_size, seq_len, seq_len, dep_type_emb_dim)
+            deprel_embeddings = self.dep_type_emb(dep_adj_matrix)
+            feature_dict["deprel_embeddings"] = deprel_embeddings
+
+            if self.use_gcn4deprel:
+                deprel_embeddings_trans = torch.transpose(deprel_embeddings, 1, 2)  # (multi -> one) => (one: multi)
+                # deprel_embeddings: (batch_size, seq_len, seq_len, dep_emb_dim)
+                weight_adj = self.dep_type_emb_dropout(deprel_embeddings_trans)
+                gcn_output = self.aggr_fc4gcn(torch.cat(features, dim=-1))
+
+                gcn_output_list = []
+                for gcn_l in self.gcn_layers:
+                    weight_adj, gcn_output = gcn_l(weight_adj, gcn_output)  # [batch, seq, dim]
+                    gcn_output = self.dep_gcn_dropout(gcn_output)
+                    weight_adj = self.dep_gcn_dropout(weight_adj)
+                    gcn_output_list.append(gcn_output)
+                features.extend(gcn_output_list)
+                feature_dict["gcn_output_list"] = gcn_output_list
 
         # concatenated features
         # concatenated_hiddens: (batch_size, seq_len, concatenated_size)
         cat_hiddens = torch.cat(features, dim=-1)
 
-        return cat_hiddens
+        return cat_hiddens, feature_dict
 
     def forward(self):
         if self.training:
@@ -446,7 +465,7 @@ class TPLinkerPlus(IEModel):
 
     def forward(self, **kwargs):
         super(TPLinkerPlus, self).forward()
-        cat_hiddens = self._cat_features(**kwargs)
+        cat_hiddens, _ = self.get_base_features(**kwargs)
         cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
         # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # shaking_seq_len: max_seq_len * vf - sum(1, vf)
@@ -517,7 +536,7 @@ class SpanNER(IEModel):
 
     def forward(self, **kwargs):
         super(SpanNER, self).forward()
-        inp_hiddens = self._cat_features(**kwargs)
+        inp_hiddens, _ = self.get_base_features(**kwargs)
         batch_size, seq_len, _ = inp_hiddens.size()
 
         ent_hiddens = self.aggr_fc4ent_hsk(inp_hiddens)
@@ -583,7 +602,6 @@ class RAIN(IEModel):
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
-
         self.ent_tag_size, self.rel_tag_size = tagger.get_tag_size()
         self.loss_func = loss_func
         self.loss_weight_recover_steps = loss_weight_recover_steps
@@ -650,6 +668,8 @@ class RAIN(IEModel):
 
         # decoding fc
         self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
+        if self.dep_config is not None:
+            rel_dim += self.dep_type_emb_dim
         self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
 
     def generate_batch(self, batch_data):
@@ -730,7 +750,8 @@ class RAIN(IEModel):
         super(RAIN, self).forward()
         ent_class_guide = kwargs["golden_ent_class_guide"]
         del kwargs["golden_ent_class_guide"]
-        inp_hiddens = self._cat_features(**kwargs)
+
+        inp_hiddens, feature_dict = self.get_base_features(**kwargs)
         batch_size, seq_len, _ = inp_hiddens.size()
 
         if self.top_multi_attn_config is not None:
@@ -780,11 +801,14 @@ class RAIN(IEModel):
             boundary_tok_inter_pre = self.get_ent_guide4rel(ent_hs_hiddens, ent_class_guide)
             rel_hs_hiddens = self.cln4rel_guide(rel_hs_hiddens, boundary_tok_inter_pre)
 
+        if self.dep_config is not None:
+            rel_hs_hiddens = torch.cat([rel_hs_hiddens, feature_dict["deprel_embeddings"]], dim=-1)
         pred_rel_output = self.rel_fc(rel_hs_hiddens)
         return pred_ent_output, pred_rel_output
 
     def pred_output2pred_tag(self, pred_output):
-        return (pred_output > self.pred_threshold).long()
+        tag = (pred_output > self.pred_threshold).long()
+        return tag
 
     def get_metrics(self, pred_outputs, gold_tags):
         ent_pred_out, rel_pred_out, ent_gold_tag, rel_gold_tag = pred_outputs[0], pred_outputs[1], gold_tags[0], \
@@ -827,68 +851,4 @@ class RAIN(IEModel):
             "loss": loss,
             "ent_seq_acc": self.metrics_cal.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
             "rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(rel_pred_tag, rel_gold_tag),
-        }
-
-
-class TableFillingBackbone(IEModel):
-    def __init__(self,
-                 tagger,
-                 metrics_cal,
-                 handshaking_kernel_config=None,
-                 event_con_dim=None,
-                 vis_dim=None,
-                 **kwargs,
-                 ):
-        super().__init__(tagger, metrics_cal, **kwargs)
-        self.tag_size = tagger.get_tag_size()
-        self.metrics_cal = metrics_cal
-
-        self.aggr_fc4event_context = nn.Linear(self.cat_hidden_size, event_con_dim)
-        # self.multi_head_attn = nn.MultiheadAttention(event_con_dim, 12)
-
-        self.aggr_fc4vis_tok = nn.Linear(self.cat_hidden_size, vis_dim)
-
-        # handshaking kernel
-        shaking_type = handshaking_kernel_config["shaking_type"]
-        self.handshaking_kernel = HandshakingKernel(event_con_dim,
-                                                    vis_dim,
-                                                    shaking_type,
-                                                    only_look_after=False,  # matrix
-                                                    )
-
-        # decoding fc
-        self.dec_fc = nn.Linear(vis_dim, self.tag_size)
-
-    def generate_batch(self, batch_data):
-        batch_dict = super(TableFillingBackbone, self).generate_batch(batch_data)
-        seq_length = len(batch_data[0]["features"]["tok2char_span"])
-        # shaking tag
-        tag_points_batch = [sample["tag_points"] for sample in batch_data]
-        batch_dict["golden_tags"] = [
-            Indexer.points2multilabel_matrix_batch(tag_points_batch, seq_length, self.tag_size), ]
-        return batch_dict
-
-    def forward(self, **kwargs):
-        super(TableFillingBackbone, self).forward()
-
-        cat_hiddens = self._cat_features(**kwargs)
-        event_con = self.aggr_fc4event_context(cat_hiddens)
-
-        vis_tok_hiddens = self.aggr_fc4vis_tok(cat_hiddens)
-
-        shaking_hiddens = self.handshaking_kernel(event_con, vis_tok_hiddens)
-
-        predicted_oudtuts = self.dec_fc(shaking_hiddens)
-
-        return predicted_oudtuts
-
-    def pred_output2pred_tag(self, pred_output):
-        return (pred_output > 0.).long()
-
-    def get_metrics(self, pred_outputs, gold_tags):
-        pred_out, gold_tag = pred_outputs[0], gold_tags[0]
-        pred_tag = self.pred_output2pred_tag(pred_out)
-        return {
-            "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
-            "seq_accuracy": self.metrics_cal.get_tag_seq_accuracy(pred_tag, gold_tag),
         }
