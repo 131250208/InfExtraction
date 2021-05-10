@@ -10,6 +10,8 @@ wandb
 stanza
 networkx
 pattern
+python-Levenshtein
+pyahocorasick
 ```
 **Note: `pattern.en.lemma` is required for the evaluation of OIE (Open Information Extraction) task. 
 To avoid some problems and save your time, please follow these steps to install `pattern`**:
