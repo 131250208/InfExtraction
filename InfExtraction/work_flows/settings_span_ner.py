@@ -38,14 +38,14 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "genia"
+exp_name = "CMeEE"
 language = "en"
-stage = "train"  # inference
+stage = "train"  # inference, train
 task_type = "ner"
 model_name = "SpanNER"
 tagger_name = "Tagger4SpanNER"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "biobert-large-cased-pubmed-58k"
+pretrained_model_name = "chinese_roberta_wwm_large_ext_pytorch"
 pretrained_emb_name = "glove.6B.100d.txt"
 use_wandb = True
 note = ""
@@ -54,18 +54,20 @@ lr = 3e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
 drop_neg_samples = False
-combine = True  # combine splits
+combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 0
 
-batch_size_train = 8
-batch_size_valid = 12
-batch_size_test = 12 
+metric_keyword = "f1"  # save models on which metric: f1, ...
+model_bag_size = 3
 
-max_seq_len_train = 64
-max_seq_len_valid = 64
-max_seq_len_test = 64
+batch_size_train = 12
+batch_size_valid = 6
+batch_size_test = 6
+
+max_seq_len_train = 72
+max_seq_len_valid = 100
+max_seq_len_test = 100
 
 sliding_len_train = 20
 sliding_len_valid = 20
@@ -170,8 +172,8 @@ model_state_dict_path = None
 
 # for test
 model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
-target_run_ids = ["eyu8cm6x", ]
-top_k_models = 1
+target_run_ids = ["3sax9k60", ]
+model_path_ids2infer = [-2, ]
 metric4testing = "ent_exact_offset_f1"
 main_test_set_name = "test_data.json"
 cal_scores = True  # set False if the test sets are not annotated

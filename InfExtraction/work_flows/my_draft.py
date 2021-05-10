@@ -1017,12 +1017,34 @@ def trans2dai_dataset():
 
 
 if __name__ == "__main__":
+    # 调用
 
-    # train_data = load_data("../../data/normal_data/saoke/train_data.json")
-    # for sample in train_data:
-    #     if sample["id"] == 44629:
-    #         print(sample["text"])
+    ent_path = "../../data/duie_spo_dict/entity_ske.json"
+    ent_list = load_data(ent_path)
+    text2types = {}
+    for ent in ent_list:
+        text2types.setdefault(ent["text"], set()).add(ent["type"])
 
+    ambiguous_ents = {}
+    for ent_txt, tps in text2types.items():
+        if len(tps) > 2:
+            ambiguous_ents[ent_txt] = tps
+    # spo_path = "../../data/duie_spo_dict/spo_ske.json"
+    # spo_list = load_data(spo_path)
+
+    # from InfExtraction.modules.utils import SpoSearcher
+    # ent_type_map = {
+    #     "人物": "PER",
+    #     "地点": "LOC",
+    # }
+    # ent_type_mask = None # {"Number", "Text", "Date"}
+    # spoer = SpoSearcher(spo_list, ent_list, ent_type_map=ent_type_map, ent_type_mask=ent_type_mask)
+    # text = "李宽是唐太宗李世民的第二子，生母不详，史书记载为后宫生宽。 唐人街探案票房当日破54亿人民币。《儒家狂生》是无心恋野发表在起点中文网的网络小说"
+    # ent_list, spo_list = spoer.extract_items(text)
+    # print(spo_list)
+    # print(ent_list)
+
+    pass
     # text = "2013年11月11日出席SNH48 Team组建授旗仪式，升格为SNH48 Team N队（Team NⅡ）24名成员之一。"
     # target_seg = "SNH48 Team N队24名成员之一"
     # sps, _ = Preprocessor.search_char_spans_fr_txt(target_seg, text, "ch")
@@ -1036,19 +1058,31 @@ if __name__ == "__main__":
     # print(sps)
     # print(Preprocessor.extract_ent_fr_txt_by_char_sp(sps[0], text))
     # pprint([text[sps[0][idx]:sps[0][idx + 1]] for idx in range(0, len(sps[0]), 2)])
-
-    text = '冲刺班的任课教师均多年带过体育、艺术生高考文化课的冲刺班，富有教学经验，针对体育、艺术生文化课基础薄弱和学习时间短暂的实际情况，研究制定了一套科学的、切实可行的教学方案，使用一套适合体育、艺术生的教材，自编自印了各科《快速复习攻略》能够让学生尽快地、最大程度地掌握文化知识，提高高考成绩。'
-    target_seg = '一套适合[体育|艺术]生的教材'
+    #
+    # text = '冲刺班的任课教师均多年带过体育、艺术生高考文化课的冲刺班，富有教学经验，针对体育、艺术生文化课基础薄弱和学习时间短暂的实际情况，研究制定了一套科学的、切实可行的教学方案，使用一套适合体育、艺术生的教材，自编自印了各科《快速复习攻略》能够让学生尽快地、最大程度地掌握文化知识，提高高考成绩。'
+    # target_seg = '一套适合[体育|艺术]生的教材'
     # print(utils.search_segs(target_seg, text))
-    sps, _ = Preprocessor.search_char_spans_fr_txt(target_seg, text, "ch")
-    print(sps)
-    print(Preprocessor.extract_ent_fr_txt_by_char_sp(sps[0], text))
-    pprint([text[sps[0][idx]:sps[0][idx + 1]] for idx in range(0, len(sps[0]), 2)])
-
-    # text = '安装固定电话或拥有移动电话的农户数71户，其中拥有移动电话农户数71户（分别占农户总数的100 %和100%）。'
-    # target_seg = '分别占的100%'
     # sps, _ = Preprocessor.search_char_spans_fr_txt(target_seg, text, "ch")
     # print(sps)
+    # print(Preprocessor.extract_ent_fr_txt_by_char_sp(sps[0], text))
+    # pprint([text[sps[0][idx]:sps[0][idx + 1]] for idx in range(0, len(sps[0]), 2)])
+
+    # text = '安装固定电话或拥有移动电话的农户数93户，其中拥有移动电话农户数75户（分别占总数的136.76%和110.29%）。'
+    # target_seg = '分别占的110.29%'
+    # print(utils.search_segs(target_seg, text))
+    # sps, _ = Preprocessor.search_char_spans_fr_txt(target_seg, text, "ch")
+    # print(sps)
+    # print(Preprocessor.extract_ent_fr_txt_by_char_sp(sps[0], text))
+    # pprint([text[sps[0][idx]:sps[0][idx + 1]] for idx in range(0, len(sps[0]), 2)])
+
+    # text = '小郭经常以同学来称呼隔壁小王LYF'
+    # target_seg = '经常以X来称呼Y'
+    # print(utils.search_segs(target_seg, text))
+
+    # sps, _ = Preprocessor.search_char_spans_fr_txt(target_seg, text, "ch")
+    # print(sps)
+    # print(Preprocessor.extract_ent_fr_txt_by_char_sp(sps[0], text))
+    # pprint([text[sps[0][idx]:sps[0][idx + 1]] for idx in range(0, len(sps[0]), 2)])
 
     # # 1. 相同词汇按顺序再排一次 2. 按最大匹配分词 3.
     # def search_segs(search_str, text):

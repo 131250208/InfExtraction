@@ -57,6 +57,8 @@ drop_neg_samples = False
 combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
+
+metric_keyword = "f1"  # save models on which metric: f1, ...
 model_bag_size = 15
 
 batch_size_train = 12
@@ -188,7 +190,7 @@ model_state_dict_path = None
 # for test
 model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
 target_run_ids = ["eyu8cm6x", ]
-top_k_models = 1
+model_path_ids2infer = [-2, ]
 metric4testing = "ent_exact_offset_f1"
 main_test_set_name = "test_data.json"
 cal_scores = True  # set False if the test sets are not annotated

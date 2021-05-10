@@ -10,6 +10,7 @@ import json
 import re
 import logging
 from pprint import pprint
+from InfExtraction.modules.utils import SpoSearcher
 
 # settings
 data_in_dir = settings.data_in_dir
@@ -22,6 +23,15 @@ ori_data_format = settings.ori_data_format
 add_id = settings.add_id
 add_char_span = settings.add_char_span
 ignore_subword_match = settings.ignore_subword_match
+add_pos_ner_deprel = settings.add_pos_ner_deprel
+parser = settings.parser
+extracted_ent_rel_by_dicts = settings.extracted_ent_rel_by_dicts
+ent_list = settings.ent_list
+spo_list = settings.spo_list
+ent_type_map = settings.ent_type_map
+ent_type_mask = settings.ent_type_mask
+min_ent_len = settings.min_ent_len
+
 max_word_dict_size = settings.max_word_dict_size
 min_word_freq = settings.min_word_freq
 if not os.path.exists(data_out_dir):
@@ -62,6 +72,15 @@ for file_name, data in file_name2data.items():
                 #     if "event_type" not in arg:
                 #         arg["event_type"] = event["event_type"]
 
+
+# entitiy and spo extractor
+ent_spo_extractor = None
+if extracted_ent_rel_by_dicts:
+    ent_spo_extractor = SpoSearcher(spo_list, ent_list,
+                                    ent_type_map=ent_type_map,
+                                    ent_type_mask=ent_type_mask,
+                                    min_ent_len=min_ent_len)
+
 # process
 for filename, data in file_name2data.items():
     # add char spans
@@ -70,7 +89,10 @@ for filename, data in file_name2data.items():
     # check char span and list alignment
     preprocessor.pre_check_data_annotation(data, language)
     # create features
-    data = preprocessor.create_features(data, word_tokenizer_type)
+    data = preprocessor.create_features(data, word_tokenizer_type,
+                                        add_pos_ner_deprel=add_pos_ner_deprel,
+                                        parser=parser,
+                                        ent_spo_extractor=ent_spo_extractor)
     # add token level spans
     data = preprocessor.add_tok_span(data)
     file_name2data[filename] = data

@@ -3,17 +3,25 @@ import os
 from InfExtraction.modules.preprocess import Preprocessor, WhiteWordTokenizer, ChineseWordTokenizer
 from InfExtraction.modules.utils import load_data, save_as_json_lines, merge_spans
 from InfExtraction.modules import utils
+from InfExtraction.modules.metrics import MetricsCalculator
 from tqdm import tqdm
 import random
 from tqdm import tqdm
 from pprint import pprint
 import copy
 import re
-import jieba
 import string
 import itertools
 import matplotlib.pyplot as plt
 import time
+from ddparser import DDParser
+import Levenshtein
+import logging
+import json
+import copy
+from sklearn.feature_extraction.text import CountVectorizer
+import numpy as np
+import hashlib
 
 
 def trans_genia():
@@ -294,10 +302,11 @@ def trans_oie4():
                     continue
                 extr_arg_text_ch = Preprocessor.extract_ent_fr_txt_by_char_sp(arg["char_span"], text, "en")
                 assert extr_arg_text_ch == arg["text"]
-            if any(arg["type"] == "object" for arg in spo):
-                for arg in spo:
-                    if arg["type"] == "predicate" and len(arg["char_span"]) > 0:
-                        arg["text"] += " [OBJ]"
+            # add [OBJ]
+            # if any(arg["type"] == "object" for arg in spo):
+            #     for arg in spo:
+            #         if arg["type"] == "predicate" and len(arg["char_span"]) > 0:
+            #             arg["text"] += " [OBJ]"
         del sample["tag_lines"]
 
     # valid and test
@@ -404,6 +413,7 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
     data = load_data(data_path)
     # fix data
     pred_fix_map = {
+        "发放X57820元": "发放X157820元",
         '将研究领域的的重点放在': '将研究领域的重点放在',
         "NOT把X用在如何踢球上": "非把X用在如何踢球上",
         "被X荣为“ 一生只减Y ”的方法": "被X荣为“一生只减Y”的方法",
@@ -466,6 +476,10 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
     }
 
     subj_fix_map = {
+        "我园8%以上教师": "我园98%以上教师",
+        ".投保人、被保险人及其代表的[故意行为|重大过失]": "[投保人|被保险人[|代表]]的[故意行为|重大过失]",
+        "[0×25×16色|80×25×16色]": "[40×25×16色|80×25×16色]",
+        "Codeorg": "Code.org",
         '[社会总需求|社会总供给|全区社会资金]': '[社会[总需求|总供给]|全区社会资金]',
         "_东部沿海渔场": "东部沿海渔场",
         "_全省": "全省",
@@ -576,6 +590,20 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
     }
 
     obj_fix_map = {
+        "|中国文史出版社": "中国文史出版社",
+        "945千米": "954千米",
+        "[有关行业协会及其他社会中介组织]的": "[有关行业协会|其他社会中介组织]的工作",
+        "464.万人": "46.4万人",
+        "[对学生进行以爱国主义为核心的思想品德教育对学生的成才规划进行指导]": "[对学生进行以爱国主义为核心的思想品德教育|对学生的成才规划进行指导]",
+        "行为乖张|不务正业[]": "[行为乖张|不务正业]",
+        "我800块钱的可支配比重": "我3800块钱的可支配比重",
+        "公司负责人|SMG影视剧中心主任[]": "[公司负责人|SMG影视剧中心主任]",
+        "CuCl22H2O": "CuCl2 2H2O",
+        "Codeorg举办的编程大会": "Code.org举办的编程大会",
+        "共有[25个土类|63个亚类|137个土属|80个土种]": "共有[25个土类|63个亚类|137个土属|380个土种]",
+        "[砖瓦厂|建窑1]4个": "[砖瓦厂|建窑]14个",
+        "00余侏[墓幢|墓碑]": "100余侏[墓幢|墓碑]",
+        "[974年以前出版的所有主卷|补编]": "1974年以前出版的所有[主卷|补编]",
         "[]日本学术会议|加拿大皇家学会等": "[日本学术会议|加拿大皇家学会]等",
         "[汪彩霞与冯三元冯莲芳与顾慥]": "[汪彩霞|冯三元|冯莲芳|顾慥]",
         '那种奇特的发麻的感觉|': '那种奇特的发麻的感觉',
@@ -852,6 +880,9 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
         # redundant characters
         txt = re.sub("\|+", "|", txt)
         txt = txt.strip("_")
+
+        # rm �
+        txt = re.sub("�", "", txt)
         return txt
 
     for sample in data:
@@ -897,7 +928,75 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
                 text = text_fix_map[text]
                 sample["natural"] = text
 
-            # special case
+            # # special case
+            # spe_txts = {
+            #     "《王者荣耀》本质上是全球最受欢迎的《英雄联盟》",
+            #     "成立工作领导小组，实行领导挂钩责任制，",
+            #     "至今在老者间仍有“从小横街",
+            #     "姚明的整个NBA生涯都是在",
+            #     "安装固定电话或拥有移动电话的农户数350户，",
+            #     "已探明储量的80多种矿藏中，锑",
+            # }
+            # for txt in spe_txts:
+            #     if txt in text:
+            #         print(">>>")
+
+            if text == '至今在老者间仍有“从小横街（现宁溪钟楼路）偷街板”立市的故事，广为称道。' and spo["object"][0] == '=现宁溪钟楼路':
+                spo["object"][0] = '现宁溪钟楼路'
+                spo["predicate"] = "="
+            if text == '《王者荣耀》本质上是全球最受欢迎的《英雄联盟》游戏的手机版，后者由美国游戏开发商Riot.Games推出。' \
+                    and spo["object"][0] == '由X推出':
+                spo["predicate"] = '由X推出'
+                spo["object"][0] = 'Riot.Games'
+                spo["place"] = "_"
+
+            if text == '成立工作领导小组，实行领导挂钩责任制，每个村由两名副职领导负责，镇主要领导定期或不定期深入各村进行检查。' \
+                    and spo["object"][0] == '由X负责':
+                spo["predicate"] = '由X负责'
+                spo["object"][0] = '两名副职领导'
+                spo["time"] = "_"
+
+            if text == '姚明的整个NBA生涯都是在火箭队度过的，身穿11号球衣的他场均上场32.5分钟，可以得到19.0分9.2篮板1.9盖帽。' \
+                    and spo["object"][0] == '在X度过':
+                spo["predicate"] = '在X度过'
+                spo["object"][0] = '火箭队'
+                spo["time"] = "_"
+
+            if '安装固定电话或拥有移动电话的农户数350户，其中拥有移动电话农户数290户' in text \
+                    and spo["predicate"] == "占" and spo["object"][0] == '总数的44.14%':
+                spo["subject"] = "安装固定电话或拥有移动电话的农户数"
+            if '安装固定电话或拥有移动电话的农户数350户，其中拥有移动电话农户数290户' in text \
+                    and spo["predicate"] == "占" and spo["object"][0] == '总数的36.57%':
+                spo["subject"] = "拥有移动电话农户数"
+                text = '安装固定电话或拥有移动电话的农户数350户，其中拥有移动电话农户数290户（分别占总数的44.14%和36.57%）。'
+                sample["natrual"] = text
+
+            if text == '已探明储量的80多种矿藏中，锑的储量居世界首位，钨、铋、铷、锰、钒、铅、锌以及非金属雄黄、萤石、海泡石、独居石、金刚石等居中国前列。' and\
+                spo["time"] == "80多种矿藏":
+                spo["time"] = "_"
+                spo["predicate"] = '探明X的储量'
+                spo["object"][0] = '80多种矿藏'
+            if text == '已探明储量的80多种矿藏中，锑的储量居世界首位，钨、铋、铷、锰、钒、铅、锌以及非金属雄黄、萤石、海泡石、独居石、金刚石等居中国前列。' and\
+                spo["predicate"] == '锑的储量':
+                spo["subject"] = '锑的储量'
+                spo["predicate"] = '居世界首位'
+                spo["object"][0] = "_"
+            if text == '已探明储量的80多种矿藏中，锑的储量居世界首位，钨、铋、铷、锰、钒、铅、锌以及非金属雄黄、萤石、海泡石、独居石、金刚石等居中国前列。' and \
+                spo["predicate"] == '金刚石的储量':
+                spo["subject"] = '金刚石的储量'
+                spo["predicate"] = '居中国前列'
+                spo["object"][0] = "_"
+
+            if text == '阴门开口于舌状瓣膜上，距尾端2．700—3．262 mm。' and spo["predicate"] == '距X2．700Y mm':
+                spo["predicate"] = '距XY'
+                spo["object"][1] = "2．700—3．262 mm"
+
+            if text == '渡虎谷SEO大赛有一些特点：�起方是全球最大规模的搜索引擎营销和优化专业会议搜索引擎战略大会（Search Engine Strategies）的中国主办方浩维传媒，以引导SEO服务良性发展为目的，公允性和专业性都比较高；' \
+                    and spo["subject"] == '�起方':
+                text = re.sub("�起方", "发起方", text)
+                sample["natural"] = text
+                spo["subject"] = '发起方'
+
             if text == '又如绣石头、老树梗等，线粗，排针不必过于均匀。' and spo["predicate"] == "排针" and spo["object"][0] == '不必过于均匀':
                 spo["subject"] = "排针"
                 spo["predicate"] = '不必过于均匀'
@@ -915,6 +1014,7 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
             if text == "前期投资只需要传统压缩机空调的一半，中期运行耗电量只需要传统空调的[/b]1/8[/b]——[/b]1/10[/b]，后期维护费用低。" and spo[
                 "predicate"] == "只需要X的[/b]1/8[/b]——[/b]1/10[/b]":
                 text = "前期投资只需要传统压缩机空调的一半，中期运行耗电量只需要传统空调的1/8——1/10，后期维护费用低。"
+                sample["natural"] = text
                 spo["predicate"] = "只需要X的1/8——1/10"
 
             if text == '全省户籍人口为70780918人。' and spo["object"][0] == '79780918人':
@@ -1282,14 +1382,18 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
                             span_list = get_spe_txt_spans(ori_str, text, is_pred=True if key == "predicate" else False)
                         except Exception:
                             print(ori_str)
+                            print(span_list)
                             print(key)
                             print(text)
                             print(ori_spo)
-                            print("==================error anns=======================")
+                            print("==================split error anns=======================")
 
                         # check spans
                         for idx, sp in enumerate(span_list):
+                            # try:
                             extr_txt = Preprocessor.extract_ent_fr_txt_by_char_sp(sp, text, "ch")
+                            # except Exception:
+                            #     print("!!!")
                             try:
                                 cor_str = re.sub("([^a-zA-Z]|^)[XYZU]([^a-zA-Z]|$)", r"\1\2", split_list[idx]) \
                                     if key == "predicate" else split_list[idx]
@@ -1301,7 +1405,7 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
                                 print(extr_txt)
                                 print(cor_str)
                                 print("==================span search error==================")
-                        comb_list = [{"char_span": [sp, ], "text": split_list[idx]} for idx, sp in enumerate(span_list)]
+                        comb_list = [{"char_span": [sp, ], "text": split_list[idx]} for idx, sp in enumerate(span_list) if len(sp) > 0]
                         spo[key] = comb_list
                     else:
                         if key == "predicate" and spo[key] in predefined_p_set:
@@ -1311,34 +1415,60 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
                                  }, ]
                         else:
                             target_str = spo[key]
-                            if key == "predicate":
+                            spe_p_map0 = {
+                                '可以找X计算AMP': '可以找计算AMP',
+                                "对X进行管端焊缝拍片": "对进行管端焊缝拍片",
+                                "对X进行Y": "对|进行",
+                                "在X的经营理念指导下": "在的经营理念指导下",
+                                "点X完成": "点完成",
+                                "具有X的特点": "具有的特点",
+                                "为X所青睐": "为所青睐",
+                                "一直受到X的青睐": "一直受到的青睐",
+                                "以X为Y": "以|为|",
+                                "喊Xsockrrlates": "喊|sockrrlates",
+                                "用X进行中心定位": "用|进行中心定位",
+                                "有X的屏幕": "有|的屏幕",
+                                "带给X更多的选择": "带给|更多的选择",
+                                "更是将X首次下拉到Y": "更是将|首次下拉到|",
+                                "相比X有Y": "相比|有|",
+                                "是在X的基础上优化设计": "是在|的基础上优化设计",
+                                "在X上优化设计": "在|上优化设计",
+                                "是X一贯的宗旨": "是|一贯的宗旨",
+                                "对X的发展产生了影响": "对|的发展产生了影响",
+                            }
+                            if target_str in spe_p_map0:
+                                target_str = spe_p_map0[target_str]
+
+                            char_spans, _ = Preprocessor.search_char_spans_fr_txt(target_str, text, "ch")
+                            spo[key] = [
+                                {"text": spo[key],
+                                 "char_span": char_spans,
+                                 }, ]
+
+                            for ch_sp in char_spans:
+                                extr_txt = Preprocessor.extract_ent_fr_txt_by_char_sp(ch_sp, text, "ch")
                                 spe_p_map = {
                                     "与X的Starch RX1500相当": "与的Starch RX1500相当",
                                     '将X装入UNIX服务器': '将装入UNIX服务器',
                                     '将X融入到DKNY的设计当中': '将融入到DKNY的设计当中',
                                     '与X合作生产SK-1Z02D正压防爆综合录井仪': '与合作生产SK-1Z02D正压防爆综合录井仪',
                                     '经常以X来称呼隔壁小王LYF': '经常以来称呼隔壁小王LYF',
+                                    "对X内X个目标": "对内X个目标",
                                 }
-                                if spo[key] in spe_p_map:
-                                    target_str = spe_p_map[spo[key]]
-                                else:
-                                    target_str = re.sub("[XYZU]", "", spo[key])
-
-                            try:
-                                char_spans, _ = Preprocessor.search_char_spans_fr_txt(target_str, text, "ch")
-                                spo[key] = [
-                                    {"text": spo[key],
-                                     "char_span": char_spans,
-                                     }, ]
-                                for ch_sp in char_spans:
-                                    extr_txt = Preprocessor.extract_ent_fr_txt_by_char_sp(ch_sp, text, "ch")
+                                if key == "predicate":
+                                    if target_str in spe_p_map:
+                                        target_str = spe_p_map[target_str]
+                                    else:
+                                        target_str = re.sub("[XYZU\|]", "", target_str)
+                                try:
                                     assert extr_txt == target_str
-                            except Exception:
-                                print(target_str)
-                                print(key)
-                                print(text)
-                                print(ori_spo)
-                                print("==================error anns=======================")
+                                except Exception:
+                                    print(target_str)
+                                    print(extr_txt)
+                                    print(key)
+                                    print(text)
+                                    print(ori_spo)
+                                    print("==================error anns=======================")
 
                 elif key == "object":
                     new_objs = []
@@ -1371,7 +1501,7 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
                                     print("==================span search error==================")
 
                             comb_list = [{"char_span": [sp, ], "text": split_list[idx]} for idx, sp in
-                                         enumerate(span_list)]
+                                         enumerate(span_list) if len(sp) > 0]
                             new_objs.append(comb_list)
                         else:
                             if obj == "":
@@ -1384,7 +1514,7 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
                                     print(key)
                                     print(text)
                                     print(ori_spo)
-                                    print("==================error anns=======================")
+                                    print("==================obj error anns=======================")
 
                                 new_objs.append([
                                     {"text": obj,
@@ -1406,6 +1536,7 @@ def preprocess_saoke(data_path="../../data/ori_data/saoke_bk/saoke.json"):
                 '将X融入到DKNY的设计当中': '将[OBJ]融入到DKNY的设计当中',
                 '与X合作生产SK-1Z02D正压防爆综合录井仪': '与[OBJ]合作生产SK-1Z02D正压防爆综合录井仪',
                 '经常以X来称呼隔壁小王LYF': '经常以[OBJ]来称呼隔壁小王LYF',
+                "对X内X个目标": "对[OBJ]内X个目标",
             }
 
             bad_spo = False
@@ -1599,7 +1730,7 @@ def trans_casie():
                     "trigger": trigger,
                     "trigger_char_span": trigger_char_span,
                     "realis": event["realis"],
-                    "trigger_type": "{}.{}".format(event["type"], event["subtype"]),
+                    "event_type": "{}.{}".format(event["type"], event["subtype"]),
                     "argument_list": [],
                 }
                 if "argument" in event:
@@ -1611,7 +1742,8 @@ def trans_casie():
                         new_event["argument_list"].append({
                             "text": arg_txt,
                             "char_span": arg_char_span,
-                            "type": arg["role"]["type"],
+                            "role": arg["role"]["type"],
+                            "type": arg["type"],
                         })
                 new_sample["event_list"].append(new_event)
         # check spans
@@ -1714,8 +1846,74 @@ def trans_chfin():
     save_as_json_lines(new_valid_data, os.path.join(save_dir, "valid_data.json"))
     save_as_json_lines(new_test_data, os.path.join(save_dir, "test_data.json"))
 
+# def add_postag_n_deprel(data):
+#     ddp = DDParser(use_pos=True, buckets=True)
+#     texts = [sample["text"] for sample in data]
+#     m = hashlib.md5()
+#     m.update("\n".join(texts).encode('utf-8'))
+#     cache_path = "./parse_cache_{}.jsonlines".format(m.hexdigest())
+#
+#     all_data_len = len(texts)
+#     if os.path.exists(cache_path):
+#         parse_results = load_data(cache_path)
+#         assert len(parse_results) == all_data_len
+#     else:
+#         parse_results = []
+#         for idx in tqdm(range(0, all_data_len, 100), desc="ddp parse"):
+#             parse_results.extend(ddp.parse(texts[idx:idx + 100]))
+#         save_as_json_lines(parse_results, cache_path)
+#
+#     for sample_idx, sample in tqdm(enumerate(data), desc="add features"):
+#         text = sample["text"]
+#         all_ch_sp_list = Preprocessor.get_all_possible_char_spans(sample)
+#         tok_res = ChineseWordTokenizer.tokenize_plus(text, span_list=all_ch_sp_list)
+#         ctok_word2char_span = tok_res["word2char_span"]
+#         cchar2tok_span = utils.get_char2tok_span(ctok_word2char_span)
+#         sample["word2char_span"] = ctok_word2char_span
+#         sample["word_list"] = tok_res["word_list"]
+#
+#         ddp_res = parse_results[sample_idx]
+#         ddp_tok2char_span = utils.get_tok2char_span_map(ddp_res["word"])
+#         ddp_char2tok_span = utils.get_char2tok_span(ddp_tok2char_span)
+#
+#         pos_tag_list, deprel_list = [], []
+#         for wid, word in enumerate(tok_res["word_list"]):
+#             ch_sp = ctok_word2char_span[wid]  # word to char span
+#             tok_sps = ddp_char2tok_span[ch_sp[0]:ch_sp[1]]  # char span to ddp tok span
+#             # try:
+#             #     assert tok_sps[0][0] == tok_sps[-1][1] - 1
+#             # except:
+#             #     print("pre duie")
+#             if tok_sps[0][0] == tok_sps[-1][1] - 1:  # if this word corresponds to a single token in ddp result
+#                 ddp_tok_id = tok_sps[0][0]
+#             else:
+#                 # if this word corresponds to multiple tokens in ddp result,
+#                 # find the most similar token by edit distance
+#                 # ignore "[" and "]"
+#                 ddp_tok_id = None
+#                 min_dis = 9999
+#                 for tk_idx in range(tok_sps[0][0], tok_sps[-1][1]):
+#                     ddp_wd = ddp_res["word"][tk_idx]
+#                     l_dis = Levenshtein.distance(re.sub("[\[\]]", "", ddp_wd), re.sub("[\[\]]", "", word))
+#                     if l_dis < min_dis:
+#                         min_dis = l_dis
+#                         ddp_tok_id = tk_idx
+#             pos_tag = ddp_res["postag"][ddp_tok_id]
+#             pos_tag_list.append(pos_tag)
+#
+#             ddp_head_tok_id = ddp_res["head"][ddp_tok_id] - 1
+#             deprel = ddp_res["deprel"][ddp_tok_id]
+#
+#             ddp_head_ch_sp = ddp_tok2char_span[ddp_head_tok_id]
+#             ddp_head_ctok_spans = cchar2tok_span[ddp_head_ch_sp[0]:ddp_head_ch_sp[1]]
+#             for head_ctok_idx in range(ddp_head_ctok_spans[0][0], ddp_head_ctok_spans[-1][1]):
+#                 deprel_list.append([wid, head_ctok_idx, deprel])
+#         sample["pos_tag_list"] = pos_tag_list
+#         sample["dependency_list"] = deprel_list
+#     return data
 
-def preprocess_duie():
+
+def preprocess_duie2():
     data_dir = "../../data/ori_data/duie_comp2021_bk"
     save_dir = "../../data/ori_data/duie_comp2021"
     if not os.path.exists(save_dir):
@@ -1724,123 +1922,227 @@ def preprocess_duie():
     valid_data = load_data(os.path.join(data_dir, "valid_data.json"))
     test_data = load_data(os.path.join(data_dir, "test_data_1.json"))
 
+    def clean_txt(txt):
+        # txt = re.sub("(\d+)(\d{4}年)", r"\1 \2", txt)
+        txt = re.sub("(\d+)((1[0-9]|20)\d{2}年)", r"\1 \2", txt)
+
+        txt = re.sub("(\d+)(1[0-2]月)", r"\1 \2", txt)
+        txt = re.sub("(1)([3-9]月)", r"\1 \2", txt)
+        txt = re.sub("(\d+[2-9])(0?[1-9]月)", r"\1 \2", txt)
+
+        # txt = re.sub("(\d+)([12][0-9]日)", r"\1 \2", txt)
+        # txt = re.sub("(\d+)(3[01]日)", r"\1 \2", txt)
+        # txt = re.sub("(3)([2-9]日)", r"\1 \2", txt)
+        # txt = re.sub("(\d+[4-9])(0?[1-9]日)", r"\1 \2", txt)
+        return txt
+
     # fix data
-    for sample in tqdm(train_data + valid_data):
+    for sample in tqdm(train_data + valid_data + test_data, desc="clean"):
+        # fix text
         text = sample["text"]
-
         if text == "2  朱美音21967出生在江西南昌，1989年毕业于江西科技师范大学外语系英语专业，后来分配至鹰潭铁路一中任英语教师":
-            sample["text"] = "2  朱美音 1967出生在江西南昌，1989年毕业于江西科技师范大学外语系英语专业，后来分配至鹰潭铁路一中任英语教师"
-            # sample["postag"] = [{"word": w, } for w in jieba.cut(sample["text"])]
+            text = "2  朱美音 1967出生在江西南昌，1989年毕业于江西科技师范大学外语系英语专业，后来分配至鹰潭铁路一中任英语教师"
+            sample["text"] = text
         if text == "人物简介王珊2，女，19441，1968年毕业于北京大学物理系":
-            sample["text"] = "人物简介王珊2，女，1944，1968年毕业于北京大学物理系"
-            # sample["postag"] = [{"word": w, } for w in jieba.cut(sample["text"])]
+            text = "人物简介王珊2，女，1944，1968年毕业于北京大学物理系"
+            sample["text"] = text
         if text == "影片信息电视剧影片名称：舞动芝加哥第二季  影片类型：欧美剧  影片语言：英语  上映年份：20121演员表剧情介绍美国芝加哥，单亲女孩CeCe（Bella Thorne饰）和闺蜜Rocky（Zendaya Coleman饰）原本只是两个爱跳舞的普通初中生":
-            sample[
-                "text"] = "影片信息电视剧影片名称：舞动芝加哥第二季  影片类型：欧美剧  影片语言：英语  上映年份：2012 演员表剧情介绍美国芝加哥，单亲女孩CeCe（Bella Thorne饰）和闺蜜Rocky（Zendaya Coleman饰）原本只是两个爱跳舞的普通初中生"
-            # sample["postag"] = [{"word": w, } for w in jieba.cut(sample["text"])]
-        if text == "http://news.sohu.com/20081221/n261333381.shtml 12月20日，西北政法大学动物保护法研究中心挂牌成立 同时，由西北政法大学和中国社会科学院法学研究所共同主办的“中国《动物保护法》研究项目”正式启动 　　图为西北政法大学动物保护法研究中心主任孙江(左一)从西北政法大学校长贾宇教授(左二)手中接过“西北政法大学动物保护研究中心”的牌匾":
-            sample[
-                "text"] = "2008，西北政法大学动物保护法研究中心挂牌成立 同时，由西北政法大学和中国社会科学院法学研究所共同主办的“中国《动物保护法》研究项目”正式启动 　　图为西北政法大学动物保护法研究中心主任孙江(左一)从西北政法大学校长贾宇教授(左二)手中接过“西北政法大学动物保护研究中心”的牌匾"
-        if text in {"于卫涛，1976年出生于河南省通许县，2013年携手刘洋创办河南欣赏网络科技集团，任该集团董事长，专注于我国大中小型企业提供专业的网络服务，带动很多企业网络方向的转型",
-                    "1962年周明牂在中国植物保护学会成立大会上，作了《我国害虫农业防治研究现状和展望》的学术报告，1963年在《人民日报》上发表《结合耕作防治害虫》一文"}:
-            new_spo_list = [spo for spo in sample["spo_list"] if spo["predicate"] != "所属专辑"]
-            sample["spo_list"] = new_spo_list
+            text = "影片信息电视剧影片名称：舞动芝加哥第二季  影片类型：欧美剧  影片语言：英语  上映年份：2012 1演员表剧情介绍美国芝加哥，单亲女孩CeCe（Bella Thorne饰）和闺蜜Rocky（Zendaya Coleman饰）原本只是两个爱跳舞的普通初中生"
+            sample["text"] = text
+        # {"text": "2 0014年，在拍摄《关中秘事》时，苗乙乙遇到了一个生命中最重要的人——亓亮"}
 
-        # if text in {
-        #     "该片获1988年第八届中国电影金鸡奖最佳女主角奖（潘虹）",
-        #             }:
-        #     print("2 fix")
+        if "spo_list" in sample:
+            # fix cases
+            if text in {"于卫涛，1976年出生于河南省通许县，2013年携手刘洋创办河南欣赏网络科技集团，任该集团董事长，专注于我国大中小型企业提供专业的网络服务，带动很多企业网络方向的转型",
+                        "1962年周明牂在中国植物保护学会成立大会上，作了《我国害虫农业防治研究现状和展望》的学术报告，1963年在《人民日报》上发表《结合耕作防治害虫》一文"}:
+                new_spo_list = [spo for spo in sample["spo_list"] if spo["predicate"] != "所属专辑"]
+                sample["spo_list"] = new_spo_list
+            if "http://news.sohu.com/20081221/n261333381.shtml 12月20日" in text:
+                text = "2008年12月20日，西北政法大学动物保护法研究中心挂牌成立 同时，由西北政法大学和中国社会科学院法学研究所共同主办的“中国《动物保护法》研究项目”正式启动 　　图为西北政法大学动物保护法研究中心主任孙江(左一)从西北政法大学校长贾宇教授(左二)手中接过“西北政法大学动物保护研究中心”的牌匾"
+                sample["text"] = text
 
-        for spo in sample["spo_list"]:
-            if text == '比如张艺谋的两届威尼斯国际电影节金狮奖 ，第38届柏林国际电影节金熊奖 ，两届英国电影学院奖最佳外语片 ，第55届台湾电影金马奖最佳导演奖 ，第05届中国电影华表奖最佳导演奖 ，2008影响世界华人大奖' and \
-                    spo["object"]["@value"] == '中国电影华表奖最佳导演奖' and spo["object"]["period"] == "5":
-                spo["object"]["period"] = "05"
-            if text == '陈思诚，曾获得第三届英国万像国际华语电影节优秀男配角奖，第21届北京大学生电影节最佳导演处女作奖，第23届北京大学生电影节最佳编剧奖等奖项，前两年背叛佟丽娅一事也是闹得人尽皆知' \
-                    and spo["object"]["@value"] == '英国万像国际华语电影节优秀男配角奖' and spo["object"]["period"] == "3":
-                spo["object"]["period"] = "三"
-            if text == '1982年，许冠文凭《摩登保镖》，勇夺第一届香港电影金像奖最佳男主角奖' \
-                    and spo["object"]["@value"] == '香港电影金像奖最佳男主角奖' and spo["object"]["period"] == "1":
-                spo["object"]["period"] = "一"
-            if text == '亚洲电影大奖终身成就奖:第02届，2008年:山田洋次第04届，2010年:阿米达巴彻第05届，2011年:邹文怀第06届，2012年:许鞍华第08届，2014年:侯孝贤第09届，2015年:林权泽第10届，2016年:树木希林&袁和平第11届，2017年:徐克第12届，2018年:张艾嘉第13届，2019年:李沧东' \
-                    and spo["object"]["@value"] == '亚洲电影大奖终身成就奖' and "period" in spo["object"] and spo["object"][
-                "period"] == "9":
-                spo["object"]["period"] = "09"
-            if text == '亚洲电影大奖终身成就奖:第02届，2008年:山田洋次第04届，2010年:阿米达巴彻第05届，2011年:邹文怀第06届，2012年:许鞍华第08届，2014年:侯孝贤第09届，2015年:林权泽第10届，2016年:树木希林&袁和平第11届，2017年:徐克第12届，2018年:张艾嘉第13届，2019年:李沧东' \
-                    and spo["object"]["@value"] == '亚洲电影大奖终身成就奖' and "period" in spo["object"] and spo["object"][
-                "period"] == "6":
-                spo["object"]["period"] = "06"
-            if text == '《007》、《谍影重重》作为曾经的特工片，燃爆了整个好莱坞，前者至今收获约70亿美元，后者至今收获约11亿美元，在收获不菲票房的同时，也赢尽了口碑' \
-                    and spo["object"]["@value"] == '70亿美元' and spo["subject"] == "7":
-                spo["subject"] = "007"
-            if text == '1987年，由作家张弦编剧、李亚林导演的电影《井》完成，潘虹因在该片中扮演徐丽莎而获得第八届中国电影金鸡奖最佳女主角奖、第18届意大利陶尔米纳国际电影节最佳女主角奖' \
-                    and spo["object"]["@value"] == '中国电影金鸡奖最佳女主角' and spo["object"]["period"] == "8":
-                spo["object"]["period"] = "八"
-            if text == '该片获1988年第八届中国电影金鸡奖最佳女主角奖（潘虹）' \
-                    and spo["object"]["@value"] == '中国电影金鸡奖最佳女主角' and spo["object"]["period"] == "8":
-                spo["object"]["period"] = "八"
-            if text == "出生于1984年9月26日，河南郑州，学历：本科，特长：主持、朗诵、表演、国画、平面模特、童声模仿 毕业院校/专业：中国传媒大学/播音与主持艺术专业，管文君，中央电视台体育频道（CCTV5）体育晨报《天气体育》主持人，同时，还主持中央电视台经济频道（CCTV2）《第一印象》、中央电视台农业频道《农业气象》和中国气象频道《天气直播间》等栏目" \
-                    and spo["object"]["@value"] == "" and spo["predicate"] == "毕业院校":
-                spo["object"]["@value"] = "中国传媒大学"
-            if text == "《白色梦幻》是一部于1998年1月1日出品的电视剧，由太纲导演，由田岷、许亚军、盖丽丽 和何晴主演，一共有20集，每集48分钟" \
-                    and spo["object"]["@value"] == "" and spo["predicate"] == "上映时间":
-                spo["object"]["@value"] = "1998年1月1日"
-                spo["subject"] = "白色梦幻"
-            if text == "《闪点行动第五季》是一部由编剧Stephanie Morgenstern编写的一部动作剧情电视剧，出品时间为2012年09月20日" \
-                    and spo["object"]["@value"] == "" and spo["predicate"] == "上映时间":
-                spo["object"]["@value"] = "2012年09月20日"
-                spo["subject"] = "闪点行动第五季"
+                for spo in sample["spo_list"]:
+                    if spo["object"]["@value"] == "2008":
+                        spo["object"]["@value"] = "2008年12月20日"
 
-            if text == "第六名 刘悦 1982.1.25 江苏淮安 ——2001年10月 首届百事全国新星大赛江苏地区选拔赛一等奖 最佳激情奖 明日之星称号，2002年6月 中韩新星选秀大赛独唱组特等奖，2004年6月 中央电视台《非常6+1》， 湖南卫视超级女生成都赛区前10 ， 2011年 第一届华人星光大道第七名 用灵魂唱歌的歌手，唱的无数听众流泪，不愧“小刘欢”，因此成功拜师大刘欢 9 S" \
-                    and spo["predicate"] == "获奖" and "period" in spo["object"] and spo["object"]["period"] == "":
-                spo["object"]["period"] = "首"
-            if text == "2010年获Music Radio中国Top排行榜内地最佳创作歌手奖，第八届东南劲爆音乐榜颁奖典礼劲爆内地最佳唱作歌手奖、劲爆最佳作曲人奖李健以重庆为起点，开启2018-2020“不止 是李健”世界巡回演唱会" \
-                    and spo["predicate"] == "获奖" and "period" in spo["object"] and spo["object"]["period"] == "":
-                spo["object"]["period"] = "八"
+            if text == "2012年 人再囧途之泰囧 票房12.67亿":
+                new_spo_list = [spo for spo in sample["spo_list"] if spo["subject"] != "12年"]
+                sample["spo_list"] = new_spo_list
 
-            if spo["predicate"] in {"专业代码", "邮政编码"} and text[
-                re.search(spo["object"]["@value"], text).span()[0] - 1] == "0":
-                spo["object"]["@value"] = "0" + spo["object"]["@value"]
+            for spo in sample.get("spo_list", []):
+                if spo["object"]["@value"] == "162015年12月25日":
+                    spo["object"]["@value"] = "2015年12月25日"
+                if "作为新专辑《00:00》中第一首确定收入的歌曲" in text \
+                        and spo["object"]["@value"] == "0:00" and spo["predicate"] == "所属专辑":
+                    spo["object"]["@value"] = "00:00"
 
-            # strip redundant whitespaces and unknown characters
-            spo["subject"] = clean_entity(spo["subject"])
-            for k, item in spo["object"].items():
-                spo["object"][k] = clean_entity(item)
+                if text == "从化市喜乐登防震减灾科普馆成立于2010月27日,在广州从化市喜乐登青少年素质拓展训练中心举行了喜乐登防震减灾科普馆开馆及广东省防震减灾科普基地挂牌仪式" \
+                    and spo["object"]["@value"] == "2010月27日":
+                    text = "从化市喜乐登防震减灾科普馆成立于2010年10月27日,在广州从化市喜乐登青少年素质拓展训练中心举行了喜乐登防震减灾科普馆开馆及广东省防震减灾科普基地挂牌仪式"
+                    spo["object"]["@value"] = "2010年10月27日"
 
-        new_spo_list = []
-        for spo in sample["spo_list"]:
-            if spo["subject"].lower() not in text.lower() or spo["object"]["@value"].lower() not in text.lower():
-                # drop wrong spo
-                continue
+                if text == '比如张艺谋的两届威尼斯国际电影节金狮奖 ，第38届柏林国际电影节金熊奖 ，两届英国电影学院奖最佳外语片 ，第55届台湾电影金马奖最佳导演奖 ，第05届中国电影华表奖最佳导演奖 ，2008影响世界华人大奖' and \
+                        spo["object"]["@value"] == '中国电影华表奖最佳导演奖' and spo["object"]["period"] == "5":
+                    spo["object"]["period"] = "05"
+                if text == '陈思诚，曾获得第三届英国万像国际华语电影节优秀男配角奖，第21届北京大学生电影节最佳导演处女作奖，第23届北京大学生电影节最佳编剧奖等奖项，前两年背叛佟丽娅一事也是闹得人尽皆知' \
+                        and spo["object"]["@value"] == '英国万像国际华语电影节优秀男配角奖' and spo["object"]["period"] == "3":
+                    spo["object"]["period"] = "三"
+                if text == '1982年，许冠文凭《摩登保镖》，勇夺第一届香港电影金像奖最佳男主角奖' \
+                        and spo["object"]["@value"] == '香港电影金像奖最佳男主角奖' and spo["object"]["period"] == "1":
+                    spo["object"]["period"] = "一"
+                if text == '亚洲电影大奖终身成就奖:第02届，2008年:山田洋次第04届，2010年:阿米达巴彻第05届，2011年:邹文怀第06届，2012年:许鞍华第08届，2014年:侯孝贤第09届，2015年:林权泽第10届，2016年:树木希林&袁和平第11届，2017年:徐克第12届，2018年:张艾嘉第13届，2019年:李沧东' \
+                        and spo["object"]["@value"] == '亚洲电影大奖终身成就奖' and "period" in spo["object"] and spo["object"][
+                    "period"] == "9":
+                    spo["object"]["period"] = "09"
+                if "第九届国际华裔小姐获奖名单" in text and spo["object"]["period"] == "9":
+                    spo["object"]["period"] = "九"
+                if "勇夺第一届香港电影金像奖最佳男主角奖" in text and spo["object"]["period"] == "1":
+                    spo["object"]["period"] = "一"
+                if "获第八届中国电影金鸡奖最佳女主角奖" in text and spo["object"]["period"] == "8":
+                    spo["object"]["period"] = "八"
+                if "第九届香港电影金像奖最佳女配角" in text and spo["object"]["period"] == "9":
+                    spo["object"]["period"] = "九"
+                if "《垂帘听政》获第三届香港电影金像奖" in text and spo["object"]["period"] == "3":
+                    spo["object"]["period"] = "三"
+                if text == '亚洲电影大奖终身成就奖:第02届，2008年:山田洋次第04届，2010年:阿米达巴彻第05届，2011年:邹文怀第06届，2012年:许鞍华第08届，2014年:侯孝贤第09届，2015年:林权泽第10届，2016年:树木希林&袁和平第11届，2017年:徐克第12届，2018年:张艾嘉第13届，2019年:李沧东' \
+                        and spo["object"]["@value"] == '亚洲电影大奖终身成就奖' and "period" in spo["object"] and spo["object"][
+                    "period"] == "6":
+                    spo["object"]["period"] = "06"
+                if text == '《007》、《谍影重重》作为曾经的特工片，燃爆了整个好莱坞，前者至今收获约70亿美元，后者至今收获约11亿美元，在收获不菲票房的同时，也赢尽了口碑' \
+                        and spo["object"]["@value"] == '70亿美元' and spo["subject"] == "7":
+                    spo["subject"] = "007"
+                if text == '1987年，由作家张弦编剧、李亚林导演的电影《井》完成，潘虹因在该片中扮演徐丽莎而获得第八届中国电影金鸡奖最佳女主角奖、第18届意大利陶尔米纳国际电影节最佳女主角奖' \
+                        and spo["object"]["@value"] == '中国电影金鸡奖最佳女主角' and spo["object"]["period"] == "8":
+                    spo["object"]["period"] = "八"
+                if text == '该片获1988年第八届中国电影金鸡奖最佳女主角奖（潘虹）' \
+                        and spo["object"]["@value"] == '中国电影金鸡奖最佳女主角' and spo["object"]["period"] == "8":
+                    spo["object"]["period"] = "八"
+                if text == "出生于1984年9月26日，河南郑州，学历：本科，特长：主持、朗诵、表演、国画、平面模特、童声模仿 毕业院校/专业：中国传媒大学/播音与主持艺术专业，管文君，中央电视台体育频道（CCTV5）体育晨报《天气体育》主持人，同时，还主持中央电视台经济频道（CCTV2）《第一印象》、中央电视台农业频道《农业气象》和中国气象频道《天气直播间》等栏目" \
+                        and spo["object"]["@value"] == "" and spo["predicate"] == "毕业院校":
+                    spo["object"]["@value"] = "中国传媒大学"
+                if text == "《白色梦幻》是一部于1998年1月1日出品的电视剧，由太纲导演，由田岷、许亚军、盖丽丽 和何晴主演，一共有20集，每集48分钟" \
+                        and spo["object"]["@value"] == "" and spo["predicate"] == "上映时间":
+                    spo["object"]["@value"] = "1998年1月1日"
+                    spo["subject"] = "白色梦幻"
+                if text == "《闪点行动第五季》是一部由编剧Stephanie Morgenstern编写的一部动作剧情电视剧，出品时间为2012年09月20日" \
+                        and spo["object"]["@value"] == "" and spo["predicate"] == "上映时间":
+                    spo["object"]["@value"] = "2012年09月20日"
+                    spo["subject"] = "闪点行动第五季"
 
-            if spo["subject"] not in text:  # if not in, try recover upper case
-                m = re.search(re.escape(spo["subject"].lower()), text.lower())
-                # print("{}----{}".format(spo["subject"], text[m.span()[0]:m.span()[1]]))
-                spo["subject"] = text[m.span()[0]:m.span()[1]]
+                if text == "第六名 刘悦 1982.1.25 江苏淮安 ——2001年10月 首届百事全国新星大赛江苏地区选拔赛一等奖 最佳激情奖 明日之星称号，2002年6月 中韩新星选秀大赛独唱组特等奖，2004年6月 中央电视台《非常6+1》， 湖南卫视超级女生成都赛区前10 ， 2011年 第一届华人星光大道第七名 用灵魂唱歌的歌手，唱的无数听众流泪，不愧“小刘欢”，因此成功拜师大刘欢 9 S" \
+                        and spo["predicate"] == "获奖" and "period" in spo["object"] and spo["object"]["period"] == "":
+                    spo["object"]["period"] = "首"
+                if text == "2010年获Music Radio中国Top排行榜内地最佳创作歌手奖，第八届东南劲爆音乐榜颁奖典礼劲爆内地最佳唱作歌手奖、劲爆最佳作曲人奖李健以重庆为起点，开启2018-2020“不止 是李健”世界巡回演唱会" \
+                        and spo["predicate"] == "获奖" and "period" in spo["object"] and spo["object"]["period"] == "":
+                    spo["object"]["period"] = "八"
 
-            if spo["object"]["@value"] not in text:
-                m = re.search(re.escape(spo["object"]["@value"].lower()), text.lower())
-                # print("{}----{}".format(spo["object"], text[m.span()[0]:m.span()[1]]))
-                spo["object"]["@value"] = text[m.span()[0]:m.span()[1]]
-            new_spo_list.append(spo)
+                if spo["predicate"] in {"专业代码", "邮政编码"} and text[
+                    re.search(spo["object"]["@value"], text).span()[0] - 1] == "0":
+                    spo["object"]["@value"] = "0" + spo["object"]["@value"]
 
-        filtered_spo_list = []
-        for spo in new_spo_list:
-            assert spo["subject"] in text
+                # strip redundant whitespaces and unknown characters
+                spo["subject"] = clean_entity(spo["subject"])
+                for k, item in spo["object"].items():
+                    spo["object"][k] = clean_entity(item)
 
-            if spo["subject"].strip() == "":
-                continue
+            # fix spo
+            new_spo_list = []
+            for spo in sample.get("spo_list", []):
+                if spo["subject"].lower() not in text.lower() or spo["object"]["@value"].lower() not in text.lower():
+                    # drop wrong spo
+                    continue
 
-            bad_spo = False
-            for item in spo["object"].values():
-                assert item in text
-                if item.strip() == "":
-                    bad_spo = True
-                    break
+                if spo["subject"] not in text:  # if not in, try recover upper case
+                    m = re.search(re.escape(spo["subject"].lower()), text.lower())
+                    # print("{}----{}".format(spo["subject"], text[m.span()[0]:m.span()[1]]))
+                    spo["subject"] = text[m.span()[0]:m.span()[1]]
 
-            if not bad_spo:
-                filtered_spo_list.append(spo)
+                if spo["object"]["@value"] not in text:
+                    m = re.search(re.escape(spo["object"]["@value"].lower()), text.lower())
+                    # print("{}----{}".format(spo["object"], text[m.span()[0]:m.span()[1]]))
+                    spo["object"]["@value"] = text[m.span()[0]:m.span()[1]]
+                new_spo_list.append(spo)
 
-        sample["spo_list"] = filtered_spo_list
+            filtered_spo_list = []
+            for spo in new_spo_list:
+                assert spo["subject"] in text
+
+                if spo["subject"].strip() == "":
+                    continue
+
+                bad_spo = False
+                for item in spo["object"].values():
+                    assert item in text
+                    if item.strip() == "":
+                        bad_spo = True
+                        break
+
+                if not bad_spo:
+                    filtered_spo_list.append(spo)
+
+            sample["spo_list"] = filtered_spo_list
+
+        # fix text by patterns
+        text = clean_txt(text)
+        sample["text"] = text
+
+    # ddp = DDParser(use_pos=True, buckets=True)
+    # ddp_cache = "./tmp_ddp_res_1.jsonlines"
+    # all_data_len = len(train_data) + len(valid_data) + len(test_data)
+    # if os.path.exists(ddp_cache):
+    #     ddp_results = load_data(ddp_cache)
+    #     assert len(ddp_results) == all_data_len
+    # else:
+    #     ddp_results = []
+    #     texts = [sample["text"] for sample in train_data + valid_data + test_data]
+    #     for idx in tqdm(range(0, all_data_len, 100)):
+    #         ddp_results.extend(ddp.parse(texts[idx:idx + 100]))
+    #     save_as_json_lines(ddp_results, ddp_cache)
+    #
+    # for sample_idx, sample in tqdm(enumerate(train_data + valid_data + test_data), desc="add features"):
+    #     text = sample["text"]
+    #     ddp_res = ddp_results[sample_idx]
+    #     ddp_tok2char_span = utils.get_tok2char_span_map(ddp_res["word"])
+    #     ddp_char2tok_span = utils.get_char2tok_span(ddp_tok2char_span)
+    #
+    #     all_ent_list = Preprocessor.get_all_possible_entities(sample)
+    #     tok_res = ChineseWordTokenizer.tokenize_plus(text, ent_list=all_ent_list)
+    #     ctok_word2char_span = tok_res["word2char_span"]
+    #     cchar2tok_span = utils.get_char2tok_span(ctok_word2char_span)
+    #     sample["word2char_span"] = ctok_word2char_span
+    #     sample["word_list"] = tok_res["word_list"]
+    #
+    #     pos_tag_list, deprel_list = [], []
+    #     for wid, word in enumerate(tok_res["word_list"]):
+    #         ch_sp = ctok_word2char_span[wid]
+    #         tok_sps = ddp_char2tok_span[ch_sp[0]:ch_sp[1]]
+    #         # try:
+    #         #     assert tok_sps[0][0] == tok_sps[-1][1] - 1
+    #         # except:
+    #         #     print("pre duie")
+    #         if tok_sps[0][0] == tok_sps[-1][1] - 1:
+    #             ddp_tok_id = tok_sps[0][0]
+    #         else:
+    #             ddp_tok_id = None
+    #             min_dis = 9999
+    #             for tk_idx in range(tok_sps[0][0], tok_sps[-1][1]):
+    #                 ddp_wd = ddp_res["word"][tk_idx]
+    #                 l_dis = Levenshtein.distance(re.sub("[\[\]]", "", ddp_wd), re.sub("[\[\]]", "", word))
+    #                 if l_dis < min_dis:
+    #                     min_dis = l_dis
+    #                     ddp_tok_id = tk_idx
+    #         pos_tag = ddp_res["postag"][ddp_tok_id]
+    #         pos_tag_list.append(pos_tag)
+    #
+    #         ddp_head_tok_id = ddp_res["head"][ddp_tok_id] - 1
+    #         deprel = ddp_res["deprel"][ddp_tok_id]
+    #
+    #         ddp_head_ch_sp = ddp_tok2char_span[ddp_head_tok_id]
+    #         ddp_head_ctok_spans = cchar2tok_span[ddp_head_ch_sp[0]:ddp_head_ch_sp[1]]
+    #         for head_ctok_idx in range(ddp_head_ctok_spans[0][0], ddp_head_ctok_spans[-1][1]):
+    #             deprel_list.append([wid, head_ctok_idx, deprel])
+    #     sample["pos_tag_list"] = pos_tag_list
+    #     sample["dependency_list"] = deprel_list
 
     train_data_path = os.path.join(save_dir, "train_data.json")
     valid_data_path = os.path.join(save_dir, "valid_data.json")
@@ -1927,7 +2229,9 @@ def trans2duie2_format(pred_data):
         "官方语言": {"object_type": {"@value": "语言"}, "predicate": "官方语言", "subject_type": "国家"},
     }
     new_pred_data = []
-    for sample in pred_data:
+    ori_test_data = load_data("../../data/ori_data/duie_comp2021_bk/test_data_1.json")
+
+    for sample_idx, sample in enumerate(pred_data):
         new_spo_list = []
         spe_rel_map = {}
         spe_key2predicate = {
@@ -1960,29 +2264,377 @@ def trans2duie2_format(pred_data):
                                           if k in new_spo["object"]}
                 new_spo_list.append(new_spo)
 
+        assert re.sub("\s", "", sample["text"]) == re.sub("\s", "", ori_test_data[sample_idx]["text"])
         new_sample = {
-            "text": sample["text"],
+            "text": ori_test_data[sample_idx]["text"],
             "spo_list": Preprocessor.unique_list(new_spo_list),
         }
         new_pred_data.append(new_sample)
     return new_pred_data
 
 
+def merge_events4doc_ee(event_list, sim_entity=0.6):
+    new_event_list = []
+    event_type_dict = {}
+    for event_dict in event_list:
+        new_argument_dict = {}
+        for argument_dict in event_dict["argument_list"]:
+            new_argument_dict.setdefault(argument_dict["type"], []).append(argument_dict["text"])
+
+        event_type_dict.setdefault(event_dict["event_type"], []).append(new_argument_dict)
+
+    for event_type, event_so_list in event_type_dict.items():
+        # event_so_list = sorted(event_so_list, key=lambda x: len(x), reverse=False)
+        drop_duplicate_event(event_so_list, sim_entity)
+        for event_so_dict in event_so_list:
+            event_dict = {}
+            event_dict["event_type"] = event_type
+            event_dict["argument_list"] = []
+            for role, arg_list in event_so_dict.items():
+                new_arg_dict = {}
+                arg_list_sort = sorted(arg_list, key=lambda x: len(x), reverse=True)
+                for index, argument in enumerate(arg_list_sort):
+                    add_new_arg = True
+                    new_arg_dict_copy = copy.deepcopy(new_arg_dict)
+                    for new_arg, new_arg_value in new_arg_dict_copy.items():
+                        new_arg_value_copy = copy.deepcopy(new_arg_value)
+                        new_arg_value_copy.append(new_arg)
+                        break_circle = False
+                        for temp_arg in new_arg_value_copy:
+                            condition = set(argument).issubset(set(temp_arg)) or set(temp_arg).issubset(
+                                set(argument))
+                            if condition:
+                                break_circle = True
+                                if len(argument) > len(new_arg):
+                                    new_arg_dict[argument] = new_arg_value_copy
+                                    new_arg_dict.pop(new_arg)
+                                    add_new_arg = False
+                                    break
+                                else:
+                                    new_arg_dict.setdefault(new_arg, []).append(argument)
+                                    add_new_arg = False
+                                    break
+
+                        if break_circle: break
+                    if add_new_arg:
+                        new_arg_dict.setdefault(argument, [])
+                for new_arg, new_arg_value in new_arg_dict.items():
+                    # if new_arg_value:
+                    #     print("保留：", new_arg)
+                    #     print("删除：", new_arg_value)
+                    #     print("--")
+                    argument_dict = {}
+                    argument_dict["type"] = role
+                    argument_dict["text"] = new_arg
+                    if argument_dict not in event_dict["argument_list"]:
+                        event_dict["argument_list"].append(argument_dict)
+            new_event_list.append(event_dict)
+    return new_event_list
+
+
+def drop_duplicate_event(event_so_list, sim_entity):
+    event_so_list_copy = copy.deepcopy(event_so_list)
+    for i in range(len(event_so_list_copy)):
+
+        for j in range(i + 1, len(event_so_list_copy)):
+            is_duplicate = True
+
+            s_i_role_set = set()
+            for event_s_i, event_o_i in event_so_list_copy[i].items():
+                s_i_role_set.add(event_s_i)
+            s_j_role_set = set()
+            # 如果两个事件没有相同role，就合并，如果有相同role，判断role对应的value是否有重复的，有重复的就合并。
+            # TODO 实体里也有些，可以加入
+            for event_s_j, event_o_j in event_so_list_copy[j].items():
+                s_j_role_set.add(event_s_j)
+                event_so_i_value = event_so_list_copy[i].get(event_s_j, [])
+                if event_so_i_value:  # 判断某个相同role的value是否有重复的
+                    has_duplicate_value = False
+                    for entity_i in event_so_i_value:
+                        for entity_j in event_o_j:
+                            if (entity_i in entity_j) or \
+                                    (entity_j in entity_i) or \
+                                    jaccard_similarity(entity_i, entity_j) > sim_entity or \
+                                    set(entity_i).issubset(entity_j) or \
+                                    set(entity_j).issubset(entity_i):
+                                has_duplicate_value = True
+                                break
+                        if has_duplicate_value:
+                            break
+                    if not has_duplicate_value:
+                        is_duplicate = False
+                        break
+            if is_duplicate:  # 两个结果进行合并
+                for event_s_i, event_o_i in event_so_list_copy[i].items():
+                    if event_s_i not in event_so_list[j]:
+                        event_so_list[j].update({event_s_i: event_o_i})
+                    else:
+                        for event_o in event_o_i:
+                            if event_o not in event_so_list[j][event_s_i]:
+                                event_so_list[j][event_s_i].append(event_o)
+
+                event_so_list.remove(event_so_list_copy[i])
+                drop_duplicate_event(event_so_list, sim_entity)
+                return
+            else:
+                continue
+    return
+
+
+def jaccard_similarity(s1, s2):
+    def add_space(s):
+        return ' '.join(list(s))
+
+    # 将字中间加入空格
+    s1, s2 = add_space(s1), add_space(s2)
+    # 转化为TF矩阵
+    cv = CountVectorizer(tokenizer=lambda s: s.split())
+    corpus = [s1, s2]
+    vectors = cv.fit_transform(corpus).toarray()
+    # 获取词表内容
+    ret = cv.get_feature_names()
+    # print(ret)
+    # 求交集
+    numerator = np.sum(np.min(vectors, axis=0))
+    # 求并集
+    denominator = np.sum(np.max(vectors, axis=0))
+    # 计算杰卡德系数
+    return 1.0 * numerator / denominator
+
+
+def trans2duee_fin_format(data):
+    new_data = []
+    for sample in data:
+        new_sample = {
+            "id": sample["id"],
+            "event_list": [],
+        }
+        for event in sample["event_list"]:
+            if len(event["argument_list"]) == 0:
+                continue
+            arg_list = utils.unique_list([{"type": arg["type"], "text": arg["text"]} for arg in event["argument_list"]])
+            event_type = event["event_type"]
+            if event_type in {"正式上市", "筹备上市", "终止上市", "暂停上市"}:
+                arg_list.append({"type": "环节", "text": event_type})
+                event_type = "公司上市"
+
+            new_sample["event_list"].append({
+                "event_type": event_type,
+                "argument_list": sorted(arg_list, key=lambda x: str(x)),
+            })
+        event_list = merge_events4doc_ee(utils.unique_list(new_sample["event_list"]), 0.6)
+        new_event_list = []
+        for event in event_list:
+            new_arg_list = [{"role": arg["type"], "argument": arg["text"]} for arg in event["argument_list"]]
+            new_event_list.append({
+                "event_type": event["event_type"],
+                "arguments": new_arg_list,
+            })
+        new_sample["event_list"] = new_event_list
+        new_data.append(new_sample)
+    return new_data
+
+
+def trans_cmeee():
+    data_in_dir = "../../data/ori_data/CMeEE_bk"
+    train_path = os.path.join(data_in_dir, "CMeEE_train.json")
+    valid_path = os.path.join(data_in_dir, "CMeEE_dev.json")
+    test_path = os.path.join(data_in_dir, "CMeEE_test.json")
+    train_data = load_data(train_path)
+    valid_data = load_data(valid_path)
+    test_data = load_data(test_path)
+
+    def trans(data):
+        new_data = []
+        for sample in tqdm(data, desc="transform CMeEE"):
+            text = sample["text"]
+            new_sample = {
+                "text": text,
+            }
+            if "entities" in sample:
+                new_entity_list = []
+                for ent in sample["entities"]:
+                    char_sp = [ent["start_idx"], ent["end_idx"] + 1]
+                    if char_sp[0] == char_sp[1] or ent["entity"] == "":
+                        continue
+                    assert text[char_sp[0]:char_sp[1]] == ent["entity"]
+                    new_entity_list.append({
+                        "text": ent["entity"],
+                        "char_span": char_sp,
+                        "type": ent["type"],
+                    })
+                new_sample["entity_list"] = new_entity_list
+            new_data.append(new_sample)
+        return new_data
+    train_data = trans(train_data)
+    valid_data = trans(valid_data)
+    test_data = trans(test_data)
+    return train_data, valid_data, test_data
+
+
+def trans2cmeee_format():
+    in_path = "../../data/res_data/CMeEE/ner+SNER+TSNER/3sax9k60/model_state_dict_5_66.62/test_data.json"
+    out_path = "../../data/res_data/CMeEE/ner+SNER+TSNER/3sax9k60/model_state_dict_5_66.62/pred_data_formatted.json"
+    data = load_data(in_path)
+    new_data = []
+    for sample in data:
+        new_sample = {
+            "text": sample["text"],
+            "entities": [],
+        }
+        for ent in sample["entity_list"]:
+            new_sample["entities"].append({
+                "start_idx": ent["char_span"][0],
+                "end_idx": ent["char_span"][1] - 1,
+                "type": ent["type"],
+                "entity": ent["text"]
+            })
+        new_data.append(new_sample)
+    json.dump(new_data, open(out_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+
+
+def trans_tfboys_baselines2normal_format(baseline_name):
+    ac_path = "../../data/tfboys_baselines/{}/ac_prediction.json".format(baseline_name)
+    ed_path = "../../data/tfboys_baselines/{}/ed_prediction.json".format(baseline_name)
+    ed_data = load_data(ed_path)
+    ac_data = load_data(ac_path)
+    sent_id2event_pred = {}
+    sent_id2event_gold = {}
+
+    print(">>>>>>>>>>> baseline: {} >>>>>>>>>>>>>>".format(baseline_name))
+    print("ed_pred: {}".format(len(ed_data["prediction"])))
+    print("ed_ground: {}".format(len(ed_data["ground_truth"])))
+    print("ac_pred: {}".format(len(ac_data["prediction"])))
+    print("ac_ground: {}".format(len(ac_data["ground_truth"])))
+
+    for pred in ed_data["prediction"]:
+        sent_id2event_pred.setdefault(pred[0], {})
+        trigger_str = "{},{},{}".format(pred[1], pred[2], pred[3])
+        sent_id2event_pred[pred[0]][trigger_str] = {
+            "trigger": "unk",
+            "trigger_tok_span": [pred[1], pred[2]],
+            "event_type": pred[3],
+            "argument_list": [],
+        }
+
+    for pred in ac_data["prediction"]:
+        if pred[0] not in sent_id2event_pred:
+            continue
+        # try:
+        trigger_str = "{},{},{}".format(pred[2], pred[3], pred[1])
+        sent_id2event_pred[pred[0]][trigger_str]["argument_list"].append({
+            "tok_span": [pred[4], pred[5]],
+            "type": pred[6],
+        })
+        # except Exception as e:
+        #     print("trigger offset error in pred!!!")
+        #     for tri_str in sent_id2event_pred[pred[0]]:
+        #         tri_start, tri_end, et = tri_str.split(",")
+        #         tri_start, tri_end = int(tri_start), int(tri_end)
+        #         if tri_start <= pred[2] <= pred[3] <= tri_end and pred[1] == et:
+        #             sent_id2event_pred[pred[0]][tri_str]["argument_list"].append({
+        #                 "tok_span": [pred[4], pred[5]],
+        #                 "type": pred[6],
+        #             })
+        
+    for gold in ed_data["ground_truth"]:
+        sent_id2event_gold.setdefault(gold[0], {})
+        trigger_str = "{},{},{}".format(gold[1], gold[2], gold[3])
+        sent_id2event_gold[gold[0]][trigger_str] = {
+            "trigger": "unk",
+            "trigger_tok_span": [gold[1], gold[2]],
+            "event_type": gold[3],
+            "argument_list": [],
+        }
+    
+    for gold in ac_data["ground_truth"]:
+        # try:
+        trigger_str = "{},{},{}".format(gold[2], gold[3], gold[1])
+        sent_id2event_gold[gold[0]][trigger_str]["argument_list"].append({
+            "tok_span": [gold[4], gold[5]],
+            "type": gold[6],
+        })
+        # except Exception as e:
+        #     print("trigger offset error in gold!!!")
+        #     for tri_str in sent_id2event_gold[gold[0]]:
+        #         tri_start, tri_end, et = tri_str.split(",")
+        #         tri_start, tri_end = int(tri_start), int(tri_end)
+        #         if tri_start <= gold[2] <= gold[3] <= tri_end and gold[1] == et:
+        #             sent_id2event_gold[gold[0]][tri_str]["argument_list"].append({
+        #                 "tok_span": [gold[4], gold[5]],
+        #                 "type": gold[6],
+        #             })
+
+    sent_id2events_pred = {}
+    sent_id2events_gold = {}
+
+    for sent_id, event in sent_id2event_pred.items():
+        sent_id2events_pred.setdefault(sent_id, []).extend(event.values())
+
+    for sent_id, event in sent_id2event_gold.items():
+        sent_id2events_gold.setdefault(sent_id, []).extend(event.values())
+
+    pred_data, gold_data = [], []
+    for sent_id, gold_events in sent_id2events_gold.items():
+        gold_data.append({"id": sent_id, "event_list": gold_events})
+        pred_events = sent_id2events_pred.get(sent_id, [])
+        pred_data.append({"id": sent_id, "event_list": pred_events})
+        if sent_id in sent_id2events_pred:
+            del sent_id2events_pred[sent_id]
+
+    for sent_id, pred_events in sent_id2events_pred.items():
+        pred_data.append({"id": sent_id, "event_list": pred_events})
+        gold_events = sent_id2events_gold.get(sent_id, [])
+        gold_data.append({"id": sent_id, "event_list": gold_events})
+
+    def trans_sent_id(sent_id):
+        return re.sub('(.*?)\-(.*)', r"\1_\2", sent_id)
+    for sample in pred_data:
+        sample["id"] = trans_sent_id(sample["id"])
+    for sample in gold_data:
+        sample["id"] = trans_sent_id(sample["id"])
+    return pred_data, gold_data
+
+
 if __name__ == "__main__":
-    train_data, valid_data, test_data = trans_oie4()
+    # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys4doc_ee+RAIN+TRAIN/263bstht/model_state_dict_10_66.19/test_data_1.json"
+    # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys4doc_ee+RAIN+TRAIN/263bstht/model_state_dict_10_66.19/duee_fin.json"
+    # data = load_data(in_path)
+    # data_formated = trans2duee_fin_format(data)
+    # save_as_json_lines(data_formated, out_path)
 
-    data_out_dir = "../../data/ori_data/oie4"
-    if not os.path.exists(data_out_dir):
-        os.makedirs(data_out_dir)
-    train_save_path = os.path.join(data_out_dir, "train_data.json")
-    valid_save_path = os.path.join(data_out_dir, "valid_data.json")
-    test_save_path = os.path.join(data_out_dir, "test_data.json")
-    save_as_json_lines(train_data, train_save_path)
-    save_as_json_lines(valid_data, valid_save_path)
-    save_as_json_lines(test_data, test_save_path)
+    pred_data, gold_data = trans_tfboys_baselines2normal_format("dmcnn")
+    our_gold_data = load_data("../../data/normal_data/ace2005_lu/test_data.json")
+    our_gold_data = Preprocessor.choose_spans_by_token_level(our_gold_data, "word")
 
-    # in_path = "../../data/res_data/duee_comp2021_mac/re+tfboys+RAIN+TRAIN/1onyp1jl/model_state_dict_15_83.637/test_data_1.json"
-    # out_path = "../../data/res_data/duee_comp2021_mac/re+tfboys+RAIN+TRAIN/1onyp1jl/model_state_dict_15_83.637/duee.json"
-    # formated_data = trans2duee_format(load_data(in_path))
+    # our_gold_ids = {sample["id"] for sample in our_gold_data}
+    # gold_ids = {sample["id"] for sample in gold_data}
+    # inter_ids = our_gold_ids.intersection(gold_ids)
+    # dff_ids = gold_ids.difference(our_gold_ids)
+    # print(len(inter_ids))
+
+    score_dict = MetricsCalculator.score(pred_data, our_gold_data)
+    pprint(score_dict)
+
+    # preprocess_duie2()
+
+    # data_out_dir = "../../data/ori_data/CMeEE"
+    # if not os.path.exists(data_out_dir):
+    #     os.makedirs(data_out_dir)
+    # train_save_path = os.path.join(data_out_dir, "train_data.json")
+    # valid_save_path = os.path.join(data_out_dir, "valid_data.json")
+    # test_save_path = os.path.join(data_out_dir, "test_data.json")
+    # save_as_json_lines(train_data, train_save_path)
+    # save_as_json_lines(valid_data, valid_save_path)
+    # save_as_json_lines(test_data, test_save_path)
+
+    # in_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/kbxeu083/model_state_dict_3_74.417/test_data_1.json"
+    # out_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/kbxeu083/model_state_dict_3_74.417/duie.json"
+    # formated_data = trans2duie2_format(load_data(in_path))
+    # save_as_json_lines(formated_data, out_path)
+
+    # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/test_data_1.json"
+    # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/duee_fin.json"
+    # formated_data = trans2duee_fin_format(load_data(in_path))
     # save_as_json_lines(formated_data, out_path)
     pass

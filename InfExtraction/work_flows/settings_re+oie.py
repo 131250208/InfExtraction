@@ -1,5 +1,5 @@
 import os
-device_num = 6
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -47,7 +47,7 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-base-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = True
+use_wandb = False
 note = ""
 epochs = 100
 lr = 5e-5  # 5e-5, 1e-4
@@ -57,13 +57,15 @@ drop_neg_samples = False
 combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 0
 
-batch_size_train = 16
+metric_keyword = "f1"  # save models on which metric: f1, ...
+model_bag_size = 1
+
+batch_size_train = 12
 batch_size_valid = 8
 batch_size_test = 8
 
-max_seq_len_train = 72
+max_seq_len_train = 100
 max_seq_len_valid = 128
 max_seq_len_test = 128
 
@@ -81,7 +83,7 @@ dep_gcn = False
 
 word_encoder = False
 subwd_encoder = True
-use_attns4rel = False  # use only if subwd_encoder (bert) is True
+use_attns4rel = True  # use only if subwd_encoder (bert) is True
 flair = False
 elmo = False
 
@@ -96,7 +98,6 @@ valid_data = load_data(val_path, lines=max_lines)
 
 checking_num = 1000
 data4checking = copy.deepcopy(train_data[:checking_num])
-random.shuffle(data4checking)
 
 test_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 filename2ori_test_data = {}
@@ -183,7 +184,7 @@ model_state_dict_path = None
 # for test
 model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
 target_run_ids = ["0kQIoiOs", ]
-top_k_models = 1
+model_path_ids2infer = [-2, ]
 metric4testing = "trigger_class_f1"
 main_test_set_name = "test_data.json"
 cal_scores = True  # set False if the test sets are not annotated

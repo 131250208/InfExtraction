@@ -36,7 +36,7 @@ import logging
 import re
 from glob import glob
 import numpy as np
-
+from shutil import copyfile
 import torch
 from torch.utils.data import DataLoader
 from InfExtraction.modules.preprocess import Preprocessor
@@ -69,8 +69,8 @@ def get_dataloader(data,
                    drop_neg_samples=False,
                    ):
 
-    if combine and data_type == "train":
-        data = Preprocessor.combine(data, 1024)
+    # if combine and data_type == "train":
+    #     data = Preprocessor.combine(data, 1024)
 
     data = Preprocessor.split_into_short_samples(data,
                                                  max_seq_len,
@@ -82,7 +82,7 @@ def get_dataloader(data,
                                                  early_stop=split_early_stop,
                                                  drop_neg_samples=drop_neg_samples)
 
-    if combine and data_type != "train":
+    if combine:
         data = Preprocessor.combine(data, max_seq_len)
 
     # check spans
@@ -116,9 +116,9 @@ def get_score_fr_path(model_path):
     return float(re.search("_([\d\.]+)\.pt", model_path.split("/")[-1]).group(1))
 
 
-def get_last_k_paths(path_list, k):
-    path_list = sorted(path_list, key=get_score_fr_path)
-    return path_list[-k:]
+# def get_last_k_paths(path_list, k):
+#     path_list = 
+#     return path_list[-k:]
 
 
 def run():
@@ -194,12 +194,13 @@ def run():
     # test settings
     model_dir_for_test = settings.model_dir_for_test
     target_run_ids = settings.target_run_ids
-    top_k_models = settings.top_k_models
+    model_path_ids2infer = settings.model_path_ids2infer
     metric4testing = settings.metric4testing
     main_test_set_name = settings.main_test_set_name
     cal_scores = settings.cal_scores
 
     # save model
+    metric_keyword = settings.metric_keyword
     model_bag_size = settings.model_bag_size
 
     # model settings
@@ -255,6 +256,8 @@ def run():
         tagger_class_name = taggers.create_rebased_discontinuous_ner_tagger(tagger_class_name)
     elif task_type == "re+tfboys":
         tagger_class_name = taggers.create_rebased_tfboys_tagger(tagger_class_name)
+    elif task_type == "re+tfboys4doc_ee":
+        tagger_class_name = taggers.create_rebased_tfboys4doc_ee_tagger(tagger_class_name)
 
     # additional preprocessing
     def additional_preprocess(data, data_type):
@@ -277,6 +280,9 @@ def run():
     model = model_class_name(tagger, metrics_cal, **model_settings)
     model = model.to(device)
     print("done!")
+    print(">>>>>>>>>>>>>>>>>>>>>>>>> Model >>>>>>>>>>>>>>>>>>>>>>>")
+    print(model)
+    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 
     # function for generating data batch
     collate_fn = model.generate_batch
@@ -297,6 +303,8 @@ def run():
         dir_to_save_model = default_dir_to_save_model
         if not os.path.exists(dir_to_save_model):
             os.makedirs(dir_to_save_model)
+    # save settings
+    copyfile("./{}.py".format(settings_name), os.path.join(dir_to_save_model, "{}.py".format(settings_name)))
 
     # trainer and evaluator
     evaluator = Evaluator(model, device)
@@ -405,7 +413,7 @@ def run():
             }
 
             for metric_key, current_val_score in score_dict.items():
-                if "f1" not in metric_key:
+                if metric_keyword not in metric_key:
                     continue
 
                 if metric_key not in score_dict4comparing:
@@ -473,7 +481,11 @@ def run():
         run_id2scores = {}
         for run_id, model_path_list in run_id2model_state_paths.items():
             # only top k models
-            model_path_list = get_last_k_paths(model_path_list, top_k_models)
+            sorted_model_path_list = sorted(model_path_list, key=get_score_fr_path)
+            model_path_list = []
+            for idx in model_path_ids2infer:
+                model_path_list.append(sorted_model_path_list[idx])
+            
             for path in model_path_list:
                 # load model
                 model.load_state_dict(torch.load(path))

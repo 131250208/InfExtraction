@@ -1,5 +1,5 @@
 import os
-device_num = 7
+device_num = 1
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -38,14 +38,14 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "duee_comp2021_mac"
-language = "ch"
+exp_name = "ace2005_lu"
+language = "en"
 stage = "train"  # inference
 task_type = "re+tfboys"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "macbert-large"
+pretrained_model_name = "bert-base-uncased"
 pretrained_emb_name = "glove.6B.100d.txt"
 use_wandb = True
 note = ""
@@ -54,32 +54,34 @@ lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
 drop_neg_samples = False
-combine = False
+combine = True
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 5  # if no saving, set to 0
+
+metric_keyword = "f1"  # save models on which metric: f1, ...
+model_bag_size = 1  # if no saving, set to 0
 
 batch_size_train = 12
 batch_size_valid = 12
 batch_size_test = 12
 
 max_seq_len_train = 64
-max_seq_len_valid = 128
-max_seq_len_test = 128
+max_seq_len_valid = 100
+max_seq_len_test = 100
 
-sliding_len_train = 20
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_train = 64
+sliding_len_valid = 100
+sliding_len_test = 100
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
 
-pos_tag_emb = False
-ner_tag_emb = False
-char_encoder = False
-dep_gcn = False
+pos_tag_emb = True
+ner_tag_emb = True
+char_encoder = True
+dep_gcn = True
 
-word_encoder = False
+word_encoder = True
 subwd_encoder = True
 use_attns4rel = True  # use only if subwd_encoder (bert) is True
 flair = False
@@ -93,7 +95,7 @@ statistics_path = os.path.join(data_in_dir, exp_name, "statistics.json")
 dicts_path = os.path.join(data_in_dir, exp_name, "dicts.json")
 train_path = os.path.join(data_in_dir, exp_name, "train_data.json")
 val_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
-test_path_list = []  # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+test_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 max_lines = None  # None
 checking_num = 1000
 
@@ -125,7 +127,7 @@ for key, val in dicts.items():
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
     "classify_entities_by_relation": False,
-    "dtm_arg_type_by_edges": False,
+    "dtm_arg_type_by_edges": True,
 }
 
 # tagger config
@@ -181,7 +183,7 @@ model_state_dict_path = None
 # for test
 model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
 target_run_ids = ["0kQIoiOs", ]
-top_k_models = 1
+model_path_ids2infer = [-2, ]
 metric4testing = "trigger_class_f1"
 main_test_set_name = "test_data.json"
 cal_scores = True  # set False if the test sets are not annotated
@@ -244,11 +246,13 @@ dep_config = {
     "gcn_dim": 128,
     "gcn_dropout": 0.1,
     "gcn_layer_num": 1,
+    "gcn": False,
 } if dep_gcn else None
 
+
 handshaking_kernel_config = {
-    "ent_shaking_type": "cln+bilstm",
-    "rel_shaking_type": "cln",
+    "ent_shaking_type": "cat+bilstm",
+    "rel_shaking_type": "cmm",
 }
 
 # model settings

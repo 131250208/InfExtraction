@@ -1,4 +1,4 @@
-device_num = 2
+device_num = 0
 seed = 2333
 enable_bm = True
 
@@ -38,32 +38,34 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "duie_comp2021"
+exp_name = "duie_comp2021_mac"
 language = "ch"
 stage = "train"  # inference, train
 task_type = "re"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "chinese_roberta_wwm_ext_pytorch"
-pretrained_emb_name = "glove.6B.100d.txt"
+pretrained_model_name = "macbert-base"
+pretrained_emb_name = "glove_du_300.txt"
 use_wandb = True
 note = ""
-epochs = 100
+epochs = 10
 lr = 5e-5  # 5e-5, 1e-4
-check_tagging_n_decoding = True
+check_tagging_n_decoding = False
 split_early_stop = True
 drop_neg_samples = False
 combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 5
+
+metric_keyword = "rel_exact_text_f1"  # save models on which metric: f1, ...
+model_bag_size = 10
 
 batch_size_train = 16
 batch_size_valid = 8
 batch_size_test = 8
 
-max_seq_len_train = 72
+max_seq_len_train = 100
 max_seq_len_valid = 128
 max_seq_len_test = 128
 
@@ -96,12 +98,15 @@ max_lines = None  # None
 train_data = load_data(train_path, lines=max_lines)
 valid_data = load_data(val_path, lines=max_lines)
 
-data4checking = copy.deepcopy(valid_data)
-random.shuffle(data4checking)
+train_data = train_data + valid_data[5000:]
+valid_data = valid_data[:5000]
+
 checking_num = 1000
-data4checking = data4checking[:checking_num]
+data4checking = copy.deepcopy(valid_data[:checking_num])
+random.shuffle(data4checking)
 
 test_path_list = []  # glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+# test_path_list += [val_path]
 filename2ori_test_data = {}
 for test_data_path in test_path_list:
     filename = test_data_path.split("/")[-1]
@@ -185,8 +190,8 @@ model_state_dict_path = None
 
 # for test
 model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
-target_run_ids = ["2v4vqjpn", ]
-top_k_models = 1
+target_run_ids = ["3gmdozex", ]
+model_path_ids2infer = [-2, ]
 metric4testing = "rel_exact_text_f1"
 main_test_set_name = "test_data_1.json"
 cal_scores = True  # set False if the test sets are not annotated
@@ -256,6 +261,7 @@ dep_config = {
     "gcn_dim": 128,
     "gcn_dropout": 0.1,
     "gcn_layer_num": 1,
+    "gcn": False,
 } if dep_gcn else None
 
 top_multi_attn_config = {
