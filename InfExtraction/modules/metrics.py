@@ -127,8 +127,9 @@ class MetricsCalculator:
         event_type_set = set()
 
         offset_must_metrics = True
-        # if num of spans > 1, they are auto-annotated and offset-must metrics should not be calculated
-        if any(type(arg["char_span"][0]) is list for event in event_list for arg in event["argument_list"]):
+        # if not offset in arg or num of spans > 1,
+        # this is an doc level ee task result, so no offset-must metric would be considered
+        if any("tok_span" not in arg or type(arg["tok_span"][0]) is list for event in event_list for arg in event["argument_list"]):
             offset_must_metrics = False
 
         for event in event_list:
@@ -148,7 +149,6 @@ class MetricsCalculator:
             for arg in event["argument_list"]:
                 argument_offset = arg["tok_span"]
                 argument_role = arg["type"]
-                # event_type = arg["event_type"]
 
                 arg_soft_iden_set.add(str([event_type] + argument_offset))
                 arg_soft_class_set.add(str([event_type] + argument_offset + [argument_role]))
@@ -164,19 +164,15 @@ class MetricsCalculator:
                 arg_list.append({
                     "text": event["trigger"],
                     "tok_span": event["trigger_tok_span"],
-                    "char_span": event["trigger_char_span"],
                     "type": "Trigger",  # argument role
-                    # "event_type": event["trigger_type"],
                 })
 
             for arg_i in arg_list:
                 for arg_j in arg_list:
-                    # arg_i_event_type = arg_i["event_type"]
                     arg_i_event_type = event_type
                     arg_i_offset = arg_i["tok_span"]
                     arg_i_role = arg_i["type"]
 
-                    # arg_j_event_type = arg_j["event_type"]
                     arg_j_event_type = event_type
                     arg_j_offset = arg_j["tok_span"]
                     arg_j_role = arg_j["type"]
@@ -206,11 +202,14 @@ class MetricsCalculator:
         :param ent_text:
         :return: the head word of the given text
         '''
+        if ent_text == "":
+            return ent_text
+
         ch_pattern = "[\u4e00-\u9fa5\s]+"
-        try:
-            part_ent = ent_text[0] if re.match(ch_pattern, ent_text[0]) is not None else ent_text.split()[0]
-        except Exception:
-            print("????ent empty")
+        # try:
+        part_ent = ent_text[0] if re.match(ch_pattern, ent_text[0]) is not None else ent_text.split()[0]
+        # except Exception:
+        #     print("????ent empty")
 
         return part_ent
 
@@ -260,7 +259,7 @@ class MetricsCalculator:
 
         for rel in rel_list:
             part_subj = MetricsCalculator.get_partial_ent(rel["subject"])
-            part_obj = MetricsCalculator.get_partial_ent(rel["subject"])
+            part_obj = MetricsCalculator.get_partial_ent(rel["object"])
             rel_partial_text_set.add(str([part_subj, rel["predicate"], part_obj]))
             rel_exact_text_set.add(str([rel["subject"], rel["predicate"], rel["object"]]))
             rel_partial_offset_set.add(str([rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]]))
@@ -277,14 +276,14 @@ class MetricsCalculator:
         '''
         cpg is a list: [correct_num, pred_num, gold_num]
         '''
-        correct_num = 0
-        for mark_str in pred_set:
-            if mark_str in gold_set:
-                correct_num += 1
-            # else:
-            #     raise Exception("debug")
+        # correct_num = 0
+        # for mark_str in pred_set:
+        #     if mark_str in gold_set:
+        #         correct_num += 1
+        #     # else:
+        #     #     raise Exception("debug")
 
-        cpg[0] += correct_num
+        cpg[0] += len(gold_set.intersection(pred_set))
         cpg[1] += len(pred_set)
         cpg[2] += len(gold_set)
 
@@ -567,7 +566,7 @@ class MetricsCalculator:
         }
         offset_must_metrics = {"trigger_iden", "trigger_class", "arg_soft_iden", "arg_soft_class",
                                "arg_hard_iden", "arg_hard_class", "arg_link_iden", "arg_link_class"}
-        if any(type(arg["char_span"][0]) is list for golden_sample in golden_sample_list
+        if any(type(arg["tok_span"][0]) is list for golden_sample in golden_sample_list
                for event in golden_sample["event_list"] for arg in event["argument_list"]):
             pass
         else:
@@ -585,13 +584,17 @@ class MetricsCalculator:
             #     print("event error!")
 
         # baidu competition metrics for the event extraction tasks
-        ee_cpg_dict["arg_soft_class_char_level"] = MetricsCalculator.get_ch_tf_ee_cpg(pred_sample_list,
-                                                                                      golden_sample_list)
-        ee_cpg_dict["arg_soft_class_most_similar"] = MetricsCalculator.get_ee_cpg_most_similar(pred_sample_list,
-                                                                                               golden_sample_list)
+        if any("text" not in sample for sample in pred_sample_list):
+            pass
+        else:
+            ee_cpg_dict["arg_soft_class_char_level"] = MetricsCalculator.get_ch_tf_ee_cpg(pred_sample_list,
+                                                                                          golden_sample_list)
+            ee_cpg_dict["arg_soft_class_most_similar"] = MetricsCalculator.get_ee_cpg_most_similar(pred_sample_list,
+                                                                                                   golden_sample_list)
         return ee_cpg_dict
 
-    def get_rel_cpg_dict(self, pred_sample_list, golden_sample_list):
+    @staticmethod
+    def get_rel_cpg_dict(pred_sample_list, golden_sample_list):
         re_cpg_dict = {
             "rel_partial_text": [0, 0, 0],
             "rel_partial_offset": [0, 0, 0],
@@ -603,7 +606,7 @@ class MetricsCalculator:
             pred_rel_list = pred_sample["relation_list"]
             gold_rel_list = gold_sample["relation_list"]
             # try:
-            self.cal_rel_cpg(pred_rel_list, gold_rel_list, re_cpg_dict)
+            MetricsCalculator.cal_rel_cpg(pred_rel_list, gold_rel_list, re_cpg_dict)
             # except Exception:
             #     print("!")
 
@@ -633,7 +636,7 @@ class MetricsCalculator:
             # try:
             MetricsCalculator.cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict, sent_w_disc)
             # except Exception:
-            #     print("1")
+            #     print("ent metric")
 
         return ent_cpg_dict
 
@@ -700,7 +703,21 @@ class MetricsCalculator:
         f1 = 2 * precision * recall / (precision + recall + minimum)
         return round(precision, 5), round(recall, 5), round(f1, 5)
 
-    def score(self, pred_data, golden_data, data_filename=""):
+    @staticmethod
+    def score(pred_data, golden_data, data_filename=""):
+        # align by id
+        id2res_pred = {sample["id"]: sample for sample in pred_data}
+        aligned_pred_data = []
+        for sample in golden_data:
+            sample_idx = sample["id"]
+            aligned_pred_data.append(id2res_pred.get(sample_idx, {"id": "",
+                                                                  "entity_list": [], "relation_list": [],
+                                                                  "event_list": [], "open_spo_list": []}
+                                                     ))
+
+        pred_data = aligned_pred_data
+        assert len(golden_data) == len(pred_data)
+
         if data_filename != "":
             data_filename += "_"
 
@@ -710,25 +727,25 @@ class MetricsCalculator:
 
         total_cpg_dict = {}
         if "entity_list" in golden_sample and "entity_list" in pred_sample:
-            cpg_dict = self.get_ent_cpg_dict(pred_data, golden_data)
+            cpg_dict = MetricsCalculator.get_ent_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
         if "relation_list" in golden_sample and "relation_list" in pred_sample:
-            cpg_dict = self.get_rel_cpg_dict(pred_data, golden_data)
+            cpg_dict = MetricsCalculator.get_rel_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
         if "event_list" in golden_sample and "event_list" in pred_sample:
-            cpg_dict = self.get_ee_cpg_dict(pred_data, golden_data)
+            cpg_dict = MetricsCalculator.get_ee_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
         score_dict = {}
         for sc_pattern, cpg in total_cpg_dict.items():
-            prf = self.get_prf_scores(*cpg)
+            prf = MetricsCalculator.get_prf_scores(*cpg)
             for idx, sct in enumerate(["prec", "rec", "f1"]):
                 score_dict["{}{}_{}".format(data_filename, sc_pattern, sct)] = round(prf[idx], 5)
 
         if "open_spo_list" in golden_sample and "open_spo_list" in pred_sample:
-            oie_score_dict = self.get_ioe_score_dict(pred_data, golden_data)
+            oie_score_dict = MetricsCalculator.get_ioe_score_dict(pred_data, golden_data)
             for sct, val in oie_score_dict.items():
                 score_dict["{}{}".format(data_filename, sct)] = round(val, 5)
         return score_dict
