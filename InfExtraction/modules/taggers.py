@@ -698,11 +698,18 @@ def create_rebased_ee_tagger(base_class):
                             "subject": arg["text"],
                             "subj_char_span": arg["char_span"],
                             "subj_tok_span": arg["tok_span"],
-                            # "subj_type": "EE:{}{}{}".format("Argument", separator, arg["type"]),
                             "object": event["trigger"],
                             "obj_char_span": event["trigger_char_span"],
                             "obj_tok_span": event["trigger_tok_span"],
-                            # "obj_type": "EE:{}{}{}".format("Trigger", separator, event["event_type"]),
+                            "predicate": "ARG2TRI",
+                        })
+                        fin_rel_list.append({
+                            "subject": arg["text"],
+                            "subj_char_span": arg["char_span"],
+                            "subj_tok_span": arg["tok_span"],
+                            "object": event["trigger"],
+                            "obj_char_span": event["trigger_char_span"],
+                            "obj_tok_span": event["trigger_tok_span"],
                             "predicate": "EE:{}{}{}".format(arg["type"], separator, event["event_type"]),
                         })
                 sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
@@ -717,7 +724,7 @@ def create_rebased_ee_tagger(base_class):
 
         def decode(self, sample, pred_tags, pred_outs=None):
             pred_sample = super(REBasedEETagger, self).decode(sample, pred_tags, pred_outs)
-            pred_sample["event_list"] = self._trans2ee(pred_sample["relation_list"], pred_sample["entity_list"])
+            pred_sample = self._trans2ee(pred_sample)
             # filter extra entities and relations
             pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
             pred_sample["relation_list"] = [rel for rel in pred_sample["relation_list"] if
@@ -726,15 +733,15 @@ def create_rebased_ee_tagger(base_class):
             # del pred_sample["relation_list"]
             return pred_sample
 
-        def _trans2ee(self, rel_list, ent_list):
-            # choose tags with EE:
+        def _trans2ee(self, sample):
+            # filter tags with EE:
             new_rel_list, new_ent_list = [], []
-            for rel in rel_list:
+            for rel in sample["relation_list"]:
                 if rel["predicate"].split(":")[0] == "EE":
                     new_rel = copy.deepcopy(rel)
                     new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
                     new_rel_list.append(new_rel)
-            for ent in ent_list:
+            for ent in sample["entity_list"]:
                 if ent["type"].split(":")[0] == "EE":
                     new_ent = copy.deepcopy(ent)
                     new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
@@ -743,118 +750,206 @@ def create_rebased_ee_tagger(base_class):
 
             # decoding
             separator = "\u2E82"
-            trigger_offset2vote = {}
-            trigger_offset2trigger_text = {}
-            trigger_offset2trigger_char_span = {}
-
-            # get candidate trigger types from relations
-            for rel in rel_list:
-                trigger_offset = rel["obj_tok_span"]
-                trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
-                trigger_offset2trigger_text[trigger_offset_str] = rel["object"]
-                trigger_offset2trigger_char_span[trigger_offset_str] = rel["obj_char_span"]
-                _, event_type = rel["predicate"].split(separator)
-
-                if trigger_offset_str not in trigger_offset2vote:
-                    trigger_offset2vote[trigger_offset_str] = {}
-                trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
-                    event_type, 0) + 1
-
-            # get candidate trigger types from entity tags
+            type_wise_edges = []
+            arg_offset2roles = {}
+            arg_mark2arg = {}
+            tri_offset2event_types = {}
+            tri_mark2trigger = {}
             for ent in ent_list:
-                t1, t2 = ent["type"].split(separator)
-                if t1 == "Trigger":
-                    event_type = t2
-                    trigger_span = ent["tok_span"]
-                    trigger_offset_str = "{},{}".format(trigger_span[0], trigger_span[1])
-                    trigger_offset2trigger_text[trigger_offset_str] = ent["text"]
-                    trigger_offset2trigger_char_span[trigger_offset_str] = ent["char_span"]
-                    if trigger_offset_str not in trigger_offset2vote:
-                        trigger_offset2vote[trigger_offset_str] = {}
-                    trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
-                        event_type, 0) + 1
+                arg_tri, role = ent["type"].split(separator)
+                tok_offset = "{},{}".format(*ent["tok_span"])
+                if arg_tri == "Argument":
+                    arg_offset2roles.setdefault(tok_offset, set()).add(role)
+                    arg = copy.deepcopy(ent)
+                    arg["type"] = role
+                    arg_mark2arg["{},{}".format(tok_offset, role)] = arg
 
-            # choose the final trigger type by votes
-            trigger_offset2event_types = {}
-            for trigger_offet_str, event_type2score in trigger_offset2vote.items():
-                # # choose types with the top score
-                # top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
-                # winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
-
-                # ignore draw, choose only the first type
-                # winer_event_types = {sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0],}
-
-                # save all event types
-                winer_event_types = set(event_type2score.keys())
-
-                trigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
-
-            # aggregate arguments by event type and trigger_offset
-            trigger_offset2event2arguments = {}
-            for rel in rel_list:
-                trigger_offset = rel["obj_tok_span"]
-                argument_role, et = rel["predicate"].split(separator)
-                trigger_offset_str = "{},{}".format(*trigger_offset)
-                if et not in trigger_offset2event_types[trigger_offset_str]:  # filter false relations
-                    continue
-                # append arguments
-                if trigger_offset_str not in trigger_offset2event2arguments:
-                    trigger_offset2event2arguments[trigger_offset_str] = {}
-                if et not in trigger_offset2event2arguments[trigger_offset_str]:
-                    trigger_offset2event2arguments[trigger_offset_str][et] = []
-
-                trigger_offset2event2arguments[trigger_offset_str][et].append({
-                    "text": rel["subject"],
-                    "type": argument_role,
-                    # "event_type": et,
-                    "char_span": rel["subj_char_span"],
-                    "tok_span": rel["subj_tok_span"],
-                })
-
-            if len(trigger_offset2event_types) == 1:
-                for trig_offset_str, event_types in trigger_offset2event_types.items():
-                    if len(event_types) == 1:
-                        et = list(event_types)[0]
-                        for ent in ent_list:
-                            t1, t2 = ent["type"].split(separator)
-                            if t1 == "Argument":
-                                arg_role = t2
-                                if arg_role not in self.event_type2arg_rols[et]:
-                                    continue
-
-                                if trig_offset_str not in trigger_offset2event2arguments:
-                                    trigger_offset2event2arguments[trig_offset_str] = {}
-                                if et not in trigger_offset2event2arguments[trig_offset_str]:
-                                    trigger_offset2event2arguments[trig_offset_str][et] = []
-
-                                trigger_offset2event2arguments[trig_offset_str][et].append({
-                                    "text": ent["text"],
-                                    "type": arg_role,
-                                    # "event_type": et,
-                                    "char_span": ent["char_span"],
-                                    "tok_span": ent["tok_span"],
-                                })
-
-            # generate event list
-            event_list = []
-            for trigger_offset_str, event_types in trigger_offset2event_types.items():
-                for et in event_types:
-                    arguments = []
-                    if trigger_offset_str in trigger_offset2event2arguments and \
-                            et in trigger_offset2event2arguments[trigger_offset_str]:
-                        arguments = trigger_offset2event2arguments[trigger_offset_str][et]
-
-                    trigger_offset = trigger_offset_str.split(",")
-                    event = {
-                        "trigger": trigger_offset2trigger_text[trigger_offset_str],
-                        "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
-                        "trigger_tok_span": [int(trigger_offset[0]), int(trigger_offset[1])],
-                        "event_type": et,
-                        "argument_list": Preprocessor.unique_list(arguments),
+                elif arg_tri == "Trigger":
+                    event_type = role
+                    tri_offset2event_types.setdefault(tok_offset, set()).add(event_type)
+                    tri_mark2trigger["{},{}".format(tok_offset, event_type)] = {
+                        "trigger": ent["text"],
+                        "trigger_tok_span": ent["tok_span"],
+                        "trigger_char_span": ent["char_span"],
+                        "event_type": event_type,
                     }
-                    event_list.append(event)
-            return event_list
 
+            for rel in rel_list:
+                if rel["predicate"] == "ARG2TRI":
+                    arg_offset = "{},{}".format(*rel["subj_tok_span"])
+                    tri_mark = "{},{}".format(*rel["obj_tok_span"])
+                    arg_roles = arg_offset2roles.get(arg_offset, set())
+                    event_types = tri_offset2event_types.get(tri_mark, set())
+                    if len(arg_roles) == 1 and \
+                            len(event_types) == 1:
+                        arg_role = list(arg_roles)[0]
+                        event_type = list(event_types)[0]
+                        if arg_role in self.event_type2arg_rols[event_type]:
+                            rel_cp = copy.deepcopy(rel)
+                            rel_cp["predicate"] = separator.join([arg_role, event_type])
+                            type_wise_edges.append(rel_cp)
+                else:
+                    type_wise_edges.append(rel)
+
+            tri_mark2args = {}
+            arg_linked_mem = set()
+            for edge in type_wise_edges:
+                arg_role, event_type = edge["predicate"].split(separator)
+                tri_mark = "{},{},{}".format(*edge["obj_tok_span"], event_type)
+                tri_mark2trigger[tri_mark] = {
+                    "trigger": edge["object"],
+                    "trigger_tok_span": edge["obj_tok_span"],
+                    "trigger_char_span": edge["obj_char_span"],
+                    "event_type": event_type,
+                }
+                tri_mark2args.setdefault(tri_mark, []).append({
+                    "text": edge["subject"],
+                    "char_span": edge["subj_char_span"],
+                    "tok_span": edge["subj_tok_span"],
+                    "type": arg_role,
+                })
+                arg_mark = "{},{},{}".format(*edge["subj_tok_span"], arg_role)
+                arg_linked_mem.add(arg_mark)
+
+            event_list = []
+            for trigger_mark, trigger in tri_mark2trigger.items():
+                arg_list = utils.unique_list(tri_mark2args.get(trigger_mark, []))
+                if len(arg_list) == 0:
+                    arg_list = [arg for arg_mark, arg in arg_mark2arg.items() if arg_mark not in arg_linked_mem]
+
+                event_list.append({
+                    **trigger,
+                    "argument_list": arg_list,
+                })
+            sample["event_list"] = event_list
+            return sample
+
+        # def _trans2ee(self, rel_list, ent_list):
+        #     # choose tags with EE:
+        #     new_rel_list, new_ent_list = [], []
+        #     for rel in rel_list:
+        #         if rel["predicate"].split(":")[0] == "EE":
+        #             new_rel = copy.deepcopy(rel)
+        #             new_rel["predicate"] = re.sub(r"EE:", "", new_rel["predicate"])
+        #             new_rel_list.append(new_rel)
+        #     for ent in ent_list:
+        #         if ent["type"].split(":")[0] == "EE":
+        #             new_ent = copy.deepcopy(ent)
+        #             new_ent["type"] = re.sub(r"EE:", "", new_ent["type"])
+        #             new_ent_list.append(new_ent)
+        #     rel_list, ent_list = new_rel_list, new_ent_list
+        #
+        #     # decoding
+        #     separator = "\u2E82"
+        #     trigger_offset2vote = {}
+        #     trigger_offset2trigger_text = {}
+        #     trigger_offset2trigger_char_span = {}
+        #
+        #     # get candidate trigger types from relations
+        #     for rel in rel_list:
+        #         trigger_offset = rel["obj_tok_span"]
+        #         trigger_offset_str = "{},{}".format(trigger_offset[0], trigger_offset[1])
+        #         trigger_offset2trigger_text[trigger_offset_str] = rel["object"]
+        #         trigger_offset2trigger_char_span[trigger_offset_str] = rel["obj_char_span"]
+        #         _, event_type = rel["predicate"].split(separator)
+        #
+        #         if trigger_offset_str not in trigger_offset2vote:
+        #             trigger_offset2vote[trigger_offset_str] = {}
+        #         trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
+        #             event_type, 0) + 1
+        #
+        #     # get candidate trigger types from entity tags
+        #     for ent in ent_list:
+        #         t1, t2 = ent["type"].split(separator)
+        #         if t1 == "Trigger":
+        #             event_type = t2
+        #             trigger_span = ent["tok_span"]
+        #             trigger_offset_str = "{},{}".format(trigger_span[0], trigger_span[1])
+        #             trigger_offset2trigger_text[trigger_offset_str] = ent["text"]
+        #             trigger_offset2trigger_char_span[trigger_offset_str] = ent["char_span"]
+        #             if trigger_offset_str not in trigger_offset2vote:
+        #                 trigger_offset2vote[trigger_offset_str] = {}
+        #             trigger_offset2vote[trigger_offset_str][event_type] = trigger_offset2vote[trigger_offset_str].get(
+        #                 event_type, 0) + 1
+        #
+        #     # choose the final trigger type by votes
+        #     trigger_offset2event_types = {}
+        #     for trigger_offet_str, event_type2score in trigger_offset2vote.items():
+        #         # # choose types with the top score
+        #         # top_score = sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][1]
+        #         # winer_event_types = {et for et, sc in event_type2score.items() if sc == top_score}
+        #
+        #         # ignore draw, choose only the first type
+        #         # winer_event_types = {sorted(event_type2score.items(), key=lambda x: x[1], reverse=True)[0][0],}
+        #
+        #         # save all event types
+        #         winer_event_types = set(event_type2score.keys())
+        #
+        #         trigger_offset2event_types[trigger_offet_str] = winer_event_types  # final event types
+        #
+        #     # aggregate arguments by event type and trigger_offset
+        #     trigger_offset2event2arguments = {}
+        #     for rel in rel_list:
+        #         trigger_offset = rel["obj_tok_span"]
+        #         argument_role, et = rel["predicate"].split(separator)
+        #         trigger_offset_str = "{},{}".format(*trigger_offset)
+        #         if et not in trigger_offset2event_types[trigger_offset_str]:  # filter false relations
+        #             continue
+        #         # append arguments
+        #         if trigger_offset_str not in trigger_offset2event2arguments:
+        #             trigger_offset2event2arguments[trigger_offset_str] = {}
+        #         if et not in trigger_offset2event2arguments[trigger_offset_str]:
+        #             trigger_offset2event2arguments[trigger_offset_str][et] = []
+        #
+        #         trigger_offset2event2arguments[trigger_offset_str][et].append({
+        #             "text": rel["subject"],
+        #             "type": argument_role,
+        #             "char_span": rel["subj_char_span"],
+        #             "tok_span": rel["subj_tok_span"],
+        #         })
+        #
+        #     if len(trigger_offset2event_types) == 1:
+        #         for trig_offset_str, event_types in trigger_offset2event_types.items():
+        #             if len(event_types) == 1:
+        #                 et = list(event_types)[0]
+        #                 for ent in ent_list:
+        #                     t1, t2 = ent["type"].split(separator)
+        #                     if t1 == "Argument":
+        #                         arg_role = t2
+        #                         if arg_role not in self.event_type2arg_rols[et]:
+        #                             continue
+        #
+        #                         if trig_offset_str not in trigger_offset2event2arguments:
+        #                             trigger_offset2event2arguments[trig_offset_str] = {}
+        #                         if et not in trigger_offset2event2arguments[trig_offset_str]:
+        #                             trigger_offset2event2arguments[trig_offset_str][et] = []
+        #
+        #                         trigger_offset2event2arguments[trig_offset_str][et].append({
+        #                             "text": ent["text"],
+        #                             "type": arg_role,
+        #                             "char_span": ent["char_span"],
+        #                             "tok_span": ent["tok_span"],
+        #                         })
+        #
+        #     # generate event list
+        #     event_list = []
+        #     for trigger_offset_str, event_types in trigger_offset2event_types.items():
+        #         for et in event_types:
+        #             arguments = []
+        #             if trigger_offset_str in trigger_offset2event2arguments and \
+        #                     et in trigger_offset2event2arguments[trigger_offset_str]:
+        #                 arguments = trigger_offset2event2arguments[trigger_offset_str][et]
+        #
+        #             trigger_offset = trigger_offset_str.split(",")
+        #             event = {
+        #                 "trigger": trigger_offset2trigger_text[trigger_offset_str],
+        #                 "trigger_char_span": trigger_offset2trigger_char_span[trigger_offset_str],
+        #                 "trigger_tok_span": [int(trigger_offset[0]), int(trigger_offset[1])],
+        #                 "event_type": et,
+        #                 "argument_list": Preprocessor.unique_list(arguments),
+        #             }
+        #             event_list.append(event)
+        #     return event_list
     return REBasedEETagger
 
 

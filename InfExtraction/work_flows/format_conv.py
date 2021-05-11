@@ -2603,18 +2603,30 @@ if __name__ == "__main__":
     # data_formated = trans2duee_fin_format(data)
     # save_as_json_lines(data_formated, out_path)
 
-    pred_data, gold_data = trans_tfboys_baselines2normal_format("dmcnn")
-    our_gold_data = load_data("../../data/normal_data/ace2005_lu/test_data.json")
-    our_gold_data = Preprocessor.choose_spans_by_token_level(our_gold_data, "word")
+    # in_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/2hibrbc8/model_state_dict_7_76.422/test_data_1_1.json"
+    # out_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/2hibrbc8/model_state_dict_7_76.422/duie_1.json"
+    # formated_data = trans2duie2_format(load_data(in_path))
+    # save_as_json_lines(formated_data, out_path)
 
-    # our_gold_ids = {sample["id"] for sample in our_gold_data}
-    # gold_ids = {sample["id"] for sample in gold_data}
-    # inter_ids = our_gold_ids.intersection(gold_ids)
-    # dff_ids = gold_ids.difference(our_gold_ids)
-    # print(len(inter_ids))
+    # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/test_data_1.json"
+    # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/duee_fin.json"
+    # formated_data = trans2duee_fin_format(load_data(in_path))
+    # save_as_json_lines(formated_data, out_path)
 
-    score_dict = MetricsCalculator.score(pred_data, our_gold_data)
-    pprint(score_dict)
+    # pred_data, gold_data = trans_tfboys_baselines2normal_format("dmcnn")
+    # # our_gold_data = load_data("../../data/normal_data/ace2005_lu/test_data.json")
+    # # our_gold_data = Preprocessor.choose_spans_by_token_level(our_gold_data, "word")
+    #
+    # # our_gold_ids = {sample["id"] for sample in our_gold_data}
+    # # gold_ids = {sample["id"] for sample in gold_data}
+    # # inter_ids = our_gold_ids.intersection(gold_ids)
+    # # dff_ids = gold_ids.difference(our_gold_ids)
+    # # print(len(inter_ids))
+    #
+    # score_dict = MetricsCalculator.score(pred_data, gold_data)
+    # pprint(score_dict)
+
+
 
     # preprocess_duie2()
 
@@ -2627,14 +2639,4 @@ if __name__ == "__main__":
     # save_as_json_lines(train_data, train_save_path)
     # save_as_json_lines(valid_data, valid_save_path)
     # save_as_json_lines(test_data, test_save_path)
-
-    # in_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/kbxeu083/model_state_dict_3_74.417/test_data_1.json"
-    # out_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/kbxeu083/model_state_dict_3_74.417/duie.json"
-    # formated_data = trans2duie2_format(load_data(in_path))
-    # save_as_json_lines(formated_data, out_path)
-
-    # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/test_data_1.json"
-    # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/duee_fin.json"
-    # formated_data = trans2duee_fin_format(load_data(in_path))
-    # save_as_json_lines(formated_data, out_path)
     pass

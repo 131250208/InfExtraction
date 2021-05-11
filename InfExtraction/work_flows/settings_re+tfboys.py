@@ -251,8 +251,8 @@ dep_config = {
 
 
 handshaking_kernel_config = {
-    "ent_shaking_type": "cat+bilstm",
-    "rel_shaking_type": "cmm",
+    "ent_shaking_type": "mul+bilstm",
+    "rel_shaking_type": "mul",
 }
 
 # model settings

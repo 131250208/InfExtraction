@@ -303,7 +303,7 @@ def run():
         dir_to_save_model = default_dir_to_save_model
         if not os.path.exists(dir_to_save_model):
             os.makedirs(dir_to_save_model)
-    # save settings
+    # save settings #@
     copyfile("./{}.py".format(settings_name), os.path.join(dir_to_save_model, "{}.py".format(settings_name)))
 
     # trainer and evaluator
@@ -502,8 +502,9 @@ def run():
                     # predicate
                     pred_samples = evaluator.predict(test_data_loader, gold_test_data)
 
+                    num = len(glob(save_dir + "/*.json"))
                     # save results
-                    save_as_json_lines(pred_samples, os.path.join(save_dir, filename))
+                    save_as_json_lines(pred_samples, os.path.join(save_dir, "{}_{}".format(filename, num)))
 
                     # score
                     if cal_scores:

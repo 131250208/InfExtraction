@@ -1,5 +1,5 @@
 import os
-device_num = 6
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -61,7 +61,7 @@ use_ghm = False
 metric_keyword = "f1"  # save models on which metric: f1, ...
 model_bag_size = 0  # if no saving, set to 0
 
-batch_size_train = 16
+batch_size_train = 12
 batch_size_valid = 12
 batch_size_test = 12
 
@@ -69,7 +69,7 @@ max_seq_len_train = 64
 max_seq_len_valid = 100
 max_seq_len_test = 100
 
-sliding_len_train = 20
+sliding_len_train = 64
 sliding_len_valid = 100
 sliding_len_test = 100
 
@@ -126,7 +126,7 @@ for key, val in dicts.items():
 # additional preprocessing
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
-    "classify_entities_by_relation": True,
+    "classify_entities_by_relation": False,
 }
 
 # tagger config
