@@ -1017,18 +1017,23 @@ def trans2dai_dataset():
 
 
 if __name__ == "__main__":
-    # 调用
+    train_path = "../../data/normal_data/duie_comp2021/test_data_1.json"
+    val_path = "../../data/normal_data/duie_comp2021/valid_data.json"
+    train_lfreader = utils.MyLargeFileReader(train_path)
+    val_lfreader = utils.MyLargeFileReader(val_path)
+    train_jsreader = utils.MyLargeJsonlinesFileReader(train_lfreader)
+    val_jsreader = utils.MyLargeJsonlinesFileReader(val_lfreader)
 
-    ent_path = "../../data/duie_spo_dict/entity_ske.json"
-    ent_list = load_data(ent_path)
-    text2types = {}
-    for ent in ent_list:
-        text2types.setdefault(ent["text"], set()).add(ent["type"])
+    merged_gen = utils.merge_gen(train_jsreader.get_jsonlines_generator(star_idx=-10, shuffle=True),
+                                 val_jsreader.get_jsonlines_generator(star_idx=5000, end_idx=5005))
 
-    ambiguous_ents = {}
-    for ent_txt, tps in text2types.items():
-        if len(tps) > 2:
-            ambiguous_ents[ent_txt] = tps
+    ids = []
+    for job in tqdm(merged_gen):
+        idx = job["id"]
+        ids.append(idx)
+
+
+
     # spo_path = "../../data/duie_spo_dict/spo_ske.json"
     # spo_list = load_data(spo_path)
 

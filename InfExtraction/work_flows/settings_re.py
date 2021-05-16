@@ -3,6 +3,7 @@ seed = 2333
 enable_bm = True
 
 import os
+
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import numpy as np
@@ -24,9 +25,9 @@ def enable_benchmark(enable_bm):
     torch.backends.cudnn.benchmark = enable_bm
     torch.backends.cudnn.deterministic = True
 
+
 set_seed(seed)
 enable_benchmark(enable_bm)
-
 
 from datetime import date
 import time
@@ -38,16 +39,16 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "duie_comp2021_mac"
+exp_name = "duie_comp2021"
 language = "ch"
 stage = "train"  # inference, train
 task_type = "re"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "macbert-base"
+pretrained_model_name = "macbert-large"
 pretrained_emb_name = "glove_du_300.txt"
-use_wandb = True
+use_wandb = False
 note = ""
 epochs = 10
 lr = 5e-5  # 5e-5, 1e-4
@@ -69,20 +70,19 @@ max_seq_len_train = 100
 max_seq_len_valid = 128
 max_seq_len_test = 128
 
-sliding_len_train = 20
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_train = 50
+sliding_len_valid = 50
+sliding_len_test = 50
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
 
 # to do an ablation study, you can ablate components by setting it to False
-pos_tag_emb = False
+pos_tag_emb = True
 ner_tag_emb = False
-char_encoder = False
-dep_gcn = False
-
-word_encoder = False
+char_encoder = True
+dep_gcn = True
+word_encoder = True
 subwd_encoder = True
 use_attns4rel = True  # used only if subwd_encoder (bert) is True
 flair = False
@@ -94,7 +94,7 @@ data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
 train_path = os.path.join(data_in_dir, exp_name, "train_data.json")
 val_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
-max_lines = None  # None
+max_lines = 5000  # None
 train_data = load_data(train_path, lines=max_lines)
 valid_data = load_data(val_path, lines=max_lines)
 
@@ -112,6 +112,40 @@ for test_data_path in test_path_list:
     filename = test_data_path.split("/")[-1]
     ori_test_data = load_data(test_data_path, lines=max_lines)
     filename2ori_test_data[filename] = ori_test_data
+
+# >>>>>>>>>>>>>>>>>>>>>>>> datasets >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+train_path = os.path.join(data_in_dir, exp_name, "train_data.json")
+val_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
+data_dict = {
+    "train": [
+        {
+            "path": train_path,
+        },
+        {
+            "path": val_path,
+            "slice": "[5000:]",
+        },
+    ],
+    "valid": [
+        {
+            "path": val_path,
+            "slice": "[:5000]",
+        },
+    ],
+    "test": [
+        {
+            "path": path,
+        }
+        for path in glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+    ],
+    "data4check_tag_n_dec": [
+        {
+            "path": val_path,
+            "slice": "[:1000]",
+        },
+    ],
+}
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 dicts = "dicts.json"
 statistics = "statistics.json"
@@ -201,7 +235,8 @@ cal_scores = True  # set False if the test sets are not annotated
 pos_tag_emb_config = {
     "pos_tag_num": statistics["pos_tag_num"],
     "emb_dim": 64,
-    "emb_dropout": 0.1
+    "emb_dropout": 0.1,
+    "hsk_emb": True,
 } if pos_tag_emb else None
 
 ner_tag_emb_config = {
@@ -262,6 +297,7 @@ dep_config = {
     "gcn_dropout": 0.1,
     "gcn_layer_num": 1,
     "gcn": False,
+    "hnt_emb": True,
 } if dep_gcn else None
 
 top_multi_attn_config = {
@@ -274,6 +310,8 @@ top_multi_attn_config = {
 handshaking_kernel_config = {
     "ent_shaking_type": "cln+bilstm",
     "rel_shaking_type": "cln",
+    "ent_dist_emb_dim": 64,
+    "rel_dist_emb_dim": 128,
 }
 
 top_multi_attn_config = {
@@ -296,9 +334,9 @@ model_settings = {
     "top_multi_attn_config": top_multi_attn_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
-    "ent_dim": 768,
-    "rel_dim": 768,
-    "span_len_emb_dim": 64,
+    "ent_dim": 1024,
+    "rel_dim": 1024,
+    "span_len_emb_dim": -1,
     "emb_ent_info2rel": False,
     "golden_ent_cla_guide": False,
     "loss_weight": 0.5,

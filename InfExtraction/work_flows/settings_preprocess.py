@@ -1,7 +1,7 @@
 from InfExtraction.modules.utils import load_data
 
 data_in_dir = "../../data/ori_data/duie_comp2021"
-data_out_dir = "../../data/normal_data/duie_comp2021_mac"
+data_out_dir = "../../data/normal_data/duie_comp2021"
 
 language = "ch"  # en, ch
 
@@ -29,14 +29,16 @@ parser = "ddp"  # stanza (for en), ddp (for ch)
 
 # extract entities and relations by dicts
 extracted_ent_rel_by_dicts = True
-ent_list = load_data("../../data/duie_spo_dict/entity_ske.json") + load_data("../../data/duie_spo_dict/entity.json")
-spo_list = load_data("../../data/duie_spo_dict/spo_ske.json") + load_data("../../data/duie_spo_dict/spo.json")
-ent_type_map = {
-    "人物": "PER",
-    "地点": "LOC",
-}
-ent_type_mask = {"Number", "Text", "Date"}
-min_ent_len = 2
+if extracted_ent_rel_by_dicts:
+    ent_list = load_data("../../data/duie_spo_dict/entity_ske.json") + load_data("../../data/duie_spo_dict/entity.json")
+    spo_list = load_data("../../data/duie_spo_dict/spo_ske.json") + load_data("../../data/duie_spo_dict/spo.json")
+    ent_type_map = {
+        "人物": "PER",
+        "地点": "LOC",
+        "机构": "ORG",
+    }
+    ent_type_mask = {"Number", "Text", "Date"}
+    min_ent_len = 2
 
 # only for word embedding, do not matter if only use bert
 max_word_dict_size = 50000  # the max size of word2id dict

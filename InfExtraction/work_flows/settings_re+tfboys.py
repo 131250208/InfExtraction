@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -41,13 +41,13 @@ from glob import glob
 exp_name = "ace2005_lu"
 language = "en"
 stage = "train"  # inference
-task_type = "re+tfboys"  # re, re+ee
+task_type = "re+tfboys"
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-base-uncased"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = True
+use_wandb = False
 note = ""
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
@@ -62,16 +62,16 @@ metric_keyword = "f1"  # save models on which metric: f1, ...
 model_bag_size = 1  # if no saving, set to 0
 
 batch_size_train = 12
-batch_size_valid = 12
-batch_size_test = 12
+batch_size_valid = 6
+batch_size_test = 6
 
 max_seq_len_train = 64
-max_seq_len_valid = 100
-max_seq_len_test = 100
+max_seq_len_valid = 64
+max_seq_len_test = 64
 
 sliding_len_train = 64
-sliding_len_valid = 100
-sliding_len_test = 100
+sliding_len_valid = 64
+sliding_len_test = 64
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
@@ -181,10 +181,10 @@ trainer_config = {
 model_state_dict_path = None
 
 # for test
-model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
-target_run_ids = ["0kQIoiOs", ]
-model_path_ids2infer = [-2, ]
-metric4testing = "trigger_class_f1"
+model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
+target_run_ids = ["1bupwzu7", ]
+model_path_ids2infer = [-1, ]
+metric4testing = "arg_link_class_f1"
 main_test_set_name = "test_data.json"
 cal_scores = True  # set False if the test sets are not annotated
 
@@ -193,7 +193,8 @@ cal_scores = True  # set False if the test sets are not annotated
 pos_tag_emb_config = {
     "pos_tag_num": statistics["pos_tag_num"],
     "emb_dim": 64,
-    "emb_dropout": 0.1
+    "emb_dropout": 0.1,
+    "hsk_emb": False,
 } if pos_tag_emb else None
 
 ner_tag_emb_config = {
@@ -214,7 +215,6 @@ char_encoder_config = {
 
 word_encoder_config = {
     "word2id": dicts["word2id"],
-    # eegcn_word_emb.txt
     "word_emb_file_path": "../../data/pretrained_emb/{}".format(pretrained_emb_name),
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
@@ -247,12 +247,15 @@ dep_config = {
     "gcn_dropout": 0.1,
     "gcn_layer_num": 1,
     "gcn": False,
+    "hnt_emb": False,
 } if dep_gcn else None
 
 
 handshaking_kernel_config = {
-    "ent_shaking_type": "mul+bilstm",
-    "rel_shaking_type": "mul",
+    "ent_shaking_type": "cln+bilstm",
+    "rel_shaking_type": "cln",
+    "ent_dist_emb_dim": 64,
+    "rel_dist_emb_dim": 128,
 }
 
 # model settings
@@ -268,7 +271,7 @@ model_settings = {
     "use_attns4rel": use_attns4rel,
     "ent_dim": 1024,
     "rel_dim": 1024,
-    "span_len_emb_dim": 64,
+    "span_len_emb_dim": -1,
     "emb_ent_info2rel": False,
     "golden_ent_cla_guide": False,
     "loss_func": "mce_loss",

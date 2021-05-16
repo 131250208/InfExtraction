@@ -42,7 +42,7 @@ from InfExtraction.modules import taggers
 from InfExtraction.modules import models
 from InfExtraction.modules.workers import Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.modules.utils import MyDataset, save_as_json_lines
+from InfExtraction.modules.utils import MyMappingDataset, save_as_json_lines
 
 
 def worker_init_fn(worker_id):
@@ -99,7 +99,7 @@ def get_dataloader(data,
     indexed_data = tagger.tag(indexed_data)
 
     # dataloader
-    dataloader = DataLoader(MyDataset(indexed_data),
+    dataloader = DataLoader(MyMappingDataset(indexed_data),
                             batch_size=batch_size,
                             shuffle=True,
                             num_workers=0,
@@ -176,8 +176,8 @@ def run():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # choose features and spans by token level
-    train_data = Preprocessor.choose_features_by_token_level(train_data, token_level, do_lower_case)
     train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
+
     for filename, test_data in filename2test_data.items():
         filename2test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level,
                                                                                        do_lower_case)
@@ -199,6 +199,7 @@ def run():
 
     # additional preprocessing
     train_data = tagger_class_name.additional_preprocess(train_data, "train", **addtional_preprocessing_config)
+
     # tagger
     tagger = tagger_class_name(train_data, **tagger_config)
     # metrics_calculator
@@ -291,7 +292,7 @@ def run():
 
                 num = len(glob(save_dir + "/*.json"))
                 # save results
-                save_as_json_lines(pred_samples, os.path.join(save_dir, "{}_{}".format(filename, num)))
+                save_as_json_lines(pred_samples, os.path.join(save_dir, "{}_{}".format(num, filename)))
 
                 # score
                 if cal_scores:

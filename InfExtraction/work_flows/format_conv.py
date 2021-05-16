@@ -1873,7 +1873,7 @@ def trans_chfin():
 #         sample["word_list"] = tok_res["word_list"]
 #
 #         ddp_res = parse_results[sample_idx]
-#         ddp_tok2char_span = utils.get_tok2char_span_map(ddp_res["word"])
+#         ddp_tok2char_span = utils.get_tok2char_span_map4ch(ddp_res["word"])
 #         ddp_char2tok_span = utils.get_char2tok_span(ddp_tok2char_span)
 #
 #         pos_tag_list, deprel_list = [], []
@@ -1920,24 +1920,41 @@ def preprocess_duie2():
         os.makedirs(save_dir)
     train_data = load_data(os.path.join(data_dir, "train_data.json"))
     valid_data = load_data(os.path.join(data_dir, "valid_data.json"))
-    test_data = load_data(os.path.join(data_dir, "test_data_1.json"))
+    test_data_1 = load_data(os.path.join(data_dir, "test_data_1.json"))
+    test_data_2 = load_data(os.path.join(data_dir, "test_data_2.json"))
 
     def clean_txt(txt):
-        # txt = re.sub("(\d+)(\d{4}年)", r"\1 \2", txt)
-        txt = re.sub("(\d+)((1[0-9]|20)\d{2}年)", r"\1 \2", txt)
+        txt = re.sub("“美国材料与试验协会”ASTMF2085-2012", "“美国材料与试验协会” ASTM F2085-2012", txt)
+        txt = re.sub("豆瓣评分：9.7BBC耗时5年", "豆瓣评分：9.7 BBC耗时5年", txt)
+        txt = re.sub("金载沅、B1A4、吴尚镇", "金载沅、B1A、吴尚镇", txt)
+        txt = re.sub("oppoR7", "oppo R7", txt)
+        txt = re.sub("楼主步步高/vivoE1T", "楼主步步高/vivo E1T", txt)
+        txt = re.sub("Eyes on me 8My heart will go on", "Eyes on me 8 My heart will go on", txt)
+        txt = re.sub("NetflixNetflix", "Netflix", txt)
+        txt = re.sub("刚看完CCTV5NBA最前线", "刚看完CCTV5 NBA最前线", txt)
+        txt = re.sub("缩写为PCTCGP", "缩写为PCTCG", txt)
+        txt = re.sub("1CN5A科技广场", "1 CN5A科技广场", txt)
+        txt = re.sub("1、3M3M公司", "1、3M公司", txt)
+        txt = re.sub("QUTBBS", "QUT BBS", txt)
+        txt = re.sub("SHES\.H\.E组合", "S.H.E组合", txt)
+        txt = re.sub("4 NBCNBC\(National Broadcasting", "4 NBC(National Broadcasting", txt)
 
-        txt = re.sub("(\d+)(1[0-2]月)", r"\1 \2", txt)
+        txt = re.sub("([a-zA-Z0-9]+)((1[0-9]|20)\d{2}年)", r"\1 \2", txt)
+        txt = re.sub("([a-zA-Z0-9]+)((1[0-9]|20)\d{2}-\d{2}-\d{2})", r"\1 \2", txt)
+        txt = re.sub("([a-zA-Z0-9]+)(1[0-2]月)", r"\1 \2", txt)
         txt = re.sub("(1)([3-9]月)", r"\1 \2", txt)
-        txt = re.sub("(\d+[2-9])(0?[1-9]月)", r"\1 \2", txt)
+        txt = re.sub("([a-zA-Z2-9])(0?[1-9]月)", r"\1 \2", txt)
 
-        # txt = re.sub("(\d+)([12][0-9]日)", r"\1 \2", txt)
-        # txt = re.sub("(\d+)(3[01]日)", r"\1 \2", txt)
-        # txt = re.sub("(3)([2-9]日)", r"\1 \2", txt)
-        # txt = re.sub("(\d+[4-9])(0?[1-9]日)", r"\1 \2", txt)
+        txt = re.sub("([a-zA-Z]{3,})(\d+)", r"\1 \2", txt)
+        txt = re.sub("(\d+)([a-zA-Z]{3,})", r"\1 \2", txt)
+        txt = re.sub("(\d{3,})([a-zA-Z]+)", r"\1 \2", txt)
+        txt = re.sub("([a-zA-Z]+)(\d{3,})", r"\1 \2", txt)
+
+        txt = re.sub("([a-zA-Z]+)(Inc\.)", r"\1 \2", txt)
         return txt
 
     # fix data
-    for sample in tqdm(train_data + valid_data + test_data, desc="clean"):
+    for sample in tqdm(train_data + valid_data + test_data_1 + test_data_2, desc="clean"):
         # fix text
         text = sample["text"]
         if text == "2  朱美音21967出生在江西南昌，1989年毕业于江西科技师范大学外语系英语专业，后来分配至鹰潭铁路一中任英语教师":
@@ -1949,7 +1966,6 @@ def preprocess_duie2():
         if text == "影片信息电视剧影片名称：舞动芝加哥第二季  影片类型：欧美剧  影片语言：英语  上映年份：20121演员表剧情介绍美国芝加哥，单亲女孩CeCe（Bella Thorne饰）和闺蜜Rocky（Zendaya Coleman饰）原本只是两个爱跳舞的普通初中生":
             text = "影片信息电视剧影片名称：舞动芝加哥第二季  影片类型：欧美剧  影片语言：英语  上映年份：2012 1演员表剧情介绍美国芝加哥，单亲女孩CeCe（Bella Thorne饰）和闺蜜Rocky（Zendaya Coleman饰）原本只是两个爱跳舞的普通初中生"
             sample["text"] = text
-        # {"text": "2 0014年，在拍摄《关中秘事》时，苗乙乙遇到了一个生命中最重要的人——亓亮"}
 
         if "spo_list" in sample:
             # fix cases
@@ -1975,7 +1991,20 @@ def preprocess_duie2():
                 if "作为新专辑《00:00》中第一首确定收入的歌曲" in text \
                         and spo["object"]["@value"] == "0:00" and spo["predicate"] == "所属专辑":
                     spo["object"]["@value"] = "00:00"
-
+                if "B1A4" in text and spo["object"]["@value"] == "B1A":
+                    spo["object"]["@value"] = "B1A4"
+                if "MojangAB" in text and spo["subject"] == "Mojang":
+                    spo["subject"] = "MojangAB"
+                if "《N》" in text and spo["object"]["@value"] == "n":
+                    spo["object"]["@value"] = "N"
+                if spo["subject"] == "小律师大作为第一季" and spo["object"]["@value"] == "r":
+                    spo["object"]["@value"] = "Mark-Paul Gosselaar"
+                if "Lesley Chiang" in text and spo["object"]["@value"] == "esley Chiang":
+                    spo["object"]["@value"] = "Lesley Chiang"
+                if "神奇海盗团" in text and "inArea" in spo["object"] and spo["object"]["inArea"] == "is":
+                    spo["object"]["inArea"] = "中国国内"
+                if "英洛威" in text and spo["object"]["@value"] == "IGA":
+                    spo["object"]["@value"] = "IIGA"
                 if text == "从化市喜乐登防震减灾科普馆成立于2010月27日,在广州从化市喜乐登青少年素质拓展训练中心举行了喜乐登防震减灾科普馆开馆及广东省防震减灾科普基地挂牌仪式" \
                     and spo["object"]["@value"] == "2010月27日":
                     text = "从化市喜乐登防震减灾科普馆成立于2010年10月27日,在广州从化市喜乐登青少年素质拓展训练中心举行了喜乐登防震减灾科普馆开馆及广东省防震减灾科普基地挂牌仪式"
@@ -2045,9 +2074,17 @@ def preprocess_duie2():
                 for k, item in spo["object"].items():
                     spo["object"][k] = clean_entity(item)
 
+            # fix text by patterns
+            text = clean_txt(text)
+            sample["text"] = text
+
             # fix spo
             new_spo_list = []
-            for spo in sample.get("spo_list", []):
+            for spo in sample["spo_list"]:
+                spo["subject"] = clean_txt(spo["subject"])
+                for k, v in spo["object"].items():
+                    spo["object"][k] = clean_txt(v)
+
                 if spo["subject"].lower() not in text.lower() or spo["object"]["@value"].lower() not in text.lower():
                     # drop wrong spo
                     continue
@@ -2072,6 +2109,7 @@ def preprocess_duie2():
 
                 bad_spo = False
                 for item in spo["object"].values():
+
                     assert item in text
                     if item.strip() == "":
                         bad_spo = True
@@ -2082,74 +2120,14 @@ def preprocess_duie2():
 
             sample["spo_list"] = filtered_spo_list
 
-        # fix text by patterns
-        text = clean_txt(text)
-        sample["text"] = text
-
-    # ddp = DDParser(use_pos=True, buckets=True)
-    # ddp_cache = "./tmp_ddp_res_1.jsonlines"
-    # all_data_len = len(train_data) + len(valid_data) + len(test_data)
-    # if os.path.exists(ddp_cache):
-    #     ddp_results = load_data(ddp_cache)
-    #     assert len(ddp_results) == all_data_len
-    # else:
-    #     ddp_results = []
-    #     texts = [sample["text"] for sample in train_data + valid_data + test_data]
-    #     for idx in tqdm(range(0, all_data_len, 100)):
-    #         ddp_results.extend(ddp.parse(texts[idx:idx + 100]))
-    #     save_as_json_lines(ddp_results, ddp_cache)
-    #
-    # for sample_idx, sample in tqdm(enumerate(train_data + valid_data + test_data), desc="add features"):
-    #     text = sample["text"]
-    #     ddp_res = ddp_results[sample_idx]
-    #     ddp_tok2char_span = utils.get_tok2char_span_map(ddp_res["word"])
-    #     ddp_char2tok_span = utils.get_char2tok_span(ddp_tok2char_span)
-    #
-    #     all_ent_list = Preprocessor.get_all_possible_entities(sample)
-    #     tok_res = ChineseWordTokenizer.tokenize_plus(text, ent_list=all_ent_list)
-    #     ctok_word2char_span = tok_res["word2char_span"]
-    #     cchar2tok_span = utils.get_char2tok_span(ctok_word2char_span)
-    #     sample["word2char_span"] = ctok_word2char_span
-    #     sample["word_list"] = tok_res["word_list"]
-    #
-    #     pos_tag_list, deprel_list = [], []
-    #     for wid, word in enumerate(tok_res["word_list"]):
-    #         ch_sp = ctok_word2char_span[wid]
-    #         tok_sps = ddp_char2tok_span[ch_sp[0]:ch_sp[1]]
-    #         # try:
-    #         #     assert tok_sps[0][0] == tok_sps[-1][1] - 1
-    #         # except:
-    #         #     print("pre duie")
-    #         if tok_sps[0][0] == tok_sps[-1][1] - 1:
-    #             ddp_tok_id = tok_sps[0][0]
-    #         else:
-    #             ddp_tok_id = None
-    #             min_dis = 9999
-    #             for tk_idx in range(tok_sps[0][0], tok_sps[-1][1]):
-    #                 ddp_wd = ddp_res["word"][tk_idx]
-    #                 l_dis = Levenshtein.distance(re.sub("[\[\]]", "", ddp_wd), re.sub("[\[\]]", "", word))
-    #                 if l_dis < min_dis:
-    #                     min_dis = l_dis
-    #                     ddp_tok_id = tk_idx
-    #         pos_tag = ddp_res["postag"][ddp_tok_id]
-    #         pos_tag_list.append(pos_tag)
-    #
-    #         ddp_head_tok_id = ddp_res["head"][ddp_tok_id] - 1
-    #         deprel = ddp_res["deprel"][ddp_tok_id]
-    #
-    #         ddp_head_ch_sp = ddp_tok2char_span[ddp_head_tok_id]
-    #         ddp_head_ctok_spans = cchar2tok_span[ddp_head_ch_sp[0]:ddp_head_ch_sp[1]]
-    #         for head_ctok_idx in range(ddp_head_ctok_spans[0][0], ddp_head_ctok_spans[-1][1]):
-    #             deprel_list.append([wid, head_ctok_idx, deprel])
-    #     sample["pos_tag_list"] = pos_tag_list
-    #     sample["dependency_list"] = deprel_list
-
     train_data_path = os.path.join(save_dir, "train_data.json")
     valid_data_path = os.path.join(save_dir, "valid_data.json")
-    test_data_path = os.path.join(save_dir, "test_data_1.json")
+    test_data_1_path = os.path.join(save_dir, "test_data_1.json")
+    test_data_2_path = os.path.join(save_dir, "test_data_2.json")
     save_as_json_lines(train_data, train_data_path)
     save_as_json_lines(valid_data, valid_data_path)
-    save_as_json_lines(test_data, test_data_path)
+    save_as_json_lines(test_data_1, test_data_1_path)
+    save_as_json_lines(test_data_2, test_data_2_path)
 
 
 def trans2duee_format(pred_data):
@@ -2231,7 +2209,7 @@ def trans2duie2_format(pred_data):
     new_pred_data = []
     ori_test_data = load_data("../../data/ori_data/duie_comp2021_bk/test_data_1.json")
 
-    for sample_idx, sample in enumerate(pred_data):
+    for sample_idx, sample in tqdm(enumerate(pred_data), "trans 2 duie2 format"):
         new_spo_list = []
         spe_rel_map = {}
         spe_key2predicate = {
@@ -2244,12 +2222,14 @@ def trans2duie2_format(pred_data):
             if spo["predicate"] in spe_key2predicate:
                 spe_rel_map.setdefault(spo["predicate"], {})
                 spe_rel_map[spo["predicate"]].setdefault(spo["subject"], set()).add(spo["object"])
+
         for spo in sample["relation_list"]:
             if spo["predicate"] not in spe_key2predicate:
                 new_spo = {
                     "predicate": spo["predicate"],
                     "subject": spo["subject"],
                     "object": {"@value": spo["object"], },
+                    "conf": spo["conf"],
                 }
                 for spe_k, pred_set in spe_key2predicate.items():
                     if spo["predicate"] in pred_set and spe_k in spe_rel_map and \
@@ -2264,10 +2244,56 @@ def trans2duie2_format(pred_data):
                                           if k in new_spo["object"]}
                 new_spo_list.append(new_spo)
 
-        assert re.sub("\s", "", sample["text"]) == re.sub("\s", "", ori_test_data[sample_idx]["text"])
+        # save max conf
+        spo_mark2spo = {}
+        spo_mark2max_conf = {}
+        for spo in new_spo_list:
+            conf = spo["conf"]
+            del spo["conf"]
+            spo_mark = str(spo)
+            if spo_mark not in spo_mark2spo or conf > spo_mark2max_conf[spo_mark]:
+                spo["conf"] = conf
+                spo_mark2spo[spo_mark] = spo
+                spo_mark2max_conf[spo_mark] = conf
+        new_spo_list = spo_mark2spo.values()
+
+        # post-process
+        one_subj_rel = {"饰演"}
+        one_subj_rel2obj2cand = {}
+        filtered_spo_list = []
+        for spo in new_spo_list:
+            if spo["predicate"] in one_subj_rel:
+                one_subj_rel2obj2cand.setdefault(spo["predicate"], {})
+                obj = spo["object"]["@value"]
+                if obj not in one_subj_rel2obj2cand[spo["predicate"]] or \
+                    spo["conf"] > one_subj_rel2obj2cand[spo["predicate"]][obj]["conf"]:
+                    one_subj_rel2obj2cand[spo["predicate"]][obj] = spo
+            else:
+                filtered_spo_list.append(spo)
+        for obj2cand in one_subj_rel2obj2cand.values():
+            filtered_spo_list.extend(obj2cand.values())
+
+        filtered_spo_list = [{k: v for k, v in spo.items() if k != "conf"} for spo in filtered_spo_list]
+
+        # text and spo might have been split with blanks by clean_txt()
+        # recover text and spo by original text
+        ori_text = ori_test_data[sample_idx]["text"]
+        assert re.sub("\s", "", sample["text"]) == re.sub("\s", "", ori_text)
+        for spo in filtered_spo_list:
+            if spo["subject"] not in ori_text:
+                segs = [s for s in utils.search_segs(spo["subject"], ori_text) if s.strip() != ""]
+                spo["subject"] = "".join(segs)
+                assert spo["subject"] in ori_text
+
+            for k, v in spo["object"].items():
+                if v not in ori_text:
+                    segs = [s for s in utils.search_segs(v, ori_text) if s.strip() != ""]
+                    spo["object"][k] = "".join(segs)
+                    assert spo["object"][k] in ori_text
+
         new_sample = {
-            "text": ori_test_data[sample_idx]["text"],
-            "spo_list": Preprocessor.unique_list(new_spo_list),
+            "text": ori_text,
+            "spo_list": Preprocessor.unique_list(filtered_spo_list),
         }
         new_pred_data.append(new_sample)
     return new_pred_data
@@ -2596,6 +2622,111 @@ def trans_tfboys_baselines2normal_format(baseline_name):
     return pred_data, gold_data
 
 
+def trans_ace05(data):
+    new_data = []
+    for k, article in tqdm(data.items()):
+        trigger_bio_tags = [lab.split("_")[0] for lab in article["event_label_list"]]
+        trigger_bio_str = "".join(trigger_bio_tags)
+        text = " ".join(article["word_list"])
+
+        # find all events
+        event_list = []
+        for m in re.finditer("BI*", trigger_bio_str):
+            trigger_wd_span = [m.span()[0], m.span()[1]]
+            trigger_type = article["event_label_list"][trigger_wd_span[0]].split("_")[1]
+            even_word_idx_list = [m.span()[0], m.span()[1]]
+            trigger_start = trigger_wd_span[0]
+            arguments = article["event_argument_list"][trigger_start]
+            arguments_new = []
+            for arg in arguments:
+                arg_start = trigger_start + arg["start"]
+                arg_end = trigger_start + arg["end"]
+                even_word_idx_list.append(arg_start)
+                even_word_idx_list.append(arg_end)
+                arg_text = " ".join(article["word_list"][arg_start:arg_end])
+                try:
+                    assert arg_text == arg["text"].lower()
+                except Exception:
+                    print("extr_text: {} != ori_text: {}".format(arg_text, arg["text"].lower()))
+
+                arguments_new.append({
+                    "text": arg_text,
+                    "wd_span": [arg_start, arg_end],
+                    "type": arg["type"],
+                })
+            even_word_idx_list = sorted(even_word_idx_list)
+            event = {
+                "event_span": [even_word_idx_list[0], even_word_idx_list[-1]],
+                "trigger": " ".join(article["word_list"][trigger_wd_span[0]:trigger_wd_span[1]]),
+                "trigger_type": trigger_type,
+                "trigger_wd_span": trigger_wd_span,
+                "argument_list": arguments_new,
+            }
+            event_list.append(event)
+
+        for sent_idx, sen_ext in enumerate(article["sentence_extents"]):
+            word_list = article["word_list"][sen_ext[0]:sen_ext[1]]
+            ner_tag_list = article["entity_label_list"][sen_ext[0]:sen_ext[1]]
+            pos_tag_list = article["pos_tag_list"][sen_ext[0]:sen_ext[1]]
+            dep_list = article["dependencies"][sen_ext[0]:sen_ext[1]]
+            sent = " ".join(word_list)
+
+            tok2char_span = WhiteWordTokenizer.get_tok2char_span_map(word_list)
+
+            event_list_sent = []
+            for event_ in event_list:
+                event = copy.copy(event_)
+                if event["event_span"][0] >= sen_ext[0] and event["event_span"][1] <= sen_ext[1]:
+                    for arg in event["argument_list"]:
+                        arg["wd_span"] = [arg["wd_span"][0] - sen_ext[0], arg["wd_span"][1] - sen_ext[0]]
+                        char_span_list = tok2char_span[arg["wd_span"][0]:arg["wd_span"][1]]
+                        arg["char_span"] = [char_span_list[0][0], char_span_list[-1][1]]
+                        # try:
+                        assert sent[arg["char_span"][0]:arg["char_span"][1]] == arg["text"]
+                        # except Exception:
+                        #     print("debug!")
+
+                    del event["event_span"]
+
+                    event["trigger_wd_span"] = [event["trigger_wd_span"][0] - sen_ext[0],
+                                                  event["trigger_wd_span"][1] - sen_ext[0]]
+                    char_span_list = tok2char_span[event["trigger_wd_span"][0]:event["trigger_wd_span"][1]]
+                    event["trigger_char_span"] = [char_span_list[0][0], char_span_list[-1][1]]
+                    assert sent[event["trigger_char_span"][0]:event["trigger_char_span"][1]] == event["trigger"]
+
+                    event_list_sent.append(event)
+            new_data.append({
+                "id": "{}_{}".format(article["docid"], sent_idx),
+                "text": sent,
+                "word_list": word_list,
+                "word2char_span": tok2char_span,
+                "ner_tag_list": ner_tag_list,
+                "pos_tag_list": pos_tag_list,
+                "dependency_list": dep_list,
+                "event_list": event_list_sent,
+            })
+    return new_data
+
+def rm_triggers(data):
+    for sample in data:
+        new_event_list = []
+        for event in sample["event_list"]:
+            if len(event["argument_list"]) == 0:
+                continue
+            new_event = {}
+            for k, v in event.items():
+                if k != "trigger_type" and "trigger" in k:
+                    pass
+                else:
+                    if k == "trigger_type":
+                        new_event["event_type"] = v
+                    else:
+                        new_event[k] = v
+
+            new_event_list.append(new_event)
+        sample["event_list"] = new_event_list
+    return data
+
 if __name__ == "__main__":
     # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys4doc_ee+RAIN+TRAIN/263bstht/model_state_dict_10_66.19/test_data_1.json"
     # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys4doc_ee+RAIN+TRAIN/263bstht/model_state_dict_10_66.19/duee_fin.json"
@@ -2603,8 +2734,8 @@ if __name__ == "__main__":
     # data_formated = trans2duee_fin_format(data)
     # save_as_json_lines(data_formated, out_path)
 
-    # in_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/2hibrbc8/model_state_dict_7_76.422/test_data_1_1.json"
-    # out_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/2hibrbc8/model_state_dict_7_76.422/duie_1.json"
+    # in_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/2hibrbc8/model_state_dict_3_75.745/test_data_1.json_0"
+    # out_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/2hibrbc8/model_state_dict_3_75.745/duie.json"
     # formated_data = trans2duie2_format(load_data(in_path))
     # save_as_json_lines(formated_data, out_path)
 
@@ -2613,30 +2744,68 @@ if __name__ == "__main__":
     # formated_data = trans2duee_fin_format(load_data(in_path))
     # save_as_json_lines(formated_data, out_path)
 
-    # pred_data, gold_data = trans_tfboys_baselines2normal_format("dmcnn")
-    # # our_gold_data = load_data("../../data/normal_data/ace2005_lu/test_data.json")
-    # # our_gold_data = Preprocessor.choose_spans_by_token_level(our_gold_data, "word")
+    # pred_data, gold_data = trans_tfboys_baselines2normal_format("dbrnn")
+
+    pred_data_path = "../../data/res_data/ace2005_lu/re+tee+RAIN+TRAIN/h87pgw2q/model_state_dict_97_53.333/0_test_data.json"
+    gold_data_path = "../../data/normal_data/ace2005_lu/test_data.json"
+
+    # pred_data = load_data(pred_data_path)
+    # gold_data = load_data(gold_data_path)
+    # gold_data = Preprocessor.choose_spans_by_token_level(gold_data, "subword")
     #
     # # our_gold_ids = {sample["id"] for sample in our_gold_data}
     # # gold_ids = {sample["id"] for sample in gold_data}
     # # inter_ids = our_gold_ids.intersection(gold_ids)
     # # dff_ids = gold_ids.difference(our_gold_ids)
     # # print(len(inter_ids))
-    #
+
+    # pred_data = rm_triggers(pred_data)
+    # gold_data = rm_triggers(gold_data)
     # score_dict = MetricsCalculator.score(pred_data, gold_data)
     # pprint(score_dict)
 
-
-
     # preprocess_duie2()
 
-    # data_out_dir = "../../data/ori_data/CMeEE"
-    # if not os.path.exists(data_out_dir):
-    #     os.makedirs(data_out_dir)
-    # train_save_path = os.path.join(data_out_dir, "train_data.json")
-    # valid_save_path = os.path.join(data_out_dir, "valid_data.json")
-    # test_save_path = os.path.join(data_out_dir, "test_data.json")
-    # save_as_json_lines(train_data, train_save_path)
-    # save_as_json_lines(valid_data, valid_save_path)
-    # save_as_json_lines(test_data, test_save_path)
+    # train_path = "../../data/ori_data/ace2005_lu_bk/train_data.json"
+    # dev_path = "../../data/ori_data/ace2005_lu_bk/dev_data.json"
+    # test_path = "../../data/ori_data/ace2005_lu_bk/test_data.json"
+    # train_data = load_data(train_path)
+    # valid_data = load_data(dev_path)
+    # test_data = load_data(test_path)
+    # new_train_data = trans_ace05(train_data)
+    # new_valid_data = trans_ace05(valid_data)
+    # new_test_data = trans_ace05(test_data)
+    # sv_dir = "../../data/ori_data/ace2005_lu_2"
+    # if not os.path.exists(sv_dir):
+    #     os.mkdir(sv_dir)
+    # train_sv_path = os.path.join(sv_dir, "train_data.json")
+    # dev_sv_path = os.path.join(sv_dir, "valid_data.json")
+    # test_sv_path = os.path.join(sv_dir, "test_data.json")
+    # save_as_json_lines(new_train_data, train_sv_path)
+    # save_as_json_lines(new_valid_data, dev_sv_path)
+    # save_as_json_lines(new_test_data, test_sv_path)
+
+    # # rm triggers
+    # train_path = "../../data/ori_data/ace2005_lu/train_data.json"
+    # dev_path = "../../data/ori_data/ace2005_lu/valid_data.json"
+    # test_path = "../../data/ori_data/ace2005_lu/test_data.json"
+    # train_data = load_data(train_path)
+    # valid_data = load_data(dev_path)
+    # test_data = load_data(test_path)
+    # sv_dir = "../../data/ori_data/ace2005_lu_tf"
+    # if not os.path.exists(sv_dir):
+    #     os.mkdir(sv_dir)
+    #
+
+    #
+    # new_train_data = rm_triggers(train_data)
+    # new_valid_data = rm_triggers(valid_data)
+    # new_test_data = rm_triggers(test_data)
+    # train_sv_path = os.path.join(sv_dir, "train_data.json")
+    # dev_sv_path = os.path.join(sv_dir, "valid_data.json")
+    # test_sv_path = os.path.join(sv_dir, "test_data.json")
+    # save_as_json_lines(new_train_data, train_sv_path)
+    # save_as_json_lines(new_valid_data, dev_sv_path)
+    # save_as_json_lines(new_test_data, test_sv_path)
+
     pass

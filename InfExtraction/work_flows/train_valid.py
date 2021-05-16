@@ -44,7 +44,7 @@ from InfExtraction.modules import taggers
 from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.modules.utils import DefaultLogger, MyDataset, save_as_json_lines
+from InfExtraction.modules.utils import DefaultLogger, MyMappingDataset, save_as_json_lines
 
 
 def worker_init_fn(worker_id):
@@ -101,7 +101,7 @@ def get_dataloader(data,
     indexed_data = tagger.tag(indexed_data)
 
     # dataloader
-    dataloader = DataLoader(MyDataset(indexed_data),
+    dataloader = DataLoader(MyMappingDataset(indexed_data),
                             batch_size=batch_size,
                             shuffle=True,
                             num_workers=0,
