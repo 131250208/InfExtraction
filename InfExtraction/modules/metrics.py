@@ -566,11 +566,20 @@ class MetricsCalculator:
         }
         offset_must_metrics = {"trigger_iden", "trigger_class", "arg_soft_iden", "arg_soft_class",
                                "arg_hard_iden", "arg_hard_class", "arg_link_iden", "arg_link_class"}
+
+        output_trigger_based_metrics = False
+        if any("trigger" in event for golden_sample in golden_sample_list
+               for event in golden_sample["event_list"]):
+            output_trigger_based_metrics = True
+
+        # skip offset must metrics if token_span is a list (auto search by text)
         if any(type(arg["tok_span"][0]) is list for golden_sample in golden_sample_list
                for event in golden_sample["event_list"] for arg in event["argument_list"]):
             pass
         else:
             for key in offset_must_metrics:
+                if not output_trigger_based_metrics and key in {"trigger_iden", "trigger_class", "arg_hard_iden", "arg_hard_class"}:
+                    continue
                 ee_cpg_dict[key] = [0, 0, 0]
 
         for idx, pred_sample in enumerate(pred_sample_list):
@@ -583,7 +592,7 @@ class MetricsCalculator:
             # except Exception as e:
             #     print("event error!")
 
-        # baidu competition metrics for the event extraction tasks
+        # baidu competition metrics for the event extraction tasks, text must
         if any("text" not in sample for sample in pred_sample_list):
             pass
         else:

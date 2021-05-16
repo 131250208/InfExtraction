@@ -5,11 +5,12 @@ from tqdm import tqdm
 from InfExtraction.modules.preprocess import Indexer, Preprocessor
 from InfExtraction.modules import utils
 import numpy as np
-import torch.nn.functional as F
+import torch
 import networkx as nx
 from InfExtraction.modules.metrics import MetricsCalculator
 # from InfExtraction.modules.ancient_eval4oie import OIEMetrics
 import logging
+import random
 
 
 class Tagger(metaclass=ABCMeta):
@@ -67,15 +68,15 @@ class Tagger(metaclass=ABCMeta):
 
 
 class Tagger4SpanNER(Tagger):
-    def __init__(self, data, **kwargs):
+    def __init__(self, data_anns, **kwargs):
         '''
         :param data: all data, used to generate entity type and relation type dicts
         '''
         super().__init__()
         ent_type_set = set()
-        for sample in data:
-            # entity type
-            ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
+
+        # entity type
+        ent_type_set |= {ent["type"] for ent in data_anns["entity_list"]}
         ent_type_set = sorted(ent_type_set)
         self.ent_tag2id = {ent: idx for idx, ent in enumerate(ent_type_set)}
         self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
@@ -104,9 +105,8 @@ class Tagger4SpanNER(Tagger):
         return points
 
     def tag(self, data):
-        for sample in tqdm(data, desc="tagging"):
+        for sample in data:
             sample["ent_points"] = self.get_tag_points(sample)
-        return data
 
     def decode(self, sample, pred_tags, pred_outs=None):
         rel_list, ent_list = [], []
@@ -147,13 +147,8 @@ class HandshakingTagger4TPLPlus(Tagger):
 
     @classmethod
     def additional_preprocess(cls, data, data_type, **kwargs):
-        if data_type not in {"train", "debug"}:
-            return data
-
-        # print("copy in add")
-        # new_data = copy.deepcopy(data)
-        # print("copy done")
-        for sample in tqdm(data, desc="additional preprocessing"):
+        assert data_type in {"train", "debug"}
+        for sample in data:
             assert "entity_list" in sample
             fin_ent_list = copy.deepcopy(sample["entity_list"])
             fin_rel_list = copy.deepcopy(sample["relation_list"]) if "relation_list" in sample else []
@@ -168,44 +163,6 @@ class HandshakingTagger4TPLPlus(Tagger):
                         "char_span": ent["char_span"],
                         "tok_span": ent["tok_span"],
                     })
-
-            # add_nested_relation = kwargs["add_nested_relation"]
-            # add_same_type_relation = kwargs["add_same_type_relation"]
-            # # add additional relations
-            # for idx_i, ent_i in enumerate(fin_ent_list):
-            #     for idx_j, ent_j in enumerate(fin_ent_list):
-            #         if idx_i == idx_j:
-            #             continue
-            #         # nested
-            #         if add_nested_relation:
-            #             if (ent_i["tok_span"][1] - ent_i["tok_span"][0]) < (
-            #                     ent_j["tok_span"][1] - ent_j["tok_span"][0]) \
-            #                     and ent_i["tok_span"][0] >= ent_j["tok_span"][0] \
-            #                     and ent_i["tok_span"][1] <= ent_j["tok_span"][1]:
-            #                 fin_rel_list.append({
-            #                     "subject": ent_i["text"],
-            #                     "subj_char_span": [*ent_i["char_span"]],
-            #                     "subj_tok_span": [*ent_i["tok_span"]],
-            #                     # "subj_type": ent_i["type"],
-            #                     "object": ent_j["text"],
-            #                     "obj_char_span": [*ent_j["char_span"]],
-            #                     "obj_tok_span": [*ent_j["tok_span"]],
-            #                     # "obj_type": ent_j["type"],
-            #                     "predicate": "EXT:NESTED_IN",
-            #                 })
-            #
-            #         # same type co-occurrence
-            #         if add_same_type_relation:
-            #             if ent_j["type"] == ent_i["type"] and not cls.is_additional_ent_type(ent_i["type"]):
-            #                 fin_rel_list.append({
-            #                     "subject": ent_i["text"],
-            #                     "subj_char_span": [*ent_i["char_span"]],
-            #                     "subj_tok_span": [*ent_i["tok_span"]],
-            #                     "object": ent_j["text"],
-            #                     "obj_char_span": [*ent_j["char_span"]],
-            #                     "obj_tok_span": [*ent_j["tok_span"]],
-            #                     "predicate": "EXT:SAME_TYPE",
-            #                 })
 
             classify_entities_by_relation = kwargs["classify_entities_by_relation"]
             if classify_entities_by_relation:
@@ -226,9 +183,9 @@ class HandshakingTagger4TPLPlus(Tagger):
 
             sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
             sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
-        return data
+            yield sample
 
-    def __init__(self, data, **kwargs):
+    def __init__(self, data_anns, **kwargs):
         '''
         :param data: all data, used to generate entity type and relation type dicts
         '''
@@ -236,11 +193,14 @@ class HandshakingTagger4TPLPlus(Tagger):
         # generate entity type and relation type dicts
         rel_type_set = set()
         ent_type_set = set()
-        for sample in data:
-            # entity type
-            ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
-            # relation type
-            rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
+
+        # entity type
+        try:
+            ent_type_set |= {ent["type"] for ent in data_anns["entity_list"]}
+        except Exception:
+            print("debug")
+        # relation type
+        rel_type_set |= {rel["predicate"] for rel in data_anns["relation_list"]}
         rel_type_set = sorted(rel_type_set)
         ent_type_set = sorted(ent_type_set)
         self.rel2id = {rel: ind for ind, rel in enumerate(rel_type_set)}
@@ -281,9 +241,8 @@ class HandshakingTagger4TPLPlus(Tagger):
         return len(self.tag2id)
 
     def tag(self, data):
-        for sample in tqdm(data, desc="tagging"):
+        for sample in data:
             sample["tag_points"] = self.get_tag_points(sample)
-        return data
 
     def get_tag_points(self, sample):
         '''
@@ -463,11 +422,11 @@ class HandshakingTagger4TPLPlus(Tagger):
 
 
 class Tagger4RAIN(HandshakingTagger4TPLPlus):
-    def __init__(self, data, **kwargs):
+    def __init__(self, data_anns, **kwargs):
         '''
-        :param data: all data, used to generate entity type and relation type dicts
+        :param data_anns: all data annatations, used to generate entity type and relation type dicts
         '''
-        super(Tagger4RAIN, self).__init__(data, **kwargs)
+        super(Tagger4RAIN, self).__init__(data_anns, **kwargs)
 
         self.rel_tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
         self.rel_tag2id = {t: idx for idx, t in enumerate(sorted(self.rel_tags))}
@@ -476,17 +435,17 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         self.ent_tag2id = self.ent2id
         self.id2ent_tag = {idx: t for t, idx in self.ent_tag2id.items()}
 
-        print(">>>>>>>>>>>>>>>> ent_tag_size: {}; rel_tag_size: {} >>>>>>>>>>>>>>>>>>>>".format(len(self.ent_tag2id), len(self.rel_tag2id)))
+        print(">>>>>>>>>>>>>>>> ent_tag_size: {}; rel_tag_size: {} >>>>>>>>>>>>>>>>>>>>".format(len(self.ent_tag2id),
+                                                                                                len(self.rel_tag2id)))
 
     def get_tag_size(self):
         return len(self.ent_tag2id), len(self.rel_tag2id)
 
     def tag(self, data):
-        for sample in tqdm(data, desc="tagging"):
+        for sample in data:
             ent_points, rel_points = self.get_tag_points(sample)
             sample["ent_points"] = ent_points
             sample["rel_points"] = rel_points
-        return data
 
     def get_tag_points(self, sample):
         '''
@@ -539,7 +498,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
         pred_ent_conf, pred_rel_conf = None, None
         matrix_idx2shaking_idx = None
         if pred_outs is not None:
-            pred_ent_conf, pred_rel_conf = F.sigmoid(pred_outs[0]), F.sigmoid(pred_outs[1])
+            pred_ent_conf, pred_rel_conf = torch.sigmoid(pred_outs[0]), torch.sigmoid(pred_outs[1])
             shaking_seq_len = pred_ent_conf.size()[0]
             matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
             matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
@@ -620,7 +579,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                                 t2h_ids in link_type_map and "ST2OH" in link_type_map[t2h_ids]:
                             rel_exist = True
                             edge_conf = (link_type_map[h2h_ids]["SH2OH"] * link_type_map[t2t_ids]["ST2OT"]
-                                        * link_type_map[h2t_ids]["SH2OT"] * link_type_map[t2h_ids]["ST2OH"]) ** 0.25
+                                         * link_type_map[h2t_ids]["SH2OT"] * link_type_map[t2h_ids]["ST2OH"]) ** 0.25
                     else:
                         if h2h_ids in link_type_map and "SH2OH" in link_type_map[h2h_ids] and \
                                 t2t_ids in link_type_map and "ST2OT" in link_type_map[t2t_ids]:
@@ -658,16 +617,16 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
 
 def create_rebased_ee_tagger(base_class):
     class REBasedEETagger(base_class):
-        def __init__(self, data, *args, **kwargs):
-            super(REBasedEETagger, self).__init__(data, *args, **kwargs)
+        def __init__(self, data_anns, *args, **kwargs):
+            super(REBasedEETagger, self).__init__(data_anns, *args, **kwargs)
             self.event_type2arg_rols = {}
-            for sample in data:
-                for event in sample["event_list"]:
-                    event_type = event["event_type"]
-                    for arg in event["argument_list"]:
-                        if event_type not in self.event_type2arg_rols:
-                            self.event_type2arg_rols[event_type] = set()
-                        self.event_type2arg_rols[event_type].add(arg["type"])
+
+            for event in data_anns["event_list"]:
+                event_type = event["event_type"]
+                for arg in event["argument_list"]:
+                    if event_type not in self.event_type2arg_rols:
+                        self.event_type2arg_rols[event_type] = set()
+                    self.event_type2arg_rols[event_type].add(arg["type"])
 
         @classmethod
         def additional_preprocess(cls, data, data_type, **kwargs):
@@ -760,6 +719,7 @@ def create_rebased_ee_tagger(base_class):
                 tok_offset = "{},{}".format(*ent["tok_span"])
                 if arg_tri == "Argument":
                     arg_offset2roles.setdefault(tok_offset, set()).add(role)
+
                     arg = copy.deepcopy(ent)
                     arg["type"] = role
                     arg_mark2arg["{},{}".format(tok_offset, role)] = arg
@@ -792,7 +752,7 @@ def create_rebased_ee_tagger(base_class):
                     type_wise_edges.append(rel)
 
             tri_mark2args = {}
-            arg_linked_mem = set()
+            arg_used_mem = set()
             for edge in type_wise_edges:
                 arg_role, event_type = edge["predicate"].split(separator)
                 tri_mark = "{},{},{}".format(*edge["obj_tok_span"], event_type)
@@ -809,18 +769,39 @@ def create_rebased_ee_tagger(base_class):
                     "type": arg_role,
                 })
                 arg_mark = "{},{},{}".format(*edge["subj_tok_span"], arg_role)
-                arg_linked_mem.add(arg_mark)
+                arg_used_mem.add(arg_mark)
 
             event_list = []
             for trigger_mark, trigger in tri_mark2trigger.items():
                 arg_list = utils.unique_list(tri_mark2args.get(trigger_mark, []))
-                if len(arg_list) == 0:
-                    arg_list = [arg for arg_mark, arg in arg_mark2arg.items() if arg_mark not in arg_linked_mem]
+                if len(arg_list) == 0:  # if it is a single-node trigger, add all possible arguments
+                    arg_list = []
+                    for arg_mark, arg in arg_mark2arg.items():
+                        if arg_mark not in arg_used_mem and \
+                                arg["type"] in self.event_type2arg_rols[trigger["event_type"]]:
+                            arg_list.append(arg)
+                            arg_mark = "{},{},{}".format(*arg["tok_span"], arg["type"])
+                            arg_used_mem.add(arg_mark)
 
                 event_list.append({
                     **trigger,
                     "argument_list": arg_list,
                 })
+
+            # # if some arguments left without aligned to triggers, try the best to recall them
+            # for event_type, roles in self.event_type2arg_rols.items():
+            #     event = {
+            #         "event_type": event_type,
+            #         "argument_list": []
+            #     }
+            #     for arg in arg_mark2arg.values():
+            #         arg_mark = "{},{},{}".format(*arg["tok_span"], arg["type"])
+            #         if arg_mark not in arg_used_mem and arg["type"] in roles:
+            #             event["argument_list"].append(arg)
+            #
+            #     if len(event["argument_list"]) > 0:
+            #         event_list.append(event)
+
             sample["event_list"] = event_list
             return sample
 
@@ -950,19 +931,19 @@ def create_rebased_ee_tagger(base_class):
         #             }
         #             event_list.append(event)
         #     return event_list
+
     return REBasedEETagger
 
 
 def create_rebased_tfboys4doc_ee_tagger(base_class):
     class REBasedTFBoys4DocEETagger(base_class):
-        def __init__(self, data, *args, **kwargs):
-            super(REBasedTFBoys4DocEETagger, self).__init__(data, *args, **kwargs)
+        def __init__(self, data_anns, *args, **kwargs):
+            super(REBasedTFBoys4DocEETagger, self).__init__(data_anns, *args, **kwargs)
             self.event_type2arg_rols = {}
-            for sample in data:
-                for event in sample["event_list"]:
-                    event_type = event["event_type"]
-                    for arg in event["argument_list"]:
-                        self.event_type2arg_rols.setdefault(event_type, set()).add(arg["type"])
+            for event in data_anns["event_list"]:
+                event_type = event["event_type"]
+                for arg in event["argument_list"]:
+                    self.event_type2arg_rols.setdefault(event_type, set()).add(arg["type"])
 
             self.dtm_arg_type_by_edges = kwargs["dtm_arg_type_by_edges"]
 
@@ -1137,7 +1118,8 @@ def create_rebased_tfboys4doc_ee_tagger(base_class):
                                 min_edge_num = 1 << 31
                                 can_role_set = set()
                                 for offset_str_j in cli:
-                                    arg_p_set = offsets2arg_pair_rel.get(separator.join([offset_str, offset_str_j]), set())
+                                    arg_p_set = offsets2arg_pair_rel.get(separator.join([offset_str, offset_str_j]),
+                                                                         set())
                                     if len(arg_p_set) != 0 and len(arg_p_set) < min_edge_num:
                                         min_edge_num = len(arg_p_set)
                                         can_role_set = {arg_p.split(separator)[0] for arg_p in arg_p_set}
@@ -1174,103 +1156,100 @@ def create_rebased_tfboys4doc_ee_tagger(base_class):
 
                     # find trigger
                     new_argument_list = []
+                    triggers = []
                     for arg in arguments:
                         if arg["type"] == "Trigger":
-                            event["trigger"] = arg["text"]
-                            event["trigger_tok_span"] = arg["tok_span"]
-                            event["trigger_char_span"] = arg["char_span"]
+                            triggers.append(arg)
                         else:
                             new_argument_list.append(arg)
 
                     # if the role sets corresponding to the nodes are all empty,
-                    # this clique is invalid and the corresponding event without argument list and trigger
+                    # this clique is invalid and the corresponding event without argument list and triggers
                     # will not be appended into the event list.
-                    if len(new_argument_list) > 0 or "trigger" in event:
+                    if len(new_argument_list) > 0 or len(triggers) > 0:
+                        trigger = random.choice(triggers)
+                        event["trigger"] = trigger["text"]
+                        event["trigger_tok_span"] = trigger["tok_span"]
+                        event["trigger_char_span"] = trigger["char_span"]
                         event["argument_list"] = new_argument_list
+                        event["triggers"] = triggers
                         event_list.append(event)
 
             sample["event_list"] = event_list
             return sample
+
     return REBasedTFBoys4DocEETagger
 
 
 def create_rebased_tfboys_tagger(base_class):
     class REBasedTFBoysTagger(base_class):
-        def __init__(self, data, *args, **kwargs):
-            super(REBasedTFBoysTagger, self).__init__(data, *args, **kwargs)
+        def __init__(self, data_anns, *args, **kwargs):
+            super(REBasedTFBoysTagger, self).__init__(data_anns, *args, **kwargs)
             self.event_type2arg_rols = {}
             self.combine_spans = False
-            for sample in data:
-                for event in sample["event_list"]:
-                    event_type = event["event_type"]
-                    for arg in event["argument_list"]:
-                        self.event_type2arg_rols.setdefault(event_type, set()).add(arg["type"])
-                        if type(arg["char_span"][0]) is list:
-                            self.combine_spans = True
+
+            for event in data_anns["event_list"]:
+                event_type = event["event_type"]
+                for arg in event["argument_list"]:
+                    self.event_type2arg_rols.setdefault(event_type, set()).add(arg["type"])
+                    if type(arg["char_span"][0]) is list:
+                        self.combine_spans = True
 
             self.dtm_arg_type_by_edges = kwargs["dtm_arg_type_by_edges"]
 
         @classmethod
         def additional_preprocess(cls, data, data_type, **kwargs):
-            if data_type not in {"train", "debug"}:
-                return data
-
-            new_data = copy.deepcopy(data)
             separator = "\u2E82"
-            for sample in tqdm(new_data, desc="additional preprocessing"):
-                fin_ent_list = []
-                fin_rel_list = []
-                for event in sample["event_list"]:
-                    event_type = event["event_type"]
-                    arg_list = copy.deepcopy(event["argument_list"])
 
-                    if "trigger" in event:
-                        pseudo_arg = {
-                            "type": "Trigger",
-                            "char_span": event["trigger_char_span"],
-                            "tok_span": event["trigger_tok_span"],
-                            "text": event["trigger"],
-                        }
-                        arg_list += [pseudo_arg]
+            def inheritor_gen(data):
+                for sample in data:
+                    fin_ent_list = []
+                    fin_rel_list = []
+                    for event in sample["event_list"]:
+                        event_type = event["event_type"]
+                        arg_list = copy.deepcopy(event["argument_list"])
 
-                    for i, arg_i in enumerate(arg_list):
-                        ch_sp_list_i = arg_i["char_span"]
-                        tk_sp_list_i = arg_i["tok_span"]
-                        if type(arg_i["char_span"][0]) is not list:
-                            ch_sp_list_i = [arg_i["char_span"], ]
-                            tk_sp_list_i = [arg_i["tok_span"], ]
+                        if "trigger" in event:
+                            pseudo_arg = {
+                                "type": "Trigger",
+                                "char_span": event["trigger_char_span"],
+                                "tok_span": event["trigger_tok_span"],
+                                "text": event["trigger"],
+                            }
 
-                        for sp_idx, ch_sp in enumerate(ch_sp_list_i):
-                            tk_sp = tk_sp_list_i[sp_idx]
-                            fin_ent_list.append({
-                                "text": arg_i["text"],
-                                "type": "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
-                                "char_span": ch_sp,
-                                "tok_span": tk_sp,
-                            })
+                            arg_list += [pseudo_arg]
 
-                        for j, arg_j in enumerate(arg_list):
-                            ch_sp_list_j = arg_j["char_span"]
-                            tk_sp_list_j = arg_j["tok_span"]
-                            if type(arg_j["char_span"][0]) is not list:
-                                ch_sp_list_j = [arg_j["char_span"], ]
-                                tk_sp_list_j = [arg_j["tok_span"], ]
+                        for i, arg_i in enumerate(arg_list):
+                            ch_sp_list_i = arg_i["char_span"]
+                            # try:
+                            tk_sp_list_i = arg_i["tok_span"]
+                            # except Exception:
+                            #     print("debug!")
+                            if type(arg_i["char_span"][0]) is not list:
+                                ch_sp_list_i = [arg_i["char_span"], ]
+                                tk_sp_list_i = [arg_i["tok_span"], ]
 
-                            for sp_idx_i, ch_sp_i in enumerate(ch_sp_list_i):
-                                for sp_idx_j, ch_sp_j in enumerate(ch_sp_list_j):
-                                    tk_sp_i = tk_sp_list_i[sp_idx_i]
-                                    tk_sp_j = tk_sp_list_j[sp_idx_j]
+                            for sp_idx, ch_sp in enumerate(ch_sp_list_i):
+                                tk_sp = tk_sp_list_i[sp_idx]
+                                fin_ent_list.append({
+                                    "text": arg_i["text"],
+                                    "type": "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
+                                    "char_span": ch_sp,
+                                    "tok_span": tk_sp,
+                                })
 
-                                    fin_rel_list.append({
-                                        "subject": arg_i["text"],
-                                        "subj_char_span": ch_sp_i,
-                                        "subj_tok_span": tk_sp_i,
-                                        "object": arg_j["text"],
-                                        "obj_char_span": ch_sp_j,
-                                        "obj_tok_span": tk_sp_j,
-                                        "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
-                                    })
-                                    if kwargs["dtm_arg_type_by_edges"]:
+                            for j, arg_j in enumerate(arg_list):
+                                ch_sp_list_j = arg_j["char_span"]
+                                tk_sp_list_j = arg_j["tok_span"]
+                                if type(arg_j["char_span"][0]) is not list:
+                                    ch_sp_list_j = [arg_j["char_span"], ]
+                                    tk_sp_list_j = [arg_j["tok_span"], ]
+
+                                for sp_idx_i, ch_sp_i in enumerate(ch_sp_list_i):
+                                    for sp_idx_j, ch_sp_j in enumerate(ch_sp_list_j):
+                                        tk_sp_i = tk_sp_list_i[sp_idx_i]
+                                        tk_sp_j = tk_sp_list_j[sp_idx_j]
+
                                         fin_rel_list.append({
                                             "subject": arg_i["text"],
                                             "subj_char_span": ch_sp_i,
@@ -1278,18 +1257,29 @@ def create_rebased_tfboys_tagger(base_class):
                                             "object": arg_j["text"],
                                             "obj_char_span": ch_sp_j,
                                             "obj_tok_span": tk_sp_j,
-                                            "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
+                                            "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
                                         })
+                                        if kwargs["dtm_arg_type_by_edges"]:
+                                            fin_rel_list.append({
+                                                "subject": arg_i["text"],
+                                                "subj_char_span": ch_sp_i,
+                                                "subj_tok_span": tk_sp_i,
+                                                "object": arg_j["text"],
+                                                "obj_char_span": ch_sp_j,
+                                                "obj_tok_span": tk_sp_j,
+                                                "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
+                                            })
 
-                # if "relation_list" in sample:
-                #     fin_rel_list.extend(sample["relation_list"])
-                # if "entity_list" in sample:
-                #     fin_ent_list.extend(sample["entity_list"])
-                sample["entity_list"] = fin_ent_list
-                sample["relation_list"] = fin_rel_list
+                    # if "relation_list" in sample:
+                    #     fin_rel_list.extend(sample["relation_list"])
+                    # if "entity_list" in sample:
+                    #     fin_ent_list.extend(sample["entity_list"])
+                    sample["entity_list"] = fin_ent_list
+                    sample["relation_list"] = fin_rel_list
+                    yield sample
 
-            new_data = super().additional_preprocess(new_data, data_type, **kwargs)
-            return new_data
+            for sample in super().additional_preprocess(inheritor_gen(data), data_type, **kwargs):
+                yield sample
 
         def decode(self, sample, pred_tags, pred_outs):
             pred_sample = super(REBasedTFBoysTagger, self).decode(sample, pred_tags, pred_outs)
@@ -1380,7 +1370,8 @@ def create_rebased_tfboys_tagger(base_class):
                                 min_edge_num = 1 << 31
                                 can_role_set = set()
                                 for offset_str_j in cli:
-                                    arg_p_set = offsets2arg_pair_rel.get(separator.join([offset_str, offset_str_j]), set())
+                                    arg_p_set = offsets2arg_pair_rel.get(separator.join([offset_str, offset_str_j]),
+                                                                         set())
                                     if len(arg_p_set) != 0 and len(arg_p_set) < min_edge_num:
                                         min_edge_num = len(arg_p_set)
                                         can_role_set = {arg_p.split(separator)[0] for arg_p in arg_p_set}
@@ -1434,6 +1425,7 @@ def create_rebased_tfboys_tagger(base_class):
 
             sample["event_list"] = event_list
             return sample
+
     return REBasedTFBoysTagger
 
 
@@ -1667,11 +1659,10 @@ def create_rebased_discontinuous_ner_tagger(base_class):
 def create_rebased_oie_tagger(base_class):
     class REBasedOIETagger(base_class):
 
-        def __init__(self, data, *arg, **kwargs):
-            super(REBasedOIETagger, self).__init__(data, *arg, **kwargs)
+        def __init__(self, data_anns, *arg, **kwargs):
+            super(REBasedOIETagger, self).__init__(data_anns, *arg, **kwargs)
             self.language = kwargs["language"]
-            self.add_obj_placeholders = any("[OBJ]" in arg["text"]
-                                            for sample in data for spo in sample["open_spo_list"]
+            self.add_obj_placeholders = any("[OBJ]" in arg["text"] for spo in data_anns["open_spo_list"]
                                             for arg in spo if arg["type"] == "predicate")
 
         @classmethod
@@ -1711,7 +1702,7 @@ def create_rebased_oie_tagger(base_class):
                         elif arg_type == "predicate":
                             pred = arg
                             if len(pred["char_span"]) == 0:  # if no char span and type == "predicate",
-                                                             # it is a predefined predicate that does not exist in the text,
+                                # it is a predefined predicate that does not exist in the text,
                                 continue
                         elif arg_type == "object":
                             obj_list.append(arg)
@@ -1987,8 +1978,8 @@ def create_rebased_oie_tagger(base_class):
                 ori_cliques = list(nx.find_cliques(spo_graph))
                 # cliques belong to this spo span
                 cliques = [cli for cli in ori_cliques
-                           if any(int(n.split(",")[0]) == spo_span[0] for n in cli) and\
-                        any(int(n.split(",")[1]) == spo_span[1] for n in cli)]
+                           if any(int(n.split(",")[0]) == spo_span[0] for n in cli) and \
+                           any(int(n.split(",")[1]) == spo_span[1] for n in cli)]
                 # if len(ori_cliques) != len(cliques):
                 #     print("!!!!")
 

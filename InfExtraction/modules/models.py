@@ -5,12 +5,8 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from transformers import BertModel
-from InfExtraction.modules.model_components import (HandshakingKernel,
-                                                    HandshakingKernelDora,
-                                                    HandshakingKernel4TP3,
-                                                    LayerNorm,
+from InfExtraction.modules.model_components import (LayerNorm,
                                                     GraphConvLayer,
-                                                    InteractionKernel,
                                                     SingleSourceHandshakingKernel)
 from torch.nn.parameter import Parameter
 from InfExtraction.modules.preprocess import Indexer
@@ -64,7 +60,12 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             pos_tag_emb_dropout = pos_tag_emb_config["emb_dropout"]
             self.pos_tag_emb = nn.Embedding(pos_tag_num, pos_tag_emb_dim)
             self.pos_tag_emb_dropout = nn.Dropout(p=pos_tag_emb_dropout)
+            self.pos_tag_emb_dim = pos_tag_emb_dim
             self.cat_hidden_size += pos_tag_emb_dim
+            # pos_tag_hsk_ids
+            # if pos_tag_emb_config["hsk_emb"]:
+            self.pos_tag_emb4hsk = nn.Embedding(pos_tag_num, pos_tag_emb_dim)
+            self.pos_tag_emb4hsk_dropout = nn.Dropout(p=pos_tag_emb_dropout)
 
         # char
         self.char_encoder_config = char_encoder_config
@@ -230,6 +231,10 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             dep_type_emb_dropout = dep_config["emb_dropout"]
             self.dep_type_emb = nn.Embedding(self.dep_type_num, self.dep_type_emb_dim)
             self.dep_type_emb_dropout = nn.Dropout(p=dep_type_emb_dropout)
+            # dep_hnt_matrix
+            if dep_config["hnt_emb"]:
+                self.dep_type_hnt_emb = nn.Embedding(self.dep_type_num * 2, self.dep_type_emb_dim)
+                self.dep_type_hnt_emb_dropout = nn.Dropout(p=dep_type_emb_dropout)
 
             self.use_gcn4deprel = dep_config["gcn"]
             if self.use_gcn4deprel:
@@ -256,7 +261,10 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                           token_type_ids=None,
                           ner_tag_ids=None,
                           pos_tag_ids=None,
-                          dep_adj_matrix=None):
+                          dep_adj_matrix=None,
+                          pos_tag_hsk_ids=None,
+                          dep_hnt_matrix=None,
+                          ):
 
         # features
         features = []
@@ -275,6 +283,11 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             pos_tag_embeddings = self.pos_tag_emb_dropout(pos_tag_embeddings)
             features.append(pos_tag_embeddings)
             feature_dict["pos_tag_embeddings"] = pos_tag_embeddings
+            # pos_tag_hsk_ids
+            if self.pos_tag_emb_config["hsk_emb"]:
+                pos_tag_embeddings4hsk = self.pos_tag_emb4hsk(pos_tag_hsk_ids)
+                pos_tag_embeddings4hsk = self.pos_tag_emb4hsk_dropout(pos_tag_embeddings4hsk)
+                feature_dict["pos_tag_embeddings4hsk"] = pos_tag_embeddings4hsk
 
         # char
         if self.char_encoder_config is not None:
@@ -331,7 +344,13 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             # dep_adj_matrix: (batch_size, seq_len, seq_len)
             # -> deprel_embeddings: (batch_size, seq_len, seq_len, dep_type_emb_dim)
             deprel_embeddings = self.dep_type_emb(dep_adj_matrix)
+            deprel_embeddings = self.dep_type_emb_dropout(deprel_embeddings)
             feature_dict["deprel_embeddings"] = deprel_embeddings
+            # dep_hnt_matrix
+            if self.dep_config["hnt_emb"]:
+                deprel_hnt_embeddings = self.dep_type_hnt_emb(dep_hnt_matrix)
+                deprel_hnt_embeddings = self.dep_type_emb_dropout(deprel_hnt_embeddings)
+                feature_dict["deprel_hnt_embeddings"] = deprel_hnt_embeddings
 
             if self.use_gcn4deprel:
                 deprel_embeddings_trans = torch.transpose(deprel_embeddings, 1, 2)  # (multi -> one) => (one: multi)
@@ -366,6 +385,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         }
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
 
+        # >>>>>>>>>>>>>>>>>>>>> feature >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         if self.flair_config is not None:
             batch_dict["padded_text_list"] = [
                 Sentence(sample["features"]["padded_text"],
@@ -381,33 +401,41 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             attention_mask_list = []
             token_type_ids_list = []
             for sample in batch_data:
-                subword_input_ids_list.append(sample["features"]["subword_input_ids"])
-                attention_mask_list.append(sample["features"]["attention_mask"])
-                token_type_ids_list.append(sample["features"]["token_type_ids"])
+                subword_input_ids_list.append(torch.LongTensor(sample["features"]["subword_input_ids"]))
+                attention_mask_list.append(torch.LongTensor(sample["features"]["attention_mask"]))
+                token_type_ids_list.append(torch.LongTensor(sample["features"]["token_type_ids"]))
             batch_dict["subword_input_ids"] = torch.stack(subword_input_ids_list, dim=0)
             batch_dict["attention_mask"] = torch.stack(attention_mask_list, dim=0)
             batch_dict["token_type_ids"] = torch.stack(token_type_ids_list, dim=0)
 
         if self.word_encoder_config is not None:
-            word_input_ids_list = [sample["features"]["word_input_ids"] for sample in batch_data]
+            word_input_ids_list = [torch.LongTensor(sample["features"]["word_input_ids"]) for sample in batch_data]
             batch_dict["word_input_ids"] = torch.stack(word_input_ids_list, dim=0)
 
         if self.char_encoder_config is not None:
-            char_input_ids_list = [sample["features"]["char_input_ids"] for sample in batch_data]
+            char_input_ids_list = [torch.LongTensor(sample["features"]["char_input_ids"]) for sample in batch_data]
             batch_dict["char_input_ids"] = torch.stack(char_input_ids_list, dim=0)
 
         if self.ner_tag_emb_config is not None:
-            ner_tag_ids_list = [sample["features"]["ner_tag_ids"] for sample in batch_data]
+            ner_tag_ids_list = [torch.LongTensor(sample["features"]["ner_tag_ids"]) for sample in batch_data]
             batch_dict["ner_tag_ids"] = torch.stack(ner_tag_ids_list, dim=0)
 
         if self.pos_tag_emb_config is not None:
-            pos_tag_ids_list = [sample["features"]["pos_tag_ids"] for sample in batch_data]
+            pos_tag_ids_list = [torch.LongTensor(sample["features"]["pos_tag_ids"]) for sample in batch_data]
             batch_dict["pos_tag_ids"] = torch.stack(pos_tag_ids_list, dim=0)
+            if self.pos_tag_emb_config["hsk_emb"]:
+                pos_tag_points_batch = [sample["features"]["pos_tag_points"] for sample in batch_data]
+                batch_dict["pos_tag_hsk_ids"] = Indexer.points2shaking_seq_batch(pos_tag_points_batch, seq_length)
 
         if self.dep_config is not None:
             dep_matrix_points_batch = [sample["features"]["dependency_points"] for sample in batch_data]
             batch_dict["dep_adj_matrix"] = Indexer.points2matrix_batch(dep_matrix_points_batch, seq_length)
+            if self.dep_config["hnt_emb"]:
+                dep_matrix_hnt_points_batch = [sample["features"]["deprel_points_hnt"] for sample in batch_data]
+                batch_dict["dep_hnt_matrix"] = Indexer.points2matrix_batch(dep_matrix_hnt_points_batch, seq_length)
 
+        # >>>>>>>>>>>>>>>>>>>>>> tag >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        self.tagger.tag(batch_data)
         # batch_dict["golden_tags"] need to be set by inheritors
         return batch_dict
 
@@ -450,7 +478,7 @@ class TPLinkerPlus(IEModel):
 
         # handshaking kernel
         shaking_type = handshaking_kernel_config["shaking_type"]
-        self.handshaking_kernel = HandshakingKernel(fin_hidden_size, fin_hidden_size, shaking_type)
+        self.handshaking_kernel = SingleSourceHandshakingKernel(fin_hidden_size, shaking_type)
 
         # decoding fc
         self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
@@ -460,7 +488,7 @@ class TPLinkerPlus(IEModel):
         batch_dict = super(TPLinkerPlus, self).generate_batch(batch_data)
         # shaking tag
         tag_points_batch = [sample["tag_points"] for sample in batch_data]
-        batch_dict["golden_tags"] = [Indexer.points2shaking_seq_batch(tag_points_batch, seq_length, self.tag_size), ]
+        batch_dict["golden_tags"] = [Indexer.points2multilabel_shaking_seq_batch(tag_points_batch, seq_length, self.tag_size), ]
         return batch_dict
 
     def forward(self, **kwargs):
@@ -527,10 +555,10 @@ class SpanNER(IEModel):
         batch_dict = super(SpanNER, self).generate_batch(batch_data)
         # tags
         batch_ent_points = [sample["ent_points"] for sample in batch_data]
-        batch_dict["golden_tags"] = [Indexer.points2shaking_seq_batch(batch_ent_points,
-                                                                      seq_length,
-                                                                      self.ent_tag_size,
-                                                                      )
+        batch_dict["golden_tags"] = [Indexer.points2multilabel_shaking_seq_batch(batch_ent_points,
+                                                                                 seq_length,
+                                                                                 self.ent_tag_size,
+                                                                                 )
                                      ]
         return batch_dict
 
@@ -630,14 +658,19 @@ class RAIN(IEModel):
 
         # handshaking kernel
         ent_shaking_type = handshaking_kernel_config["ent_shaking_type"]
+        ent_dist_emb_dim = handshaking_kernel_config.get("ent_dist_emb_dim", -1)
         rel_shaking_type = handshaking_kernel_config["rel_shaking_type"]
+        rel_dist_emb_dim = handshaking_kernel_config.get("rel_dist_emb_dim", -1)
 
         self.ent_handshaking_kernel = SingleSourceHandshakingKernel(ent_dim,
                                                                     ent_shaking_type,
+                                                                    only_look_after=True,
+                                                                    distance_emb_dim=ent_dist_emb_dim
                                                                     )
         self.rel_handshaking_kernel = SingleSourceHandshakingKernel(rel_dim,
                                                                     rel_shaking_type,
                                                                     only_look_after=False,
+                                                                    distance_emb_dim=rel_dist_emb_dim
                                                                     )
 
         self.use_attns4rel = use_attns4rel
@@ -667,9 +700,13 @@ class RAIN(IEModel):
             self.cln4rel_guide = LayerNorm(rel_dim, tp_dim, conditional=True)
 
         # decoding fc
-        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
+        if self.pos_tag_emb_config is not None and self.pos_tag_emb_config["hsk_emb"]:
+            ent_dim += self.pos_tag_emb_dim
         if self.dep_config is not None:
             rel_dim += self.dep_type_emb_dim
+            if self.dep_config["hnt_emb"]:
+                rel_dim += self.dep_type_emb_dim
+        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
         self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
 
     def generate_batch(self, batch_data):
@@ -678,19 +715,20 @@ class RAIN(IEModel):
         # tags
         batch_ent_points = [sample["ent_points"] for sample in batch_data]
         batch_rel_points = [sample["rel_points"] for sample in batch_data]
-        batch_dict["golden_tags"] = [Indexer.points2shaking_seq_batch(batch_ent_points,
-                                                                      seq_length,
-                                                                      self.ent_tag_size,
-                                                                      ),
+        batch_dict["golden_tags"] = [Indexer.points2multilabel_shaking_seq_batch(batch_ent_points,
+                                                                                 seq_length,
+                                                                                 self.ent_tag_size,
+                                                                                 ),
                                      Indexer.points2multilabel_matrix_batch(batch_rel_points,
                                                                             seq_length,
                                                                             self.rel_tag_size,
                                                                             ),
                                      ]
-        batch_dict["golden_ent_class_guide"] = Indexer.points2shaking_seq_batch(batch_ent_points,
-                                                                                seq_length,
-                                                                                self.ent_tag_size,
-                                                                                )
+        if self.golden_ent_cla_guide:
+            batch_dict["golden_ent_class_guide"] = Indexer.points2multilabel_shaking_seq_batch(batch_ent_points,
+                                                                                               seq_length,
+                                                                                               self.ent_tag_size,
+                                                                                               )
         return batch_dict
 
     def get_tok_pre(self, ent_hs_hiddens, ent_class_guide):
@@ -748,8 +786,9 @@ class RAIN(IEModel):
 
     def forward(self, **kwargs):
         super(RAIN, self).forward()
-        ent_class_guide = kwargs["golden_ent_class_guide"]
-        del kwargs["golden_ent_class_guide"]
+        if self.emb_ent_info2rel and self.golden_ent_cla_guide:
+            ent_class_guide = kwargs["golden_ent_class_guide"]
+            del kwargs["golden_ent_class_guide"]
 
         inp_hiddens, feature_dict = self.get_base_features(**kwargs)
         batch_size, seq_len, _ = inp_hiddens.size()
@@ -791,6 +830,9 @@ class RAIN(IEModel):
             span_len_emb = self.span_len_emb(self.span_len_seq)
             ent_hs_hiddens = torch.cat([ent_hs_hiddens, span_len_emb], dim=-1)
 
+        # pos_tag_embeddings4hsk
+        if self.pos_tag_emb_config is not None and self.pos_tag_emb_config["hsk_emb"]:
+            ent_hs_hiddens = torch.cat([ent_hs_hiddens, feature_dict["pos_tag_embeddings4hsk"]], dim=-1)
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
 
         # embed entity info into relation hiddens
@@ -803,6 +845,9 @@ class RAIN(IEModel):
 
         if self.dep_config is not None:
             rel_hs_hiddens = torch.cat([rel_hs_hiddens, feature_dict["deprel_embeddings"]], dim=-1)
+            # deprel_hnt_embeddings
+            if self.dep_config["hnt_emb"]:
+                rel_hs_hiddens = torch.cat([rel_hs_hiddens, feature_dict["deprel_hnt_embeddings"]], dim=-1)
         pred_rel_output = self.rel_fc(rel_hs_hiddens)
         return pred_ent_output, pred_rel_output
 

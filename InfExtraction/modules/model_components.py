@@ -94,90 +94,102 @@ class LayerNorm(nn.Module):
         return outputs
 
 
-class HandshakingKernelDora(nn.Module):
-    def __init__(self, hidden_size):
-        super().__init__()
-        self.cat_fc4ent_tp = nn.Linear(hidden_size * 2, hidden_size)
-        self.cln4rel_tp = LayerNorm(hidden_size, hidden_size, conditional=True)
-
-        self.lstm4span = nn.LSTM(hidden_size,
-                                 hidden_size,
-                                 num_layers=1,
-                                 bidirectional=False,
-                                 batch_first=True)
-
-        self.W_ent = nn.Linear(hidden_size, hidden_size)
-        self.W_rel = nn.Linear(hidden_size, hidden_size)
-
-    def forward(self, seq_hiddens):
-        '''
-        seq_hiddens: (batch_size, seq_len, hidden_size_x)
-        '''
-        batch_size, seq_len, hidden_size = seq_hiddens.size()
-        seq_hiddens_ext = seq_hiddens[:, None, :, :].repeat(1, seq_len, 1, 1)
-        ent_vis = torch.relu(self.W_ent(seq_hiddens_ext))
-        ent_guide = ent_vis.permute(0, 2, 1, 3)
-
-        # mask lower triangle
-        upper_visible = ent_vis.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
-        # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
-        visible4lstm = upper_visible.view(-1, seq_len, hidden_size)
-        span_pre, _ = self.lstm4span(visible4lstm)
-        span_pre = span_pre.view(batch_size, seq_len, seq_len, hidden_size)
-
-        # drop lower triangle and convert matrix to sequence
-        # span_pre: (batch_size, shaking_seq_len, hidden_size)
-        span_pre = MyMatrix.upper_reg2seq(span_pre)
-        ent_guide_sks = MyMatrix.upper_reg2seq(ent_guide)
-        ent_vis_sks = MyMatrix.upper_reg2seq(ent_vis)
-        boundary_pre = torch.relu(self.cat_fc4ent_tp(torch.cat([ent_vis_sks, ent_guide_sks], dim=-1)))
-        ent_pre = boundary_pre + span_pre
-
-        # # rel_guide: (batch_size, hidden_size, seq_len, 1)
-        # rel_guide = torch.relu(self.W_guide(seq_hiddens)).permute(0, 2, 1)[:, :, :, None]
-        #
-        # # rel_vis: (batch_size, hidden_size, 1, seq_len)
-        # rel_vis = torch.relu(self.W_rel(seq_hiddens)).permute(0, 2, 1)[:, :, None, :]
-        # rel_pre = torch.matmul(rel_guide, rel_vis).permute(0, 2, 3, 1)
-
-        rel_vis = torch.relu(self.W_rel(seq_hiddens_ext))
-        rel_guide = rel_vis.permute(0, 2, 1, 3)
-        rel_pre = self.cln4rel_tp(rel_vis, rel_guide)
-
-        return ent_pre, rel_pre
+# class HandshakingKernelDora(nn.Module):
+#     def __init__(self, hidden_size):
+#         super().__init__()
+#         self.cat_fc4ent_tp = nn.Linear(hidden_size * 2, hidden_size)
+#         self.cln4rel_tp = LayerNorm(hidden_size, hidden_size, conditional=True)
+#
+#         self.lstm4span = nn.LSTM(hidden_size,
+#                                  hidden_size,
+#                                  num_layers=1,
+#                                  bidirectional=False,
+#                                  batch_first=True)
+#
+#         self.W_ent = nn.Linear(hidden_size, hidden_size)
+#         self.W_rel = nn.Linear(hidden_size, hidden_size)
+#
+#     def forward(self, seq_hiddens):
+#         '''
+#         seq_hiddens: (batch_size, seq_len, hidden_size_x)
+#         '''
+#         batch_size, seq_len, hidden_size = seq_hiddens.size()
+#         seq_hiddens_ext = seq_hiddens[:, None, :, :].repeat(1, seq_len, 1, 1)
+#         ent_vis = torch.relu(self.W_ent(seq_hiddens_ext))
+#         ent_guide = ent_vis.permute(0, 2, 1, 3)
+#
+#         # mask lower triangle
+#         upper_visible = ent_vis.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
+#         # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
+#         visible4lstm = upper_visible.view(-1, seq_len, hidden_size)
+#         span_pre, _ = self.lstm4span(visible4lstm)
+#         span_pre = span_pre.view(batch_size, seq_len, seq_len, hidden_size)
+#
+#         # drop lower triangle and convert matrix to sequence
+#         # span_pre: (batch_size, shaking_seq_len, hidden_size)
+#         span_pre = MyMatrix.upper_reg2seq(span_pre)
+#         ent_guide_sks = MyMatrix.upper_reg2seq(ent_guide)
+#         ent_vis_sks = MyMatrix.upper_reg2seq(ent_vis)
+#         boundary_pre = torch.relu(self.cat_fc4ent_tp(torch.cat([ent_vis_sks, ent_guide_sks], dim=-1)))
+#         ent_pre = boundary_pre + span_pre
+#
+#         # # rel_guide: (batch_size, hidden_size, seq_len, 1)
+#         # rel_guide = torch.relu(self.W_guide(seq_hiddens)).permute(0, 2, 1)[:, :, :, None]
+#         #
+#         # # rel_vis: (batch_size, hidden_size, 1, seq_len)
+#         # rel_vis = torch.relu(self.W_rel(seq_hiddens)).permute(0, 2, 1)[:, :, None, :]
+#         # rel_pre = torch.matmul(rel_guide, rel_vis).permute(0, 2, 3, 1)
+#
+#         rel_vis = torch.relu(self.W_rel(seq_hiddens_ext))
+#         rel_guide = rel_vis.permute(0, 2, 1, 3)
+#         rel_pre = self.cln4rel_tp(rel_vis, rel_guide)
+#
+#         return ent_pre, rel_pre
 
 
 class SingleSourceHandshakingKernel(nn.Module):
-    def __init__(self, hidden_size, shaking_type, only_look_after=True):
+    def __init__(self, hidden_size, shaking_type, only_look_after=True, distance_emb_dim=-1):
         super().__init__()
-        self.shaking_type = shaking_type.split("+")
+        self.shaking_types = shaking_type.split("+")
         self.only_look_after = only_look_after
+        cat_length = 0
 
-        if "cat" in shaking_type:
+        if "cat" in self.shaking_types:
             self.cat_fc = nn.Linear(hidden_size * 2, hidden_size)
-        if "cmm" in shaking_type:
+            cat_length += hidden_size
+
+        if "cmm" in self.shaking_types:
             self.cat_fc = nn.Linear(hidden_size * 4, hidden_size)
-        if "mul" in shaking_type:
             self.guide_fc = nn.Linear(hidden_size, hidden_size)
             self.vis_fc = nn.Linear(hidden_size, hidden_size)
-        if "cln" in shaking_type:
+            cat_length += hidden_size
+        # if "mul" in shaking_types:
+        #     self.guide_fc = nn.Linear(hidden_size, hidden_size)
+        #     self.vis_fc = nn.Linear(hidden_size, hidden_size)
+        #     self.mul_fc = nn.Linear(hidden_size, hidden_size)
+        if "cln" in self.shaking_types:
             self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-        if "lstm" in shaking_type:
+            cat_length += hidden_size
+
+        if "lstm" in self.shaking_types:
             assert only_look_after is True
             self.lstm4span = nn.LSTM(hidden_size,
                                     hidden_size,
                                     num_layers=1,
                                     bidirectional=False,
                                     batch_first=True)
-        elif "gru" in shaking_type:
+            cat_length += hidden_size
+
+        elif "gru" in self.shaking_types:
             assert only_look_after is True
             self.lstm4span = nn.GRU(hidden_size,
                                    hidden_size,
                                    num_layers=1,
                                    bidirectional=False,
                                    batch_first=True)
+            cat_length += hidden_size
 
-        if "bilstm" in shaking_type:
+        if "bilstm" in self.shaking_types:
             assert only_look_after is True
             self.lstm4span = nn.LSTM(hidden_size,
                                     hidden_size // 2,
@@ -189,7 +201,8 @@ class SingleSourceHandshakingKernel(nn.Module):
                                          num_layers=1,
                                          bidirectional=False,
                                          batch_first=True)
-        elif "bigru" in shaking_type:
+            cat_length += hidden_size
+        elif "bigru" in self.shaking_types:
             assert only_look_after is True
             self.lstm4span = nn.GRU(hidden_size,
                                    hidden_size // 2,
@@ -201,9 +214,19 @@ class SingleSourceHandshakingKernel(nn.Module):
                                         num_layers=1,
                                         bidirectional=False,
                                         batch_first=True)
+            cat_length += hidden_size
 
-        if "biaffine" in shaking_type:
+        if "biaffine" in self.shaking_types:
             self.biaffine = nn.Bilinear(hidden_size, hidden_size, hidden_size)
+            cat_length += hidden_size
+
+        self.distance_emb_dim = distance_emb_dim
+        if distance_emb_dim > 0:
+            self.dist_emb = nn.Embedding(512, distance_emb_dim)
+            self.dist_ids_matrix = None  # for cache
+            cat_length += distance_emb_dim
+
+        self.aggr_fc = nn.Linear(cat_length, hidden_size)
 
     def forward(self, seq_hiddens):
         '''
@@ -214,254 +237,277 @@ class SingleSourceHandshakingKernel(nn.Module):
             else:
                 shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
         '''
-        seq_len = seq_hiddens.size()[1]
+        # seq_len = seq_hiddens.size()[1]
+        batch_size, seq_len, vis_hidden_size = seq_hiddens.size()
 
         guide = seq_hiddens[:, :, None, :].repeat(1, 1, seq_len, 1)
         visible = guide.permute(0, 2, 1, 3)
-        shaking_pre = None
+        feature_pre_list = []
 
-        def add_presentation(all_prst, prst):
-            if all_prst is None:
-                all_prst = prst
-            else:
-                all_prst += prst
-            return all_prst
+        # def add_presentation(all_prst, prst):
+        #     if all_prst is None:
+        #         all_prst = prst
+        #     else:
+        #         all_prst += prst
+        #     return all_prst
 
         if self.only_look_after:
-            if len({"lstm", "bilstm", "gru", "bigru"}.intersection(self.shaking_type)) > 0:
-                batch_size, _, matrix_size, vis_hidden_size = visible.size()
+            if len({"lstm", "bilstm", "gru", "bigru"}.intersection(self.shaking_types)) > 0:
+                # batch_size, _, matrix_size, vis_hidden_size = visible.size()
                 # mask lower triangle part
                 upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
 
                 # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
-                visible4lstm = upper_visible.view(batch_size * matrix_size, matrix_size, -1)
+                visible4lstm = upper_visible.view(batch_size * seq_len, seq_len, -1)
                 span_pre, _ = self.lstm4span(visible4lstm)
-                span_pre = span_pre.view(batch_size, matrix_size, matrix_size, -1)
+                span_pre = span_pre.view(batch_size, seq_len, seq_len, -1)
 
-                if len({"bilstm", "bigru"}.intersection(self.shaking_type)) > 0:
+                if len({"bilstm", "bigru"}.intersection(self.shaking_types)) > 0:
                     # mask upper triangle part
                     lower_visible = visible.permute(0, 3, 1, 2).tril().permute(0, 2, 3, 1).contiguous()
-                    visible4lstm_back = lower_visible.view(batch_size * matrix_size, matrix_size, -1)
+                    visible4lstm_back = lower_visible.view(batch_size * seq_len, seq_len, -1)
 
                     visible4lstm_back = torch.flip(visible4lstm_back, [1, ])
                     span_pre_back, _ = self.lstm4span_back(visible4lstm_back)
                     span_pre_back = torch.flip(span_pre_back, [1, ])
-                    span_pre_back = span_pre_back.view(batch_size, matrix_size, matrix_size, -1)
+                    span_pre_back = span_pre_back.view(batch_size, seq_len, seq_len, -1)
                     span_pre_back = span_pre_back.permute(0, 2, 1, 3)
                     span_pre = torch.cat([span_pre, span_pre_back], dim=-1)
 
                 # drop lower triangle and convert matrix to sequence
                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
                 span_pre = MyMatrix.upper_reg2seq(span_pre)
-                shaking_pre = add_presentation(shaking_pre, span_pre)
+                # shaking_pre = add_presentation(shaking_pre, span_pre)
+                feature_pre_list.append(span_pre)
 
             # guide, visible: (batch_size, shaking_seq_len, hidden_size)
             guide = MyMatrix.upper_reg2seq(guide)
             visible = MyMatrix.upper_reg2seq(visible)
 
-        if "cat" in self.shaking_type:
+        if "cat" in self.shaking_types:
             tp_cat_pre = torch.cat([guide, visible], dim=-1)
             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
-            shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+            # shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+            feature_pre_list.append(tp_cat_pre)
 
-        if "cmm" in self.shaking_type:  # cat, minus, multiple
-            tp_cat_pre = torch.cat([guide, visible, torch.abs(guide - visible), torch.mul(guide, visible)], dim=-1)
+        if "cmm" in self.shaking_types:  # cat and multiple
+            tp_cat_pre = torch.cat([guide, visible,
+                                    torch.abs(guide - visible),
+                                    torch.mul(self.guide_fc(guide), self.vis_fc(visible))], dim=-1)
             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
-            shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+            # shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+            feature_pre_list.append(tp_cat_pre)
 
-        if "mul" in self.shaking_type:
-            mul_pre = torch.mul(self.guide_fc(guide), self.vis_fc(visible))
-            shaking_pre = add_presentation(shaking_pre, mul_pre)
+        # if "mul" in self.shaking_types:
+        #     mul_pre = torch.mul(self.guide_fc(guide), self.vis_fc(visible))
+        #     mul_pre = torch.relu(self.mul_fc(mul_pre))
+        #     shaking_pre = add_presentation(shaking_pre, mul_pre)
 
-        if "cln" in self.shaking_type:
+        if "cln" in self.shaking_types:
             tp_cln_pre = self.tp_cln(visible, guide)
-            shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
+            # shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
+            feature_pre_list.append(tp_cln_pre)
 
-        if "biaffine" in self.shaking_type:
+        if "biaffine" in self.shaking_types:
             biaffine_pre = self.biaffine(guide, visible)
             biaffine_pre = torch.relu(biaffine_pre)
-            shaking_pre = add_presentation(shaking_pre, biaffine_pre)
+            # shaking_pre = add_presentation(shaking_pre, biaffine_pre)
+            feature_pre_list.append(biaffine_pre)
 
-        return shaking_pre
+        if self.distance_emb_dim > 0:
+            if self.dist_ids_matrix is None or \
+                    self.dist_ids_matrix.size()[0] != batch_size or \
+                    self.dist_ids_matrix.size()[1] != seq_len:  # need to update cached distance ids
+                t = torch.arange(0, seq_len).to(seq_hiddens.device)[:, None].repeat(1, seq_len)
+                self.dist_ids_matrix = torch.abs(t - t.permute(1, 0)).long()[None, :, :].repeat(batch_size, 1, 1)
+                if self.only_look_after:  # matrix to handshaking seq
+                    self.dist_ids_matrix = MyMatrix.upper_reg2seq(self.dist_ids_matrix[:, :, :, None]).view(batch_size, -1)
+            dist_embeddings = self.dist_emb(self.dist_ids_matrix)
+            feature_pre_list.append(dist_embeddings)
 
-
-class HandshakingKernel4TP3(nn.Module):
-    def __init__(self, hidden_size, shaking_type):
-        super().__init__()
-        self.shaking_type = shaking_type
-
-        if "cat" in shaking_type:
-            self.cat_fc = nn.Linear(hidden_size * 2, hidden_size)
-        if "cln" in shaking_type:
-            self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
-
-        self.lstm4span = nn.LSTM(hidden_size,
-                                 hidden_size,
-                                 num_layers=1,
-                                 bidirectional=False,
-                                 batch_first=True)
-
-        self.head_attn = nn.MultiheadAttention(hidden_size, 1)
-        self.tail_attn = nn.MultiheadAttention(hidden_size, 1)
-
-        self.head_rel_query = Parameter(torch.randn([self.head_rel_tag_size, hidden_size]))
-        self.tail_rel_query = Parameter(torch.randn([self.tail_rel_tag_size, hidden_size]))
-        self.ent_fc = nn.Linear(hidden_size, self.ent_tag_size)
-        self.head_rel_fc = nn.Linear(hidden_size, hidden_size)
-        self.tail_rel_fc = nn.Linear(hidden_size, hidden_size)
-
-    def forward(self, seq_hiddens):
-        '''
-        seq_hiddens: (batch_size, seq_len, hidden_size_x)
-        shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
-        '''
-        batch_size, seq_len, hidden_size = seq_hiddens.size()
-        guide = seq_hiddens[:, :, None, :].repeat(1, 1, seq_len, 1)
-        visible = guide.permute(0, 2, 1, 3)
-
-        ent_feature_pre = None
-
-        # pre_num = 0
-
-        def add_presentation(all_prst, prst):
-            if all_prst is None:
-                all_prst = prst
-            else:
-                all_prst += prst
-            return all_prst
-
-        # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
-        # mask lower triangle
-        upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
-        visible4lstm = upper_visible.view(-1, seq_len, hidden_size)
-        span_matrix_pre, _ = self.lstm4span(visible4lstm)
-        span_matrix_pre = span_matrix_pre.view(batch_size, seq_len, seq_len, hidden_size)
-        span_seq_pre = MyMatrix.upper_reg2seq(span_matrix_pre)
-        ent_feature_pre = add_presentation(ent_feature_pre, span_seq_pre)
-
-        if "cat" in self.shaking_type:
-            tp_cat_pre = torch.cat([guide, visible], dim=-1)
-            tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
-            ent_feature_pre = add_presentation(ent_feature_pre, tp_cat_pre)
-            # pre_num += 1
-
-        if "cln" in self.shaking_type:
-            tp_cln_pre = self.tp_cln(visible, guide)
-            ent_feature_pre = add_presentation(ent_feature_pre, tp_cln_pre)
-            # pre_num += 1
-
-        pred_ent_output = self.ent_fc(ent_feature_pre)  # elements in lower diag are all zero
-
-        # span_hiddens: (seq_len, batch_size * seq_len, hidden_size)
-        span_hiddens = span_matrix_pre.view(-1, seq_len, hidden_size).permute(1, 0, 2)
-        # head_rel_query: (head_rel_tag_size, batch_size * seq_len, hidden_size)
-        head_rel_query = self.head_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
-        tail_rel_query = self.tail_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
-
-        # head_tok_feats: (head_rel_tag_size, batch_size, seq_len, hidden_size)
-        head_tok_feats, _ = self.head_attn(head_rel_query, span_hiddens, span_hiddens)
-        head_tok_feats = self.head_rel_fc(head_tok_feats.view(-1, batch_size, seq_len, hidden_size))
-        pred_head_rel_output = torch.matmul(head_tok_feats, head_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
-
-        # tail_tok_feats: (tail_rel_tag_size, batch_size, seq_len, hidden_size)
-        tail_tok_feats, _ = self.tail_attn(tail_rel_query, span_hiddens, span_hiddens)
-        tail_tok_feats = self.tail_rel_fc(tail_tok_feats.view(-1, batch_size, seq_len, hidden_size))
-        pred_tail_rel_output = torch.matmul(tail_tok_feats, tail_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
-
-        return pred_ent_output, pred_head_rel_output, pred_tail_rel_output
+        # try:
+        output_hiddens = self.aggr_fc(torch.cat(feature_pre_list, dim=-1))
+        # except Exception:
+        #     print("debug")
+        return output_hiddens
 
 
-class HandshakingKernel(nn.Module):
-    def __init__(self, guide_hidden_size, vis_hidden_size, shaking_type, only_look_after=True):
-        '''
-            guide_hidden_size = seq_hiddens_x.size()[-1]
-            vis_hidden_size = seq_hiddens_y.size()[-1]
-            output_size = vis_hidden_size, guide_hidden_size is not necessary equal to vis_hidden_size
-        '''
-        super().__init__()
-        self.shaking_type = shaking_type
-        self.only_look_after = only_look_after
-
-        if "cat" in shaking_type:
-            self.cat_fc = nn.Linear(guide_hidden_size + vis_hidden_size, vis_hidden_size)
-        if "cln" in shaking_type:
-            self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
-        if "lstm" in shaking_type:
-            assert only_look_after is True
-            self.lstm4span = nn.LSTM(vis_hidden_size,
-                                     vis_hidden_size,
-                                     num_layers=1,
-                                     bidirectional=False,
-                                     batch_first=True)
-        if "biaffine" in shaking_type:
-            self.biaffine = nn.Bilinear(guide_hidden_size, vis_hidden_size, vis_hidden_size)
-
-    def forward(self, seq_hiddens_x, seq_hiddens_y):
-        '''
-        seq_hiddens_x: (batch_size, seq_len, hidden_size_x)
-        seq_hiddens_y: (batch_size, seq_len, hidden_size_y)
-        return:
-            if only look after:
-                shaking_hiddenss: (batch_size, (1 + seq_len) * seq_len / 2, hidden_size); e.g. (32, 5+4+3+2+1, 5)
-            else:
-                shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
-        '''
-        # seq_len = seq_hiddens_y.size()[1]
-        # assert seq_hiddens_y.size()[1] == seq_hiddens_x.size()[1]
-
-        guide = seq_hiddens_x[:, :, None, :].repeat(1, 1, seq_hiddens_y.size()[1], 1)
-        visible = seq_hiddens_y[:, None, :, :].repeat(1, seq_hiddens_x.size()[1], 1, 1)
-
-        shaking_pre = None
-        pre_num = 0
-
-        def add_presentation(all_prst, prst):
-            if all_prst is None:
-                all_prst = prst
-            else:
-                all_prst += prst
-            return all_prst
-
-        if self.only_look_after:
-            if "lstm" in self.shaking_type:
-                batch_size, _, matrix_size, vis_hidden_size = visible.size()
-                # mask lower triangle
-                upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
-
-                # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
-                visible4lstm = upper_visible.view(-1, matrix_size, vis_hidden_size)
-                span_pre, _ = self.lstm4span(visible4lstm)
-                span_pre = span_pre.view(batch_size, matrix_size, matrix_size, vis_hidden_size)
-
-                # drop lower triangle and convert matrix to sequence
-                # span_pre: (batch_size, shaking_seq_len, hidden_size)
-                span_pre = MyMatrix.upper_reg2seq(span_pre)
-                shaking_pre = add_presentation(shaking_pre, span_pre)
-                pre_num += 1
-
-            # guide, visible: (batch_size, shaking_seq_len, hidden_size)
-            guide = MyMatrix.upper_reg2seq(guide)
-            visible = MyMatrix.upper_reg2seq(visible)
-
-        if "cat" in self.shaking_type:
-            tp_cat_pre = torch.cat([guide, visible], dim=-1)
-            tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
-            shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
-            pre_num += 1
-
-        if "cln" in self.shaking_type:
-            tp_cln_pre = self.tp_cln(visible, guide)
-            shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
-            pre_num += 1
-
-        if "biaffine" in self.shaking_type:
-            biaffine_pre = self.biaffine(guide, visible)
-            biaffine_pre = torch.relu(biaffine_pre)
-            shaking_pre = add_presentation(shaking_pre, biaffine_pre)
-            pre_num += 1
-
-        return shaking_pre / pre_num
-
+# class HandshakingKernel4TP3(nn.Module):
+#     def __init__(self, hidden_size, shaking_type):
+#         super().__init__()
+#         self.shaking_type = shaking_type
+#
+#         if "cat" in shaking_type:
+#             self.cat_fc = nn.Linear(hidden_size * 2, hidden_size)
+#         if "cln" in shaking_type:
+#             self.tp_cln = LayerNorm(hidden_size, hidden_size, conditional=True)
+#
+#         self.lstm4span = nn.LSTM(hidden_size,
+#                                  hidden_size,
+#                                  num_layers=1,
+#                                  bidirectional=False,
+#                                  batch_first=True)
+#
+#         self.head_attn = nn.MultiheadAttention(hidden_size, 1)
+#         self.tail_attn = nn.MultiheadAttention(hidden_size, 1)
+#
+#         self.head_rel_query = Parameter(torch.randn([self.head_rel_tag_size, hidden_size]))
+#         self.tail_rel_query = Parameter(torch.randn([self.tail_rel_tag_size, hidden_size]))
+#         self.ent_fc = nn.Linear(hidden_size, self.ent_tag_size)
+#         self.head_rel_fc = nn.Linear(hidden_size, hidden_size)
+#         self.tail_rel_fc = nn.Linear(hidden_size, hidden_size)
+#
+#     def forward(self, seq_hiddens):
+#         '''
+#         seq_hiddens: (batch_size, seq_len, hidden_size_x)
+#         shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
+#         '''
+#         batch_size, seq_len, hidden_size = seq_hiddens.size()
+#         guide = seq_hiddens[:, :, None, :].repeat(1, 1, seq_len, 1)
+#         visible = guide.permute(0, 2, 1, 3)
+#
+#         ent_feature_pre = None
+#
+#         # pre_num = 0
+#
+#         def add_presentation(all_prst, prst):
+#             if all_prst is None:
+#                 all_prst = prst
+#             else:
+#                 all_prst += prst
+#             return all_prst
+#
+#         # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
+#         # mask lower triangle
+#         upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
+#         visible4lstm = upper_visible.view(-1, seq_len, hidden_size)
+#         span_matrix_pre, _ = self.lstm4span(visible4lstm)
+#         span_matrix_pre = span_matrix_pre.view(batch_size, seq_len, seq_len, hidden_size)
+#         span_seq_pre = MyMatrix.upper_reg2seq(span_matrix_pre)
+#         ent_feature_pre = add_presentation(ent_feature_pre, span_seq_pre)
+#
+#         if "cat" in self.shaking_type:
+#             tp_cat_pre = torch.cat([guide, visible], dim=-1)
+#             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
+#             ent_feature_pre = add_presentation(ent_feature_pre, tp_cat_pre)
+#             # pre_num += 1
+#
+#         if "cln" in self.shaking_type:
+#             tp_cln_pre = self.tp_cln(visible, guide)
+#             ent_feature_pre = add_presentation(ent_feature_pre, tp_cln_pre)
+#             # pre_num += 1
+#
+#         pred_ent_output = self.ent_fc(ent_feature_pre)  # elements in lower diag are all zero
+#
+#         # span_hiddens: (seq_len, batch_size * seq_len, hidden_size)
+#         span_hiddens = span_matrix_pre.view(-1, seq_len, hidden_size).permute(1, 0, 2)
+#         # head_rel_query: (head_rel_tag_size, batch_size * seq_len, hidden_size)
+#         head_rel_query = self.head_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
+#         tail_rel_query = self.tail_rel_query[:, None, :].repeat(1, batch_size * seq_len, 1)
+#
+#         # head_tok_feats: (head_rel_tag_size, batch_size, seq_len, hidden_size)
+#         head_tok_feats, _ = self.head_attn(head_rel_query, span_hiddens, span_hiddens)
+#         head_tok_feats = self.head_rel_fc(head_tok_feats.view(-1, batch_size, seq_len, hidden_size))
+#         pred_head_rel_output = torch.matmul(head_tok_feats, head_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
+#
+#         # tail_tok_feats: (tail_rel_tag_size, batch_size, seq_len, hidden_size)
+#         tail_tok_feats, _ = self.tail_attn(tail_rel_query, span_hiddens, span_hiddens)
+#         tail_tok_feats = self.tail_rel_fc(tail_tok_feats.view(-1, batch_size, seq_len, hidden_size))
+#         pred_tail_rel_output = torch.matmul(tail_tok_feats, tail_tok_feats.permute(0, 1, 3, 2)).permute(1, 2, 3, 0)
+#
+#         return pred_ent_output, pred_head_rel_output, pred_tail_rel_output
+#
+#
+# class HandshakingKernel(nn.Module):
+#     def __init__(self, guide_hidden_size, vis_hidden_size, shaking_type, only_look_after=True):
+#         '''
+#             guide_hidden_size = seq_hiddens_x.size()[-1]
+#             vis_hidden_size = seq_hiddens_y.size()[-1]
+#             output_size = vis_hidden_size, guide_hidden_size is not necessary equal to vis_hidden_size
+#         '''
+#         super().__init__()
+#         self.shaking_type = shaking_type
+#         self.only_look_after = only_look_after
+#
+#         if "cat" in shaking_type:
+#             self.cat_fc = nn.Linear(guide_hidden_size + vis_hidden_size, vis_hidden_size)
+#         if "cln" in shaking_type:
+#             self.tp_cln = LayerNorm(vis_hidden_size, guide_hidden_size, conditional=True)
+#         if "lstm" in shaking_type:
+#             assert only_look_after is True
+#             self.lstm4span = nn.LSTM(vis_hidden_size,
+#                                      vis_hidden_size,
+#                                      num_layers=1,
+#                                      bidirectional=False,
+#                                      batch_first=True)
+#         if "biaffine" in shaking_type:
+#             self.biaffine = nn.Bilinear(guide_hidden_size, vis_hidden_size, vis_hidden_size)
+#
+#     def forward(self, seq_hiddens_x, seq_hiddens_y):
+#         '''
+#         seq_hiddens_x: (batch_size, seq_len, hidden_size_x)
+#         seq_hiddens_y: (batch_size, seq_len, hidden_size_y)
+#         return:
+#             if only look after:
+#                 shaking_hiddenss: (batch_size, (1 + seq_len) * seq_len / 2, hidden_size); e.g. (32, 5+4+3+2+1, 5)
+#             else:
+#                 shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size)
+#         '''
+#         # seq_len = seq_hiddens_y.size()[1]
+#         # assert seq_hiddens_y.size()[1] == seq_hiddens_x.size()[1]
+#
+#         guide = seq_hiddens_x[:, :, None, :].repeat(1, 1, seq_hiddens_y.size()[1], 1)
+#         visible = seq_hiddens_y[:, None, :, :].repeat(1, seq_hiddens_x.size()[1], 1, 1)
+#
+#         shaking_pre = None
+#         pre_num = 0
+#
+#         def add_presentation(all_prst, prst):
+#             if all_prst is None:
+#                 all_prst = prst
+#             else:
+#                 all_prst += prst
+#             return all_prst
+#
+#         if self.only_look_after:
+#             if "lstm" in self.shaking_type:
+#                 batch_size, _, matrix_size, vis_hidden_size = visible.size()
+#                 # mask lower triangle
+#                 upper_visible = visible.permute(0, 3, 1, 2).triu().permute(0, 2, 3, 1).contiguous()
+#
+#                 # visible4lstm: (batch_size * matrix_size, matrix_size, hidden_size)
+#                 visible4lstm = upper_visible.view(-1, matrix_size, vis_hidden_size)
+#                 span_pre, _ = self.lstm4span(visible4lstm)
+#                 span_pre = span_pre.view(batch_size, matrix_size, matrix_size, vis_hidden_size)
+#
+#                 # drop lower triangle and convert matrix to sequence
+#                 # span_pre: (batch_size, shaking_seq_len, hidden_size)
+#                 span_pre = MyMatrix.upper_reg2seq(span_pre)
+#                 shaking_pre = add_presentation(shaking_pre, span_pre)
+#                 pre_num += 1
+#
+#             # guide, visible: (batch_size, shaking_seq_len, hidden_size)
+#             guide = MyMatrix.upper_reg2seq(guide)
+#             visible = MyMatrix.upper_reg2seq(visible)
+#
+#         if "cat" in self.shaking_type:
+#             tp_cat_pre = torch.cat([guide, visible], dim=-1)
+#             tp_cat_pre = torch.relu(self.cat_fc(tp_cat_pre))
+#             shaking_pre = add_presentation(shaking_pre, tp_cat_pre)
+#             pre_num += 1
+#
+#         if "cln" in self.shaking_type:
+#             tp_cln_pre = self.tp_cln(visible, guide)
+#             shaking_pre = add_presentation(shaking_pre, tp_cln_pre)
+#             pre_num += 1
+#
+#         if "biaffine" in self.shaking_type:
+#             biaffine_pre = self.biaffine(guide, visible)
+#             biaffine_pre = torch.relu(biaffine_pre)
+#             shaking_pre = add_presentation(shaking_pre, biaffine_pre)
+#             pre_num += 1
+#
+#         return shaking_pre / pre_num
 
 class CrossLSTM(nn.Module):
     def __init__(self,

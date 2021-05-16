@@ -7,12 +7,21 @@ from pprint import pprint
 from tqdm import tqdm
 # import nltk
 # import nltk.data
+import random
 import re
 import unicodedata
 import functools
+import logging
 
 
-def get_tok2char_span_map(word_list):
+def is_invalid_extr_ent(ent, char_span, text):
+    def check_invalid(pat):
+        return (char_span[0] - 1 >= 0 and re.match(pat, text[char_span[0] - 1]) is not None and re.match("^{}+".format(pat), ent) is not None) \
+        or (char_span[1] < len(text) and re.match(pat, text[char_span[1]]) is not None and re.match("{}+$".format(pat), ent) is not None)
+    return check_invalid("\d") or check_invalid("[A-Za-z]")
+
+
+def get_tok2char_span_map4ch(word_list):
     text_fr_word_list = ""
     word2char_span = []
     for word in word_list:
@@ -140,17 +149,19 @@ def rm_accents(str):
     return "".join(c for c in unicodedata.normalize('NFD', str) if unicodedata.category(c) != 'Mn')
 
 
-def search_segs(search_str, text):
+def search_segs(search_str, text, mask_toks=None):
     '''
     "split" search_str into segments according to the text,
     e.g.
+    :param mask_toks: tokens to skip, {"[", "]", "|"} for saoke
     :param search_str: '培养一个县委书记地委书记'
     :param text: '徐特立曾说：“培养一个县委书记、地委书记容易，培养一个速记员难”。'
     :return: ['培养一个县委书记', '地委书记']
     '''
+    if mask_toks is None:
+        mask_toks = {}
     s_idx = 0
     seg_list = []
-    mask_toks = {"[", "]", "|"}
 
     word_pattern = "[0-9\.]+|[a-zA-Z]+|[^0-9\.a-zA-Z]"
     txt_tokens = re.findall(word_pattern, text)
@@ -235,7 +246,7 @@ def search_char_spans_fr_txt(target_seg, text, language, merge_sps=True):
     #         candidate_spans.append(spans)
     #
     # else:  # reversed order, or some words are not in the original text
-    seg_list = search_segs(target_seg, text)
+    seg_list = search_segs(target_seg, text, {"[", "]", "|"})
     # if language == "ch":
     #     seg_list = ChineseWordTokenizer.tokenize(target_seg)
     # elif language == "en":
@@ -582,13 +593,125 @@ def merge_spans(spans, text=None):
 #     return data
 
 
+
+
+def file_len(fname):
+    with open(fname) as f:
+        for i, l in enumerate(f):
+            pass
+    return i + 1
+
+
+def get_file_line_offsets(file_path, max_lines=None):
+    line_offset = [0]
+    tqdm_desc = "init line offsets: {}".format(file_path)
+
+    with open(file_path, "r", encoding="utf-8") as file_in, tqdm(desc=tqdm_desc) as pbar:
+        line = file_in.readline()
+        pbar.update()
+        while line:
+            offset = file_in.tell()
+            line_offset.append(offset)  # returns the location of the next line
+            pbar.update()
+            if max_lines is not None and len(line_offset) >= max_lines:
+                break
+            line = file_in.readline()
+
+    return line_offset
+
+
+class MyLargeFileReader:
+    def __init__(self, file_path, shuffle=False, max_lines=None):
+        self.line_offsets = get_file_line_offsets(file_path, max_lines)
+        if shuffle:
+            self.shuffle_line_offsets()
+        # self.file = open(file_path, "r", encoding="utf-8")
+        self.path = file_path
+
+    def __len__(self):
+        return len(self.line_offsets)
+
+    def shuffle_line_offsets(self):
+        random.shuffle(self.line_offsets)
+
+    def get_line(self, idx):
+        with open(self.path, "r", encoding="utf-8") as file_in:
+            file_in.seek(self.line_offsets[idx])
+            line = file_in.readline()
+            # file.seek(0)
+        return line
+
+    def get_lines_generator(self, star_idx=0, end_idx=None, shuffle=False):
+        if end_idx is None:
+            end_idx = len(self.line_offsets)
+
+        selected_line_offsets = self.line_offsets[star_idx:end_idx]
+        if shuffle:
+            random.shuffle(selected_line_offsets)
+
+        with open(self.path, "r", encoding="utf-8") as file_in:
+            for offset in selected_line_offsets:
+                file_in.seek(offset)
+                yield file_in.readline()
+            # self.file.seek(0)
+
+
+class MyLargeJsonlinesFileReader:
+    def __init__(self, filereader):
+        self.filereader = filereader
+        self.path = filereader.path
+
+    def __len__(self):
+        return len(self.filereader)
+
+    def get_json(self, idx):
+        job = {}
+        try:
+            job = json.load(self.filereader.get_line(idx))
+        except Exception:
+            # logging.warning("Not json line!")
+            pass
+        return job
+
+    def get_jsonlines_generator(self, star_idx=0, end_idx=None, shuffle=False):
+        # if end_idx is None:
+        #     end_idx = len(self.filereader.line_offsets)
+        # selected_line_offsets = self.filereader.line_offsets[star_idx:end_idx]
+        # if shuffle:
+        #     random.shuffle(selected_line_offsets)
+        # for offset in selected_line_offsets:
+        #     self.filereader.file.seek(offset)
+        #     try:
+        #         job = json.loads(self.filereader.file.readline())
+        #         yield job
+        #     except Exception:
+        #         # logging.warning("Not json line!")
+        #         continue
+        # self.filereader.file.seek(0)
+
+        freader_gen = self.filereader.get_lines_generator(star_idx=star_idx, end_idx=end_idx, shuffle=shuffle)
+        for line in freader_gen:
+            try:
+                job = json.loads(line)
+                yield job
+            except Exception:
+                # logging.warning("Not json line!")
+                continue
+
+
+def merge_gen(*gens):
+    for gen in gens:
+        for item in gen:
+            yield item
+
+
 def load_data(path, lines=None):
     filename = path.split("/")[-1]
     try:
         data = []
         with open(path, "r", encoding="utf-8") as file_in:
             if lines is not None:
-                print("total number is set: {}".format(lines))
+                print("max number is set: {}".format(lines))
             for line in tqdm(file_in, desc="loading data {}".format(filename), total=lines):
                 data.append(json.loads(line))
                 if lines is not None and len(data) == lines:
@@ -615,7 +738,7 @@ def save_as_json_lines(data, path):
             out_file.write("{}\n".format(line))
 
 
-class MyDataset(Dataset):
+class MyMappingDataset(Dataset):
     def __init__(self, data):
         self.data = data
 
@@ -624,6 +747,21 @@ class MyDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+
+
+class MyIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self, json_reader, shuffle=False):
+        super(MyIterableDataset).__init__()
+        self.json_reader = json_reader
+        self.start = 0
+        self.end = len(json_reader)
+        self.shuffle = shuffle
+
+    def __iter__(self):
+        return iter(self.json_reader.get_jsonlines_generator(star_idx=self.start, end_idx=self.end, shuffle=self.shuffle))
+
+    def __len__(self):
+        return len(self.json_reader)
 
 
 class DefaultLogger:
@@ -778,24 +916,22 @@ class SpoSearcher(object):
     def __init__(self, spo_list, ent_list, ent_type_map=None, ent_type_mask=None, min_ent_len=1):
         if ent_type_map is None:
             ent_type_map = dict()
-        if ent_type_mask is None:
-            ent_type_mask = set()
+        self.ent_type_mask = ent_type_mask if ent_type_mask is not None else set()
 
         self.ent_ac = AC_Unicode()
         self.subj_obj2preds = {}
 
         for spo in tqdm(spo_list, desc="build so2pred"):
             subj, pred, obj = spo["subject"], spo["predicate"], spo["object"],
-            if subj == '' or obj == '':
+            if subj == '' or obj == '' or len(obj) < min_ent_len or len(subj) < min_ent_len:
                 continue
             self.subj_obj2preds.setdefault((subj, obj), set()).add(pred)
 
         ent2types = {}
         for ent in tqdm(ent_list, desc="build ent2types"):
-            if ent["type"] in ent_type_mask:
-                ent_type = "DEF"
-            else:
-                ent_type = ent_type_map.get(ent["type"], ent["type"])
+            if len(ent["text"]) < min_ent_len:
+                continue
+            ent_type = ent_type_map.get(ent["type"], ent["type"])
             ent2types.setdefault(ent["text"], set()).add(ent_type)
 
         for ent_text, ent_types in tqdm(ent2types.items(), desc="add word 2 ent AC"):
@@ -804,20 +940,32 @@ class SpoSearcher(object):
         print("init entity AC automaton")
         self.ent_ac.make_automaton()
         print("entity AC automaton done!")
-        self.min_ent_len = min_ent_len
+        # self.min_ent_len = min_ent_len
 
-    def extract_items(self, text_in):
+    def extract_items(self, text_in, add_entities=None):
         extracted_spos = []
         extracted_ents = [{"text": ent["text"],
                            "type": tp,
                            "char_span": [end_idx - len(ent["text"]) + 1, end_idx + 1]}
                           for end_idx, ent in self.ent_ac.iter(text_in) for tp in ent["types"]]
-
+        if add_entities is not None:
+            extracted_ents.extend(add_entities)
+        # filter invalid ents
+        extracted_ents = [ent for ent in extracted_ents if not is_invalid_extr_ent(ent["text"], ent["char_span"], text_in)]
         for ent in extracted_ents:
             assert text_in[ent["char_span"][0]:ent["char_span"][1]] == ent["text"]
 
-        for subj in extracted_ents:
-            for obj in extracted_ents:
+        ents_in_rel = set()
+        uniq_ent_list = []
+        ent_mem = set()
+        for ent in extracted_ents:
+            new_ent = {"text": ent["text"], "char_span": ent["char_span"]}
+            if str(new_ent) not in ent_mem:
+                uniq_ent_list.append(new_ent)
+                ent_mem.add(str(new_ent))
+
+        for subj in uniq_ent_list:
+            for obj in uniq_ent_list:
                 so = (subj["text"], obj["text"])
                 if so in self.subj_obj2preds:
                     for pred in self.subj_obj2preds[so]:
@@ -828,7 +976,13 @@ class SpoSearcher(object):
                             "obj_char_span": obj["char_span"],
                             "predicate": pred,
                         })
-        extracted_ents = [ent for ent in extracted_ents if len(ent["text"]) >= self.min_ent_len]
+                    ents_in_rel.add(subj["text"])
+                    ents_in_rel.add(obj["text"])
+
+        extracted_ents = [ent for ent in extracted_ents
+                          if ent["text"] in ents_in_rel or ent["type"] not in self.ent_type_mask
+                          and re.match("^\d+$", ent["text"]) is None
+                          ]
         return extracted_ents, list(extracted_spos)
 
 
@@ -844,12 +998,15 @@ ent_list = [
     {"text": "李世民", "type": "人物"},
     {"text": "唐人街探案", "type": "影视作品"},
     {"text": "54亿", "type": "Number"},
+    {"text": "54", "type": "Number"},
+    {"text": "54", "type": "影视作品"},
+    {"text": "154亿", "type": "Number"},
     {"text": "国内", "type": "地区"},
 ]
 
 # # 调用
 # spoer = SpoSearcher(spo_list, ent_list, ent_type_map={"历史人物": "人物"}, ent_type_mask={"Number", })
-# text = "李宽是唐太宗李世民的第二子，生母不详，史书记载为后宫生宽。 唐人街探案票房当日破54亿人民币"
+# text = "李宽是唐太宗李世民的第二子，生母不详，史书记载为后宫生宽。 唐人街探案票房当日破54亿人民币, 黑客帝国突破154亿， sdf54亿"
 # ent_list, spo_list = spoer.extract_items(text)
 # print(spo_list)
 # print(ent_list)

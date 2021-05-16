@@ -11,7 +11,7 @@ from InfExtraction.work_flows import format_conv
 class Trainer:
     def __init__(self,
                  model,
-                 dataloader,
+                 dataloader_fn,
                  device,
                  optimizer,
                  trainer_config,
@@ -21,7 +21,7 @@ class Trainer:
         self.device = device
         self.optimizer = optimizer
         self.logger = logger
-        self.dataloader = dataloader
+        self.dataloader_fn = dataloader_fn
 
         self.run_name = trainer_config["run_name"]
         self.exp_name = trainer_config["exp_name"]
@@ -33,7 +33,7 @@ class Trainer:
 
         if self.scheduler_name == "CAWR":
             T_mult = scheduler_config["T_mult"]
-            rewarm_steps = scheduler_config["rewarm_epochs"] * len(dataloader)
+            rewarm_steps = scheduler_config["rewarm_epochs"] * len(dataloader_fn())
             self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, rewarm_steps, T_mult)
 
         elif self.scheduler_name == "ReduceLROnPlateau":
@@ -78,7 +78,7 @@ class Trainer:
         t_ep = time.time()
         # avg_loss, total_loss, avg_seq_acc, total_seq_acc = 0., 0., 0., 0.
         fin_metrics_dict = {}
-        dataloader = self.dataloader
+        dataloader = self.dataloader_fn()
         for batch_ind, batch_train_data in enumerate(dataloader):
             t_batch = time.time()
             metrics_dict = self.train_step(batch_train_data)
@@ -214,7 +214,10 @@ class Evaluator:
 
         # alignment by id (in order)
         pred_data = []
-        assert len(merged_pred_samples) == len(golden_data)
+        try:
+            assert len(merged_pred_samples) == len(golden_data)
+        except Exception:
+            print("debug merge")
         for sample in golden_data:
             id_ = sample["id"]
             pred_data.append(merged_pred_samples[id_])
