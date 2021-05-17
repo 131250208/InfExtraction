@@ -63,9 +63,9 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             self.pos_tag_emb_dim = pos_tag_emb_dim
             self.cat_hidden_size += pos_tag_emb_dim
             # pos_tag_hsk_ids
-            # if pos_tag_emb_config["hsk_emb"]:
-            self.pos_tag_emb4hsk = nn.Embedding(pos_tag_num, pos_tag_emb_dim)
-            self.pos_tag_emb4hsk_dropout = nn.Dropout(p=pos_tag_emb_dropout)
+            if pos_tag_emb_config["hsk_emb"]:
+                self.pos_tag_emb4hsk = nn.Embedding(pos_tag_num, pos_tag_emb_dim)
+                self.pos_tag_emb4hsk_dropout = nn.Dropout(p=pos_tag_emb_dropout)
 
         # char
         self.char_encoder_config = char_encoder_config

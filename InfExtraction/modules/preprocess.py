@@ -8,10 +8,10 @@ from InfExtraction.modules import utils
 import torch
 from pprint import pprint
 import os
-from ddparser import DDParser
 import Levenshtein
 import hashlib
-
+import time
+import json
 
 class Indexer:
     def __init__(self, tag2id, max_seq_len, spe_tag_dict):
@@ -536,60 +536,49 @@ class Preprocessor:
         return ent2char_spans
 
     @staticmethod
-    def trans_duee(data, dataset_type, add_id):
-        # normal_data = []
+    def trans_duee(sample):
+        text = sample["text"]
 
-        for ind, sample in tqdm(enumerate(data), desc="transform duee"):
-            text = sample["text"]
-            # normal_sample = copy.deepcopy(sample)
+        # event list
+        if "event_list" in sample:  # train or valid data
+            normal_event_list = []
+            for event in sample["event_list"]:
+                normal_event = copy.deepcopy(event)
 
-            # add id
-            if add_id:
-                sample["id"] = "{}_{}".format(dataset_type, ind)
-            else:
-                assert "id" in sample, "miss id in data!"
+                # rm whitespaces
+                clean_tri = normal_event["trigger"].lstrip()
+                normal_event["trigger_start_index"] += len(normal_event["trigger"]) - len(clean_tri)
+                normal_event["trigger"] = clean_tri.rstrip()
 
-            # event list
-            if "event_list" in sample:  # train or valid data
-                normal_event_list = []
-                for event in sample["event_list"]:
-                    normal_event = copy.deepcopy(event)
+                normal_event["trigger_char_span"] = [normal_event["trigger_start_index"],
+                                                     normal_event["trigger_start_index"] + len(
+                                                         normal_event["trigger"])]
+                char_span = normal_event["trigger_char_span"]
+                assert text[char_span[0]:char_span[1]] == normal_event["trigger"]
+                del normal_event["trigger_start_index"]
 
-                    # rm whitespaces
-                    clean_tri = normal_event["trigger"].lstrip()
-                    normal_event["trigger_start_index"] += len(normal_event["trigger"]) - len(clean_tri)
-                    normal_event["trigger"] = clean_tri.rstrip()
+                normal_arg_list = []
+                for arg in normal_event["arguments"]:
+                    # clean whitespaces
+                    clean_arg = arg["argument"].lstrip()
+                    arg["argument_start_index"] += len(arg["argument"]) - len(clean_arg)
+                    arg["argument"] = clean_arg.rstrip()
 
-                    normal_event["trigger_char_span"] = [normal_event["trigger_start_index"],
-                                                         normal_event["trigger_start_index"] + len(
-                                                             normal_event["trigger"])]
-                    char_span = normal_event["trigger_char_span"]
-                    assert text[char_span[0]:char_span[1]] == normal_event["trigger"]
-                    del normal_event["trigger_start_index"]
-
-                    normal_arg_list = []
-                    for arg in normal_event["arguments"]:
-                        # clean whitespaces
-                        clean_arg = arg["argument"].lstrip()
-                        arg["argument_start_index"] += len(arg["argument"]) - len(clean_arg)
-                        arg["argument"] = clean_arg.rstrip()
-
-                        char_span = [arg["argument_start_index"],
-                                     arg["argument_start_index"] + len(arg["argument"])]
-                        assert text[char_span[0]:char_span[1]] == arg["argument"]
-                        normal_arg_list.append({
-                            "text": arg["argument"],
-                            "type": arg["role"],
-                            "char_span": char_span,
-                        })
-                    normal_event["argument_list"] = normal_arg_list
-                    del normal_event["arguments"]
-                    normal_event_list.append(normal_event)
-                sample["event_list"] = normal_event_list
-        return data
+                    char_span = [arg["argument_start_index"],
+                                 arg["argument_start_index"] + len(arg["argument"])]
+                    assert text[char_span[0]:char_span[1]] == arg["argument"]
+                    normal_arg_list.append({
+                        "text": arg["argument"],
+                        "type": arg["role"],
+                        "char_span": char_span,
+                    })
+                normal_event["argument_list"] = normal_arg_list
+                del normal_event["arguments"]
+                normal_event_list.append(normal_event)
+            sample["event_list"] = normal_event_list
 
     @staticmethod
-    def trans_duee_fin(data, dataset_type, add_id):
+    def trans_duee_fin(sample):
         def clean_txt(txt):
             txt = re.sub("\s+", " ", txt)
             return txt
@@ -599,48 +588,40 @@ class Preprocessor:
             "InterVes": "InterVest",
         }
 
-        for ind, sample in tqdm(enumerate(data), desc="transform duee fin"):
-            # add id
-            if add_id:
-                sample["id"] = "{}_{}".format(dataset_type, ind)
-            else:
-                assert "id" in sample, "miss id in data!"
+        ents = set()
+        sample["text"] = clean_txt(sample["title"] + "[SEP]" + sample["text"])
+        text = sample["text"]
+        # if "乐声电子回购14万股涉资约17.22万港元" in text or \
+        #         "厦门金牌厨柜股份有限公司关于控股股东部分股票质押及解除质押的公告" in text or \
+        #         "【重要公告】中公教育：上半年净利预增100%-135%；中环环保：联合预中标3.16亿元项目" in text:
+        #     print("debug!")
 
-            ents = set()
-            sample["text"] = clean_txt(sample["title"] + "[SEP]" + sample["text"])
-            text = sample["text"]
-            # if "乐声电子回购14万股涉资约17.22万港元" in text or \
-            #         "厦门金牌厨柜股份有限公司关于控股股东部分股票质押及解除质押的公告" in text or \
-            #         "【重要公告】中公教育：上半年净利预增100%-135%；中环环保：联合预中标3.16亿元项目" in text:
-            #     print("debug!")
+        # fix cases
+        if sample["id"] == 'cba17a27928c657bf6781c3ecdfd8f37':
+            for event in sample["event_list"]:
+                for arg in event["arguments"]:
+                    if arg["argument"] == '019年8月22日':
+                        arg["argument"] = '2019年8月22日'
 
-            # fix cases
-            if sample["id"] == 'cba17a27928c657bf6781c3ecdfd8f37':
-                for event in sample["event_list"]:
+        if sample["id"] == 'c2e95b239cafba85ca348503a8742440':
+            for event in sample["event_list"]:
+                for arg in event["arguments"]:
+                    if arg["argument"] == '5个交易日后的6个月内':
+                        arg["argument"] = '15个交易日后的6个月内'
+
+        if sample["id"] == '3d2fee76e7442e68be78b4be5fee5804':
+            for event in sample["event_list"]:
+                if event["event_type"] == "质押":
+                    arg_list = []
                     for arg in event["arguments"]:
-                        if arg["argument"] == '019年8月22日':
-                            arg["argument"] = '2019年8月22日'
+                        if arg["argument"] == '3.04%' and arg["role"] == '质押物占总股比':
+                            continue
+                        arg_list.append(arg)
+                    event["arguments"] = arg_list
 
-            if sample["id"] == 'c2e95b239cafba85ca348503a8742440':
-                for event in sample["event_list"]:
-                    for arg in event["arguments"]:
-                        if arg["argument"] == '5个交易日后的6个月内':
-                            arg["argument"] = '15个交易日后的6个月内'
-
-            if sample["id"] == '3d2fee76e7442e68be78b4be5fee5804':
-                for event in sample["event_list"]:
-                    if event["event_type"] == "质押":
-                        arg_list = []
-                        for arg in event["arguments"]:
-                            if arg["argument"] == '3.04%' and arg["role"] == '质押物占总股比':
-                                continue
-                            arg_list.append(arg)
-                        event["arguments"] = arg_list
-
-            if "event_list" not in sample:
-                if dataset_type != "test":
-                    sample["event_list"] = []
-                continue
+        if "event_list" not in sample:
+            sample["event_list"] = []
+        else:
             for event in sample["event_list"]:
                 ents.add(event["trigger"])
                 for arg in event["arguments"]:
@@ -675,15 +656,10 @@ class Preprocessor:
                 new_event_list.append(new_event)
             sample["event_list"] = new_event_list
 
-        return data
-
     @staticmethod
-    def trans_duie_1(data, dataset_type, add_id=True):
-        normal_data = []
-        for ind, sample in tqdm(enumerate(data), desc="transform data"):
-            text = sample["text"]
+    def trans_duie_1(sample):
+        if "spo_list" in sample:
             rel_list, ent_list = [], []
-
             for spo in sample["spo_list"]:
                 rel_list.append({
                     "subject": spo["subject"],
@@ -699,70 +675,47 @@ class Preprocessor:
                     "type": spo["object_type"],
                 })
 
-            normal_sample = {
-                "text": text,
-            }
-            # add id
-            if add_id:
-                normal_sample["id"] = "{}_{}".format(dataset_type, ind)
-            else:
-                assert "id" in sample, "miss id in data!"
-                normal_sample["id"] = sample["id"]
-
-            normal_sample["entity_list"] = Preprocessor.unique_list(ent_list)
-            normal_sample["relation_list"] = Preprocessor.unique_list(rel_list)
-            normal_data.append(normal_sample)
-        return normal_data
+            sample["entity_list"] = Preprocessor.unique_list(ent_list)
+            sample["relation_list"] = Preprocessor.unique_list(rel_list)
 
     @staticmethod
-    def trans_duie_2(data, dataset_type, add_id=True):
-        normal_data = []
-        for ind, sample in tqdm(enumerate(data), desc="transform data"):
-            # normal_sample = copy.deepcopy(sample)
-            # add id
-            if add_id:
-                sample["id"] = "{}_{}".format(dataset_type, ind)
-            else:
-                assert "id" in sample, "miss id in data!"
+    def trans_duie_2(sample):
+        if "spo_list" in sample:
+            rel_list, ent_list = [], []
+            for spo in sample["spo_list"]:
+                rel_list.append({
+                    "subject": spo["subject"],
+                    "object": spo["object"]["@value"],
+                    "predicate": spo["predicate"],
+                })
+                ent_list.append({
+                    "text": spo["subject"],
+                    "type": spo["subject_type"],
+                })
+                ent_list.append({
+                    "text": spo["object"]["@value"],
+                    "type": spo["object_type"]["@value"],
+                })
 
-            if dataset_type != "test":
-                rel_list, ent_list = [], []
-                for spo in sample["spo_list"]:
+                for k, item in spo["object"].items():
+                    if k == "@value":
+                        continue
                     rel_list.append({
                         "subject": spo["subject"],
-                        "object": spo["object"]["@value"],
-                        "predicate": spo["predicate"],
+                        "object": item,
+                        "predicate": k,
+                    })
+                    rel_list.append({
+                        "subject": spo["object"]["@value"],
+                        "object": item,
+                        "predicate": k,
                     })
                     ent_list.append({
-                        "text": spo["subject"],
-                        "type": spo["subject_type"],
+                        "text": item,
+                        "type": spo["object_type"][k],
                     })
-                    ent_list.append({
-                        "text": spo["object"]["@value"],
-                        "type": spo["object_type"]["@value"],
-                    })
-
-                    for k, item in spo["object"].items():
-                        if k == "@value":
-                            continue
-                        rel_list.append({
-                            "subject": spo["subject"],
-                            "object": item,
-                            "predicate": k,
-                        })
-                        rel_list.append({
-                            "subject": spo["object"]["@value"],
-                            "object": item,
-                            "predicate": k,
-                        })
-                        ent_list.append({
-                            "text": item,
-                            "type": spo["object_type"][k],
-                        })
-                sample["entity_list"] = Preprocessor.unique_list(ent_list)
-                sample["relation_list"] = Preprocessor.unique_list(rel_list)
-
-        return data
+            sample["entity_list"] = Preprocessor.unique_list(ent_list)
+            sample["relation_list"] = Preprocessor.unique_list(rel_list)
 
     @staticmethod
     def transform_data(data, ori_format, dataset_type, add_id=True):
@@ -772,30 +725,27 @@ class Preprocessor:
         ori_format: "casrel", "etl_span", "raw_nyt", "tplinker", etc.
         dataset_type: "train", "valid", "test"; only for generate id for the data
         '''
-        if ori_format == "duie_1":
-            return Preprocessor.trans_duie_1(data, dataset_type, add_id)
-        if ori_format == "duie_2":
-            return Preprocessor.trans_duie_2(data, dataset_type, add_id)
-        if ori_format == "duee_1":
-            return Preprocessor.trans_duee(data, dataset_type, add_id)
-        if ori_format == "duee_fin":
-            return Preprocessor.trans_duee_fin(data, dataset_type, add_id)
-
-        normal_sample_list = []
-        for ind, sample in tqdm(enumerate(data), desc="transforming data format"):
+        for ind, sample in enumerate(data):
             normal_sample = {}
             if add_id:
                 normal_sample["id"] = "{}_{}".format(dataset_type, ind)
             else:
                 assert "id" in sample, "miss id in data!"
-
                 normal_sample["id"] = sample["id"]
 
-            if ori_format == "normal":
-                # try:
-                normal_sample_list.append({**normal_sample, **sample})
-                # except Exception:
-                #     print("?")
+            if ori_format == "duie_1":
+                Preprocessor.trans_duie_1(sample)
+
+            if ori_format == "duie_2":
+                Preprocessor.trans_duie_2(sample)
+
+            if ori_format == "duee_1":
+                Preprocessor.trans_duee(sample)
+            if ori_format == "duee_fin":
+                Preprocessor.trans_duee_fin(sample)
+
+            if ori_format in {"normal", "duee_fin", "duee_1", "duie_2"}:
+                yield {**normal_sample, **sample}
                 continue
 
             text, rel_list, subj_key, pred_key, obj_key = None, None, None, None, None
@@ -831,7 +781,6 @@ class Preprocessor:
                         "type": "DEFAULT",
                     })
             else:
-
                 for ent in sample["entityMentions"]:
                     normal_ent_list.append({
                         "text": ent["text"],
@@ -846,27 +795,24 @@ class Preprocessor:
                     })
             normal_sample["relation_list"] = normal_rel_list
             normal_sample["entity_list"] = normal_ent_list
-            normal_sample_list.append(normal_sample)
 
-        def clean_text(text):
-            text = re.sub("�", "", text)
-            text = re.sub("([,;.?!]+)", r" \1 ", text)
-            #             text = re.sub("([A-Za-z]+)", r" \1 ", text)
-            #             text = re.sub("(\d+)", r" \1 ", text)
-            text = re.sub("\s+", " ", text).strip()
-            return text
+            # clean
+            if ori_format in {"casrel", "etl_span", "raw_nyt"}:
+                def clean_text(text):
+                    text = re.sub("�", "", text)
+                    text = re.sub("([,;.?!]+)", r" \1 ", text)
+                    text = re.sub("\s+", " ", text).strip()
+                    return text
 
-        if ori_format in {"casrel", "etl_span", "raw_nyt"}:
-            for sample in normal_sample_list:
-                sample["text"] = clean_text(sample["text"])
+                normal_sample["text"] = clean_text(sample["text"])
                 for ent in sample["entity_list"]:
                     ent["text"] = clean_text(ent["text"])
 
-                for rel in sample["relation_list"]:
+                for rel in normal_sample["relation_list"]:
                     rel["subject"] = clean_text(rel["subject"])
                     rel["object"] = clean_text(rel["object"])
 
-        return normal_sample_list
+            yield normal_sample
 
     @staticmethod
     def pre_check_data_annotation(data, language):
@@ -939,6 +885,7 @@ class Preprocessor:
             if "open_spo_list" in sample:
                 for spo in sample["open_spo_list"]:
                     check_ent_span(spo, text)
+            yield sample
 
     def add_char_span(self, dataset, ignore_subword_match=True):
         '''
@@ -947,7 +894,7 @@ class Preprocessor:
         :param ignore_subword_match: if a word is a subword of another word, ignore its span.
         :return:
         '''
-        for sample in tqdm(dataset, desc="adding char level spans"):
+        for sample in dataset:
             entities = []
             if "relation_list" in sample:
                 entities.extend([rel["subject"] for rel in sample["relation_list"]])
@@ -1013,7 +960,7 @@ class Preprocessor:
                     for arg in event["argument_list"]:
                         char_spans = ent2char_spans[arg["text"]]
                         arg["char_span"] = char_spans if len(char_spans) > 0 else [[]]
-        return dataset
+            yield sample
 
     def add_tok_span(self, data):
         '''
@@ -1033,7 +980,7 @@ class Preprocessor:
                     print("error in char_span2tok_span!")
             return tok_span
 
-        for sample in tqdm(data, desc="adding word level and subword level spans"):
+        for sample in data:
             char2word_span = self._get_char2tok_span(sample["features"]["word2char_span"])
             char2subwd_span = self._get_char2tok_span(sample["features"]["subword2char_span"])
 
@@ -1063,10 +1010,6 @@ class Preprocessor:
                                 add_sps(v)
                         item.update(add_dict)
 
-            # for ann_key in anns:
-            #     if ann_key in sample:
-            #         add_sps(sample[ann_key])
-
             for k, v in sample.items():
                 if type(v) is list:
                     add_sps(v)
@@ -1074,6 +1017,7 @@ class Preprocessor:
                     for val in v.values():
                         if type(val) is list:
                             add_sps(val)
+            yield sample
             # if "relation_list" in sample:
             #     for rel in sample["relation_list"]:
             #         subj_char_span = rel["subj_char_span"]
@@ -1114,7 +1058,6 @@ class Preprocessor:
             #             if "char_span" in arg:
             #                 arg["wd_span"] = char_span2tok_span(arg["char_span"], char2word_span)
             #                 arg["subwd_span"] = char_span2tok_span(arg["char_span"], char2subwd_span)
-        return data
 
     @staticmethod
     def search_char_spans_fr_txt(target_seg, text, language, merge_sps=True):
@@ -1298,14 +1241,12 @@ class Preprocessor:
         :param data: 
         :return: 
         '''
-        sample_id2mismatched_ents = {}
 
-        for sample in tqdm(data, desc="checking word level and subword level spans"):
+        for sample in data:
             text = sample["text"]
             word2char_span = sample["features"]["word2char_span"]
             subword2char_span = sample["features"]["subword2char_span"]
 
-            sample_id2mismatched_ents[sample["id"]] = {}
             if "entity_list" in sample:
                 bad_entities = []
                 for ent in sample["entity_list"]:
@@ -1321,7 +1262,9 @@ class Preprocessor:
                         bad_ent["extr_ent_subwd"] = ent_subwd
                         bad_entities.append(bad_ent)
                 if len(bad_entities) > 0:
-                    sample_id2mismatched_ents[sample["id"]]["bad_entites"] = bad_entities
+                    print(text)
+                    print(bad_entities)
+                    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 
             if "relation_list" in sample:
                 bad_rels = []
@@ -1346,7 +1289,9 @@ class Preprocessor:
                         bad_rel["extr_obj_subwd"] = obj_subwd
                         bad_rels.append(bad_rel)
                 if len(bad_rels) > 0:
-                    sample_id2mismatched_ents[sample["id"]]["bad_relations"] = bad_rels
+                    print(text)
+                    print(bad_rels)
+                    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 
             if "event_list" in sample:
                 bad_events = []
@@ -1403,11 +1348,11 @@ class Preprocessor:
                     if bad:
                         bad_events.append(bad_event)
                 if len(bad_events) > 0:
-                    sample_id2mismatched_ents[sample["id"]]["bad_events"] = bad_events
+                    print(text)
+                    print(bad_events)
+                    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 
-            if len(sample_id2mismatched_ents[sample["id"]]) == 0:
-                del sample_id2mismatched_ents[sample["id"]]
-        return sample_id2mismatched_ents
+            yield sample
 
     @staticmethod
     def get_all_possible_char_spans(sample):
@@ -1476,8 +1421,8 @@ class Preprocessor:
         return utils.exist_nested_entities(sp_list)
 
     def create_features(self, data, word_tokenizer_type="white",
-                        add_pos_ner_deprel=False,
-                        parser=None,
+                        parse_format=None,
+                        parse_results=None,
                         ent_spo_extractor=None
                         ):
         '''
@@ -1485,34 +1430,8 @@ class Preprocessor:
         :param word_tokenizer_type: stanza, white, normal_chinese;
         :return:
         '''
-        # if add pos tags, ner tags, dependency relations
-        # parse texts
-        if add_pos_ner_deprel:
-            texts = [sample["text"] for sample in data]
-            m = hashlib.md5()
-            m.update("\n".join(texts).encode('utf-8'))
-            if not os.path.exists("../../data/cache"):
-                os.mkdir("../../data/cache")
-
-            cache_path = "../../data/cache/parse_cache_{}.jsonlines".format(m.hexdigest())
-            texts_num = len(texts)
-            parse_results = []
-            if os.path.exists(cache_path):
-                parse_results = load_data(cache_path)
-                print(">>>>>>>>>>>>>> parse res: {} >>>>>>>>>>>>>>>>>>".format(len(parse_results)))
-
-            if len(parse_results) != texts_num:
-                parse_results = []
-                if parser == "ddp":
-                    ddp = DDParser(use_pos=True, buckets=True)
-                    for idx in tqdm(range(0, texts_num, 100), desc="ddp parse"):
-                        parse_results.extend(ddp.parse(texts[idx:idx + 100]))
-                elif parser == "stanza":
-                    pass  # todo
-                save_as_json_lines(parse_results, cache_path)
-
         # create features
-        for sample_idx, sample in tqdm(enumerate(data), desc="create features"):
+        for sample_idx, sample in enumerate(data):
             text = sample["text"]
 
             # word level
@@ -1541,8 +1460,8 @@ class Preprocessor:
                 "subword2char_span": codes["offset_mapping"],
             }
 
-            if add_pos_ner_deprel:  # (ner_tag_list, pos_tag_list, dependency_list)
-                if parser == "ddp":
+            if parse_results is not None:  # (ner_tag_list, pos_tag_list, dependency_list)
+                if parse_format == "ddp":
                     ctok_word2char_span = sample["word2char_span"]
                     cchar2tok_span = utils.get_char2tok_span(ctok_word2char_span)
 
@@ -1768,12 +1687,13 @@ class Preprocessor:
                         assert subw_extr == subw or subw == "[UNK]"
                 except Exception:
                     print("subw_extr({}) != subw({})".format(subw_extr, subw))
-        return data
 
-    def generate_supporting_data(self, data, max_word_dict_size, min_word_freq):
-        pos_tag_set = set()
-        ner_tag_set = set()
-        deprel_type_set = set()
+            yield sample
+
+    def generate_supporting_data(self, data_paths, max_word_dict_size, min_word_freq):
+        pos_tag_list = list()
+        ner_tag_list = list()
+        deprel_type_list = list()
         word2num = dict()
         word_set = set()
         char_set = set()
@@ -1794,98 +1714,111 @@ class Preprocessor:
         max_ann_subwd_span = 0
         max_ann_wd_span = 0
 
-        for sample in tqdm(data, desc="generating supporting data"):
-            min_subwd_span_start = 99999
-            max_subwd_span_end = 0
-            min_wd_span_start = 99999
-            max_wd_span_end = 0
+        pos_tag, ner_tag, wd_dep = False, False, False
 
-            # POS tag
-            if "pos_tag_list" in sample["features"]:
-                pos_tag_set |= {pos_tag for pos_tag in sample["features"]["pos_tag_list"]}
-            # NER tag
-            if "ner_tag_list" in sample["features"]:
-                ner_tag_set |= {ner_tag for ner_tag in sample["features"]["ner_tag_list"]}
-            # dependency relations
-            if "word_dependency_list" in sample["features"]:
-                deprel_type_set |= {deprel[-1] for deprel in sample["features"]["word_dependency_list"]}
+        for data_path in data_paths:
+            with open(data_path, "r", encoding="utf-8") as file_in:
+                for line in tqdm(file_in, desc="gen sup data 4 {}".format(data_path)):
+                    sample = json.loads(line)
+                    min_subwd_span_start = 99999
+                    max_subwd_span_end = 0
+                    min_wd_span_start = 99999
+                    max_wd_span_end = 0
 
-            subwd_span_list = []
-            wd_span_list = []
+                    t1 = time.time()
+                    # POS tag
+                    if "pos_tag_list" in sample["features"]:
+                        pos_tag_list.extend(sample["features"]["pos_tag_list"])
+                    # NER tag
+                    if "ner_tag_list" in sample["features"]:
+                        ner_tag_list.extend(sample["features"]["ner_tag_list"])
+                    # dependency relations
+                    if "word_dependency_list" in sample["features"]:
+                        deprel_type_list.extend([deprel[-1] for deprel in sample["features"]["word_dependency_list"]])
 
-            # entity
-            if "entity_list" in sample:
-                ent_exist = True
-                for ent in sample["entity_list"]:
-                    ent_type_set.add(ent["type"])
-                    subwd_span_list.append(ent["subwd_span"])
-                    wd_span_list.append(ent["wd_span"])
+                    t2 = time.time()
 
-            # relation
-            if "relation_list" in sample:
-                rel_exist = True
-                for rel in sample["relation_list"]:
-                    rel_type_set.add(rel["predicate"])
-                    subwd_span_list.append(rel["subj_subwd_span"])
-                    wd_span_list.append(rel["subj_wd_span"])
-                    subwd_span_list.append(rel["obj_subwd_span"])
-                    wd_span_list.append(rel["obj_wd_span"])
+                    subwd_span_list = []
+                    wd_span_list = []
 
-            # event
-            if "event_list" in sample:
-                event_exist = True
-                for event in sample["event_list"]:
-                    event_type_set.add(event["event_type"])
+                    # entity
+                    if "entity_list" in sample:
+                        ent_exist = True
+                        for ent in sample["entity_list"]:
+                            ent_type_set.add(ent["type"])
+                            subwd_span_list.append(ent["subwd_span"])
+                            wd_span_list.append(ent["wd_span"])
 
-                    def add_sps(sp_list, span):
-                        if type(span[0]) is list:
-                            sp_list.extend(span)
-                        else:
-                            sp_list.append(span)
+                    # relation
+                    if "relation_list" in sample:
+                        rel_exist = True
+                        for rel in sample["relation_list"]:
+                            rel_type_set.add(rel["predicate"])
+                            subwd_span_list.append(rel["subj_subwd_span"])
+                            wd_span_list.append(rel["subj_wd_span"])
+                            subwd_span_list.append(rel["obj_subwd_span"])
+                            wd_span_list.append(rel["obj_wd_span"])
 
-                    if "trigger" in event:
-                        add_sps(subwd_span_list, event["trigger_subwd_span"])
-                        add_sps(wd_span_list, event["trigger_wd_span"])
+                    t3 = time.time()
 
-                    for arg in event["argument_list"]:
-                        argument_type_set.add(arg["type"])
-                        add_sps(subwd_span_list, arg["subwd_span"])
-                        add_sps(wd_span_list, arg["wd_span"])
+                    # event
+                    if "event_list" in sample:
+                        event_exist = True
+                        for event in sample["event_list"]:
+                            event_type_set.add(event["event_type"])
 
-            if "open_spo_list" in sample:
-                oie_exist = True
-                for spo in sample["open_spo_list"]:
-                    for arg in spo:
-                        oie_arg_type_set.add(arg["type"])
-                        if "char_span" not in arg or len(arg["char_span"]) == 0:
-                            continue
-                        subwd_span_list.append(arg["subwd_span"])
-                        wd_span_list.append(arg["wd_span"])
+                            def add_sps(sp_list, span):
+                                if type(span[0]) is list:
+                                    sp_list.extend(span)
+                                else:
+                                    sp_list.append(span)
 
-            # span
-            if "entity_list" in sample and "relation_list" not in sample and \
-                    "event_list" not in sample and "open_spo_list" not in sample:
-                for sp in subwd_span_list:
-                    max_ann_subwd_span = max(sp[1] - sp[0], max_ann_subwd_span)
-                for sp in wd_span_list:
-                    max_ann_wd_span = max(sp[1] - sp[0], max_ann_wd_span)
-            else:
-                for sp in subwd_span_list:
-                    min_subwd_span_start = min(min_subwd_span_start, sp[0])
-                    max_subwd_span_end = max(max_subwd_span_end, sp[1])
-                for sp in wd_span_list:
-                    min_wd_span_start = min(min_wd_span_start, sp[0])
-                    max_wd_span_end = max(max_wd_span_end, sp[1])
-                max_ann_subwd_span = max(max_subwd_span_end - min_subwd_span_start, max_ann_subwd_span)
-                max_ann_wd_span = max(max_wd_span_end - min_wd_span_start, max_ann_wd_span)
+                            if "trigger" in event:
+                                add_sps(subwd_span_list, event["trigger_subwd_span"])
+                                add_sps(wd_span_list, event["trigger_wd_span"])
 
-            # character
-            char_set |= set(sample["text"])
-            # word
-            for word in sample["features"]["word_list"]:
-                word2num[word] = word2num.get(word, 0) + 1
-            max_word_seq_length = max(max_word_seq_length, len(sample["features"]["word_list"]))
-            max_subword_seq_length = max(max_subword_seq_length, len(sample["features"]["subword_list"]))
+                            for arg in event["argument_list"]:
+                                argument_type_set.add(arg["type"])
+                                add_sps(subwd_span_list, arg["subwd_span"])
+                                add_sps(wd_span_list, arg["wd_span"])
+
+                    if "open_spo_list" in sample:
+                        oie_exist = True
+                        for spo in sample["open_spo_list"]:
+                            for arg in spo:
+                                oie_arg_type_set.add(arg["type"])
+                                if "char_span" not in arg or len(arg["char_span"]) == 0:
+                                    continue
+                                subwd_span_list.append(arg["subwd_span"])
+                                wd_span_list.append(arg["wd_span"])
+                    t4 = time.time()
+
+                    # span
+                    if "entity_list" in sample and "relation_list" not in sample and \
+                            "event_list" not in sample and "open_spo_list" not in sample:
+                        for sp in subwd_span_list:
+                            max_ann_subwd_span = max(sp[1] - sp[0], max_ann_subwd_span)
+                        for sp in wd_span_list:
+                            max_ann_wd_span = max(sp[1] - sp[0], max_ann_wd_span)
+                    else:
+                        for sp in subwd_span_list:
+                            min_subwd_span_start = min(min_subwd_span_start, sp[0])
+                            max_subwd_span_end = max(max_subwd_span_end, sp[1])
+                        for sp in wd_span_list:
+                            min_wd_span_start = min(min_wd_span_start, sp[0])
+                            max_wd_span_end = max(max_wd_span_end, sp[1])
+                        max_ann_subwd_span = max(max_subwd_span_end - min_subwd_span_start, max_ann_subwd_span)
+                        max_ann_wd_span = max(max_wd_span_end - min_wd_span_start, max_ann_wd_span)
+                    t5 = time.time()
+                    # character
+                    char_set |= set(sample["text"])
+                    # word
+                    for word in sample["features"]["word_list"]:
+                        word2num[word] = word2num.get(word, 0) + 1
+                    max_word_seq_length = max(max_word_seq_length, len(sample["features"]["word_list"]))
+                    max_subword_seq_length = max(max_subword_seq_length, len(sample["features"]["subword_list"]))
+
+            # print("{:.5}, {:.5}, {:.5}, {:.5}, {:.5}".format(t2 - t1, t3 - t2, t4 - t3, t5 - t4, time.time() - t5))
 
         def get_dict(tag_set):
             tag2id = {tag: ind + 2 for ind, tag in enumerate(sorted(tag_set))}
@@ -1936,20 +1869,21 @@ class Preprocessor:
             "char2id": char2id,
             "word2id": word2id,
         }
-        if "pos_tag_list" in data[0]["features"]:
-            pos_tag2id = get_dict(pos_tag_set)
+        if pos_tag:
+            pos_tag2id = get_dict(set(pos_tag_list))
             data_statistics["pos_tag_num"] = len(pos_tag2id)
             dicts["pos_tag2id"] = pos_tag2id
 
-        if "ner_tag_list" in data[0]["features"]:
+        if ner_tag:
+            ner_tag_set = set(ner_tag_list)
             ner_tag_set.remove("O")
             ner_tag2id = {ner_tag: ind + 1 for ind, ner_tag in enumerate(sorted(ner_tag_set))}
             ner_tag2id["O"] = 0
             data_statistics["ner_tag_num"] = len(ner_tag2id)
             dicts["ner_tag2id"] = ner_tag2id
 
-        if "word_dependency_list" in data[0]["features"]:
-            deprel_type2id = get_dict(deprel_type_set)
+        if wd_dep:
+            deprel_type2id = get_dict(set(deprel_type_list))
             data_statistics["deprel_type_num"] = len(deprel_type2id)
             dicts["deprel_type2id"] = deprel_type2id
 
@@ -2000,6 +1934,7 @@ class Preprocessor:
         for sample in tqdm(data, desc="choose features"):
             Preprocessor.choose_features_by_token_level4sample(sample, token_level, do_lower_case)
         return data
+
     @staticmethod
     def choose_features_by_token_level_gen(data, token_level, do_lower_case=False):
         for sample in data:
@@ -2052,7 +1987,6 @@ class Preprocessor:
         '''
         for sample in tqdm(data, desc="choose span level"):
             Preprocessor.choose_spans_by_token_level4sample(sample, token_level)
-
 
         # for sample in tqdm(data, desc="choose span level"):
         #     if "entity_list" in sample:
@@ -2174,8 +2108,30 @@ class Preprocessor:
                         if utils.span_contains(limited_span, tok_span):
                             new_arg_list.append(arg)
 
+                new_trigger_list = []
+                for trigger in event_cp.get("trigger_list", []):
+                    tok_span = trigger["tok_span"]
+                    ch_span = trigger["char_span"]
+                    if type(tok_span[0]) is list:
+                        new_tok_span = []
+                        new_ch_span = []
+                        for sp_idx, tok_sp in enumerate(tok_span):
+                            if utils.span_contains(limited_span, tok_sp):
+                                new_tok_span.append(tok_sp)
+                                new_ch_span.append(ch_span[sp_idx])
+                        trigger["tok_span"] = new_tok_span
+                        trigger["char_span"] = new_ch_span
+
+                        if len(trigger["tok_span"]) > 0:
+                            new_trigger_list.append(trigger)
+                    else:
+                        if utils.span_contains(limited_span, tok_span):
+                            new_trigger_list.append(trigger)
+
                 if len(new_arg_list) > 0 or "trigger" in event_cp:
                     event_cp["argument_list"] = new_arg_list
+                    if len(new_trigger_list) > 0:
+                        event_cp["trigger_list"] = new_trigger_list
                     sub_event_list.append(event_cp)
             filter_res["event_list"] = sub_event_list
 
@@ -2571,15 +2527,6 @@ class Preprocessor:
                 },
                 "components": [],
             }
-
-            # if "entity_list" in data[0]:
-            #     new_combined_sample["entity_list"] = []
-            # if "relation_list" in data[0]:
-            #     new_combined_sample["relation_list"] = []
-            # if "event_list" in data[0]:
-            #     new_combined_sample["event_list"] = []
-            # if "open_spo_list" in data[0]:
-            #     new_combined_sample["open_spo_list"] = []
             return new_combined_sample
 
         # new_data = []
@@ -3225,11 +3172,13 @@ class Preprocessor:
                             char_input_ids_padded.extend(char_ids)
                         fin_features[key_map[f_key]] = char_input_ids_padded  # torch.LongTensor(char_input_ids_padded)
                     else:
-                        fin_features[key_map[f_key]] = indexer.index_tag_list(tags)  # torch.LongTensor(indexer.index_tag_list(tags))
+                        fin_features[key_map[f_key]] = indexer.index_tag_list(
+                            tags)  # torch.LongTensor(indexer.index_tag_list(tags))
 
                 # features only need padding
                 elif f_key in {"token_type_ids", "attention_mask"}:
-                    fin_features[f_key] = Indexer.pad2length(tags, 0, max_seq_len)  # torch.LongTensor(Indexer.pad2length(tags, 0, max_seq_len))
+                    fin_features[f_key] = Indexer.pad2length(tags, 0,
+                                                             max_seq_len)  # torch.LongTensor(Indexer.pad2length(tags, 0, max_seq_len))
                 elif f_key == "tok2char_span":
                     fin_features[f_key] = Indexer.pad2length(tags, [0, 0], max_seq_len)
                 elif f_key == "pos_tag_list_csp":

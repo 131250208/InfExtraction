@@ -1,7 +1,7 @@
 from InfExtraction.modules.utils import load_data
 
-data_in_dir = "../../data/ori_data/duie_comp2021"
-data_out_dir = "../../data/normal_data/duie_comp2021"
+data_in_dir = "../../data/ori_data/duee_fin_comp2021_bk"
+data_out_dir = "../../data/normal_data/duee_fin_comp2021"
 
 language = "ch"  # en, ch
 
@@ -13,9 +13,9 @@ do_lower_case = True  # transform to lower case and rm accents, only for bert to
                     # it does not change the original text or word_list,
                     # set True if use uncased bert
 
-ori_data_format = "duie_2"  # normal, casrel (webnlg_star, nyt_star), etl_span (webnlg), raw_nyt (nyt),
+ori_data_format = "duee_fin"  # normal, casrel (webnlg_star, nyt_star), etl_span (webnlg), raw_nyt (nyt),
                               # duie_1, duie_2, duee_1, duee_fin
-add_id = True  # set True if id is not given in the data
+add_id = False  # set True if id is not given in the data
 
 add_char_span = True  # for data without annotated character level spans
 ignore_subword_match = False  # used only if add_char_span is True, whether add whitespaces around the entities
@@ -24,11 +24,10 @@ ignore_subword_match = False  # used only if add_char_span is True, whether add 
 # it should be set to False when handling Chinese datasets
 
 # add pos tags, ner tags, dependency relation
-add_pos_ner_deprel = True
-parser = "ddp"  # stanza (for en), ddp (for ch)
+parser = "ddp"  # stanza (for en), ddp (for ch), None
 
 # extract entities and relations by dicts
-extracted_ent_rel_by_dicts = True
+extracted_ent_rel_by_dicts = False
 if extracted_ent_rel_by_dicts:
     ent_list = load_data("../../data/duie_spo_dict/entity_ske.json") + load_data("../../data/duie_spo_dict/entity.json")
     spo_list = load_data("../../data/duie_spo_dict/spo_ske.json") + load_data("../../data/duie_spo_dict/spo.json")

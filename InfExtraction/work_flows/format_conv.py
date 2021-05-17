@@ -14,8 +14,6 @@ import string
 import itertools
 import matplotlib.pyplot as plt
 import time
-from ddparser import DDParser
-import Levenshtein
 import logging
 import json
 import copy
@@ -2154,6 +2152,85 @@ def trans2duee_format(pred_data):
     return new_pred_data
 
 
+def rule_fix_one2many(data, threshold=0.9):
+    '''
+    处理部分predicate的一对多关系
+    多个关系中至少保留 confidence 最大的一个，也保留超过设定阈值（0.5）的关系
+    '''
+    one2many_predicate = ['父亲', '母亲', '丈夫', '妻子', '朝代', '总部地点', '人口数量', '所在城市',
+                          '改编自', '成立日期', '简称', '国籍', '饰演', '获奖', '上映时间', '票房', '配音']
+
+    one2many_text = []
+
+    for predicate in one2many_predicate:
+        one2many_data = []
+        for d_json in data:
+            sp = {}
+            for spo in d_json['spo_list']:
+                if spo['predicate'] == predicate:
+                    if (spo['subject'], spo['predicate']) not in sp:
+                        sp[(spo['subject'], spo['predicate'])] = []
+                    sp[(spo['subject'], spo['predicate'])].append(spo['object'])
+                    # 一对多
+                    if len(sp[(spo['subject'], spo['predicate'])]) > 1:
+                        one2many_data.append(d_json)
+                        break
+        for d in data:
+            for o_d in one2many_data:
+                if d['text'] == o_d['text']:
+                    other_spo_list = []
+                    sp_prob = {}
+                    for spo in o_d['spo_list']:
+                        # 一个样本有多个一对多关系，已被处理
+                        if 'conf' not in spo.keys():
+                            continue
+                        prob = float(spo.pop('conf'))
+                        if spo['predicate'] in one2many_predicate:
+                            if (spo['subject'], spo['predicate']) not in sp_prob:
+                                sp_prob[(spo['subject'], spo['predicate'])] = []
+                                sp_prob[(spo['subject'], spo['predicate'])].append((prob, spo))
+
+                            else:
+                                if prob > sp_prob[(spo['subject'], spo['predicate'])][0][0] or prob > threshold:
+                                    sp_prob[(spo['subject'], spo['predicate'])].append((prob, spo))
+                                    sp_prob[(spo['subject'], spo['predicate'])] = sorted(
+                                        sp_prob[(spo['subject'], spo['predicate'])], key=lambda x: x[0], reverse=True)
+                                    tmp = [p for i, p in enumerate(sp_prob[(spo['subject'], spo['predicate'])]) if
+                                           i == 0 or p[0] > threshold]
+                                    sp_prob[(spo['subject'], spo['predicate'])] = tmp
+                        else:
+                            other_spo_list.append(spo)
+                    p_spo_list = list(sp_prob.values())
+                    tmp_spo_list = []
+                    for p_spo in p_spo_list:
+                        for p_spo_item in p_spo:
+                            tmp_spo_list.append(p_spo_item[1])
+                    d['spo_list'] = tmp_spo_list
+                    d['spo_list'] += other_spo_list
+        one2many_text += [o_d['text'] for o_d in one2many_data]
+    # 去除非一对多文本的概率标签
+    for d in data:
+        if d['text'] not in one2many_text:
+            for spo in d['spo_list']:
+                spo.pop('conf')
+            # print()
+    # 去重
+    for d in data:
+        unique = set()
+        unique_spo = []
+        for spo in d['spo_list']:
+            spo_str = spo['subject'] + spo['predicate']
+            for object in list(spo['object'].values()):
+                spo_str += object
+            if spo_str in unique:
+                continue
+            else:
+                unique.add(spo_str)
+                unique_spo.append(spo)
+        d['spo_list'] = unique_spo
+    return data
+
+
 def trans2duie2_format(pred_data):
     scheme = {
         "毕业院校": {"object_type": {"@value": "学校"}, "predicate": "毕业院校", "subject_type": "人物"},
@@ -2257,22 +2334,35 @@ def trans2duie2_format(pred_data):
                 spo_mark2max_conf[spo_mark] = conf
         new_spo_list = spo_mark2spo.values()
 
-        # post-process
-        one_subj_rel = {"饰演"}
+        one_subj_rel = {"饰演", "票房", "配音", '获奖'}
         one_subj_rel2obj2cand = {}
+        one_obj_rel = {'父亲', '母亲', '丈夫', '妻子', '朝代', '总部地点', '人口数量', '所在城市',
+                      '改编自', '成立日期', '简称', '国籍', '上映时间'}
+        one_obj_rel2subj2cand = {}
         filtered_spo_list = []
         for spo in new_spo_list:
             if spo["predicate"] in one_subj_rel:
                 one_subj_rel2obj2cand.setdefault(spo["predicate"], {})
-                obj = spo["object"]["@value"]
+                obj = spo["object"]["@value"] + spo["object"].get("inWork", "") \
+                    if spo["predicate"] == "饰演" else spo["object"]["@value"]
                 if obj not in one_subj_rel2obj2cand[spo["predicate"]] or \
                     spo["conf"] > one_subj_rel2obj2cand[spo["predicate"]][obj]["conf"]:
                     one_subj_rel2obj2cand[spo["predicate"]][obj] = spo
+            elif spo["predicate"] in one_obj_rel:
+                one_obj_rel2subj2cand.setdefault(spo["predicate"], {})
+                subj = spo["subject"]
+                if subj not in one_obj_rel2subj2cand[spo["predicate"]] or \
+                    spo["conf"] > one_obj_rel2subj2cand[spo["predicate"]][subj]["conf"]:
+                    one_obj_rel2subj2cand[spo["predicate"]][subj] = spo
             else:
                 filtered_spo_list.append(spo)
         for obj2cand in one_subj_rel2obj2cand.values():
             filtered_spo_list.extend(obj2cand.values())
+        for subj2cand in one_obj_rel2subj2cand.values():
+            filtered_spo_list.extend(subj2cand.values())
 
+
+        # rm the key conf
         filtered_spo_list = [{k: v for k, v in spo.items() if k != "conf"} for spo in filtered_spo_list]
 
         # text and spo might have been split with blanks by clean_txt()
@@ -2296,6 +2386,8 @@ def trans2duie2_format(pred_data):
             "spo_list": Preprocessor.unique_list(filtered_spo_list),
         }
         new_pred_data.append(new_sample)
+
+    # new_pred_data = rule_fix_one2many(new_pred_data)
     return new_pred_data
 
 
@@ -2734,10 +2826,10 @@ if __name__ == "__main__":
     # data_formated = trans2duee_fin_format(data)
     # save_as_json_lines(data_formated, out_path)
 
-    # in_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/2hibrbc8/model_state_dict_3_75.745/test_data_1.json_0"
-    # out_path = "../../data/res_data/duie_comp2021_mac/re+RAIN+TRAIN/2hibrbc8/model_state_dict_3_75.745/duie.json"
-    # formated_data = trans2duie2_format(load_data(in_path))
-    # save_as_json_lines(formated_data, out_path)
+    in_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/3_test_data_1.json"
+    out_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/duie_3.json"
+    formated_data = trans2duie2_format(load_data(in_path))
+    save_as_json_lines(formated_data, out_path)
 
     # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/test_data_1.json"
     # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/duee_fin.json"
@@ -2746,25 +2838,50 @@ if __name__ == "__main__":
 
     # pred_data, gold_data = trans_tfboys_baselines2normal_format("dbrnn")
 
-    pred_data_path = "../../data/res_data/ace2005_lu/re+tee+RAIN+TRAIN/h87pgw2q/model_state_dict_97_53.333/0_test_data.json"
-    gold_data_path = "../../data/normal_data/ace2005_lu/test_data.json"
-
-    # pred_data = load_data(pred_data_path)
+    # tbee_pred_data_path = "../../data/res_data/ace2005_lu/re+tee+RAIN+TRAIN/h87pgw2q/model_state_dict_97_53.333/0_test_data.json"
+    # tfee_pred_data_path = "../../data/res_data/ace2005_lu/re+tfboys+RAIN+TRAIN/1bupwzu7/model_state_dict_71_53.844/2_test_data.json"
+    # gold_data_path = "../../data/normal_data/ace2005_lu/test_data.json"
+    #
+    # tbee_pred_data = load_data(tbee_pred_data_path)
+    # tfee_pred_data = load_data(tfee_pred_data_path)
     # gold_data = load_data(gold_data_path)
     # gold_data = Preprocessor.choose_spans_by_token_level(gold_data, "subword")
     #
-    # # our_gold_ids = {sample["id"] for sample in our_gold_data}
-    # # gold_ids = {sample["id"] for sample in gold_data}
-    # # inter_ids = our_gold_ids.intersection(gold_ids)
-    # # dff_ids = gold_ids.difference(our_gold_ids)
-    # # print(len(inter_ids))
-
-    # pred_data = rm_triggers(pred_data)
-    # gold_data = rm_triggers(gold_data)
-    # score_dict = MetricsCalculator.score(pred_data, gold_data)
+    # # pred_data = rm_triggers(pred_data)
+    # # gold_data = rm_triggers(gold_data)
+    # score_dict = MetricsCalculator.score(tfee_pred_data, gold_data)
     # pprint(score_dict)
-
-    # preprocess_duie2()
+    #
+    # gold_id2events_dict = {sample["id"]:sample["event_list"] for sample in gold_data}
+    # tbee_id2events_dict = {sample["id"]: sample["event_list"] for sample in tbee_pred_data}
+    # tfree_id2events_dict = {}
+    # mul_tri_id2events_dict = {}
+    # id2res = {}
+    # for sample in tfee_pred_data:
+    #     id2res[sample["id"]] = {
+    #         "text": sample["text"],
+    #         "tf_pred": sample["event_list"],
+    #         "tb_pred": tbee_id2events_dict[sample["id"]],
+    #         "gold": gold_id2events_dict[sample["id"]],
+    #     }
+    #     for event in sample["event_list"]:
+    #         triggers = event.get("trigger_list", [])
+    #         if len(triggers) == 0 and len(event["argument_list"]) > 0:
+    #             tfree_id2events_dict[sample["id"]] = {
+    #                 "text": sample["text"],
+    #                 "pred": sample["event_list"],
+    #                 "gold": gold_id2events_dict[sample["id"]],
+    #             }
+    #         elif len(triggers) > 1:
+    #             mul_tri_id2events_dict[sample["id"]] = {
+    #                 "text": sample["text"],
+    #                 "pred": sample["event_list"],
+    #                 "gold": gold_id2events_dict[sample["id"]],
+    #             }
+    #
+    # json.dump(tfree_id2events_dict, open("../../data/res_data/analysis/tfboys/tri_free.json", "w", encoding="utf-8"), ensure_ascii=False)
+    # json.dump(mul_tri_id2events_dict, open("../../data/res_data/analysis/tfboys/mul_tri.json", "w", encoding="utf-8"), ensure_ascii=False)
+    # # preprocess_duie2()
 
     # train_path = "../../data/ori_data/ace2005_lu_bk/train_data.json"
     # dev_path = "../../data/ori_data/ace2005_lu_bk/dev_data.json"

@@ -705,15 +705,18 @@ def merge_gen(*gens):
             yield item
 
 
-def load_data(path, lines=None):
+def load_data(path, lines=None, mute=False):
     filename = path.split("/")[-1]
     try:
         data = []
-        with open(path, "r", encoding="utf-8") as file_in:
+        with open(path, "r", encoding="utf-8") as file_in, tqdm(desc="loading data {}".format(filename), total=lines) as bar:
             if lines is not None:
                 print("max number is set: {}".format(lines))
-            for line in tqdm(file_in, desc="loading data {}".format(filename), total=lines):
+
+            for line in file_in:
                 data.append(json.loads(line))
+                if not mute:
+                    bar.update()
                 if lines is not None and len(data) == lines:
                     break
         if len(data) == 1:
@@ -731,11 +734,14 @@ def load_data(path, lines=None):
 
 
 def save_as_json_lines(data, path):
+    count = 0
     with open(path, "w", encoding="utf-8") as out_file:
         filename = path.split("/")[-1]
         for sample in tqdm(data, desc="saving data {}".format(filename)):
             line = json.dumps(sample, ensure_ascii=False)
             out_file.write("{}\n".format(line))
+            count += 1
+    return count
 
 
 class MyMappingDataset(Dataset):

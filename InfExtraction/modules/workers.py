@@ -1,4 +1,4 @@
-from InfExtraction.modules.utils import DefaultLogger
+from InfExtraction.modules.utils import DefaultLogger, load_data
 from InfExtraction.modules.preprocess import Preprocessor
 import torch
 import wandb
@@ -6,6 +6,7 @@ from tqdm import tqdm
 import time
 import numpy as np
 from InfExtraction.work_flows import format_conv
+import json
 
 
 class Trainer:
@@ -214,10 +215,7 @@ class Evaluator:
 
         # alignment by id (in order)
         pred_data = []
-        try:
-            assert len(merged_pred_samples) == len(golden_data)
-        except Exception:
-            print("debug merge")
+        assert len(merged_pred_samples) == len(golden_data)
         for sample in golden_data:
             id_ = sample["id"]
             pred_data.append(merged_pred_samples[id_])
@@ -279,10 +277,15 @@ class Evaluator:
     def predict(self, dataloader, golden_data):
         # predict
         self.model.eval()
-        total_pred_sample_list = []
+        cache_file_name = "pred_data_cache_{}.jsonlines".format(time.time())
+        cache_file_path = "../../data/cache/{}".format(cache_file_name)
         for batch_ind, batch_predict_data in enumerate(tqdm(dataloader, desc="predicting")):
             pred_sample_list = self._predict_step(batch_predict_data)
-            total_pred_sample_list.extend(pred_sample_list)
+            # write to disk in case the program carsh
+            with open(cache_file_path, "a", encoding="utf-8") as file_out:
+                for sample in pred_sample_list:
+                    file_out.write("{}\n".format(json.dumps(sample, ensure_ascii=False)))
+        total_pred_sample_list = load_data(cache_file_path)
         pred_data = self._alignment(total_pred_sample_list, golden_data)
         return pred_data
         

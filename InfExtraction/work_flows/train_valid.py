@@ -40,37 +40,67 @@ from shutil import copyfile
 import torch
 from torch.utils.data import DataLoader
 from InfExtraction.modules.preprocess import Preprocessor
-from InfExtraction.modules import taggers
-from InfExtraction.modules import models
+from InfExtraction.modules import taggers, models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.modules.utils import DefaultLogger, MyMappingDataset, save_as_json_lines
+from InfExtraction.modules.utils import (DefaultLogger,
+                                         MyMappingDataset,
+                                         MyIterableDataset,
+                                         save_as_json_lines,
+                                         MyLargeFileReader,
+                                         MyLargeJsonlinesFileReader,
+                                         )
+import itertools
+from tqdm import tqdm
+import math
+import atexit
+import hashlib
+import json
 
 
-def worker_init_fn(worker_id):
+def worker_init_fn4map(worker_id):
     np.random.seed(np.random.get_state()[1][0] + worker_id)
 
 
-def get_dataloader(data,
-                   language,
-                   data_type,
-                   token_level,
-                   max_seq_len,
-                   sliding_len,
-                   combine,
-                   batch_size,
-                   key2dict,
-                   tagger,
-                   collate_fn,
-                   task_type,
-                   wdp_prefix=None,
-                   max_char_num_in_tok=None,
-                   split_early_stop=True,
-                   drop_neg_samples=False,
-                   ):
+def worker_init_fn4iter(worker_id):
+    np.random.seed(np.random.get_state()[1][0] + worker_id)
+    worker_info = torch.utils.data.get_worker_info()
+    if worker_info is not None:
+        dataset = worker_info.dataset  # the dataset copy in this worker process
+        overall_start = dataset.start
+        overall_end = dataset.end
+        per_worker = int(math.ceil((overall_end - overall_start) / float(worker_info.num_workers)))
+        worker_id = worker_info.id
+        dataset.start = overall_start + worker_id * per_worker
+        dataset.end = min(dataset.start + per_worker, overall_end)
 
+
+def prepare_data(data,
+                 load_data2memory,
+                 language,
+                 do_lower_case,
+                 data_type,
+                 token_level,
+                 max_seq_len,
+                 sliding_len,
+                 combine,
+                 run_id,
+                 key2dict,
+                 task_type,
+                 wdp_prefix=None,
+                 max_char_num_in_tok=None,
+                 split_early_stop=True,
+                 drop_neg_samples=False,
+                 additional_preprocess=None,
+                 ):
     # if combine and data_type == "train":
     #     data = Preprocessor.combine(data, 1024)
+
+    data = Preprocessor.choose_features_by_token_level_gen(data, token_level, do_lower_case)
+    data = Preprocessor.choose_spans_by_token_level_gen(data, token_level)
+
+    if additional_preprocess is not None:
+        data = additional_preprocess(data)
 
     data = Preprocessor.split_into_short_samples(data,
                                                  max_seq_len,
@@ -85,11 +115,11 @@ def get_dataloader(data,
     if combine:
         data = Preprocessor.combine(data, max_seq_len)
 
-    # check spans
-    sample_id2mismatched = Preprocessor.check_spans(data, language)
-    if len(sample_id2mismatched) > 0:
-        logging.warning("mismatch errors in {}".format(data_type))
-        pprint(sample_id2mismatched)
+    # # check spans
+    # sample_id2mismatched = Preprocessor.check_spans(data, language)
+    # if len(sample_id2mismatched) > 0:
+    #     logging.warning("mismatch errors in {}".format(data_type))
+    #     pprint(sample_id2mismatched)
 
     # inexing
     indexed_data = Preprocessor.index_features(data,
@@ -97,28 +127,69 @@ def get_dataloader(data,
                                                key2dict,
                                                max_seq_len,
                                                max_char_num_in_tok)
-    # tagging
-    indexed_data = tagger.tag(indexed_data)
+    # # tagging
+    # indexed_data = tagger.tag(indexed_data)
+    data_anns = {}
+    if load_data2memory:
+        if data_type == "train":
+            res_indexed_data = []
+            for sample in tqdm(indexed_data, desc="prepare n load into memory: {}".format(data_type)):
+                for k, v in sample.items():
+                    if k in {"entity_list", "relation_list", "event_list", "open_spo_list"}:
+                        data_anns.setdefault(k, []).extend(v)
+                res_indexed_data.append(sample)
+        else:
+            res_indexed_data = list(indexed_data)
+    else:
+        cache_dir = "../../data/cache"
+        if not os.path.exists(cache_dir):
+            os.mkdir(cache_dir)
 
-    # dataloader
-    dataloader = DataLoader(MyMappingDataset(indexed_data),
-                            batch_size=batch_size,
-                            shuffle=True,
-                            num_workers=0,
-                            drop_last=False,
-                            collate_fn=collate_fn,
-                            worker_init_fn=worker_init_fn
-                            )
+        cache_file_path = os.path.join(cache_dir, "indexed_{}_data_cache_{}.jsonlines".format(data_type, run_id))
+
+        with open(cache_file_path, "w", encoding="utf-8") as out_file:
+            for sample in tqdm(indexed_data, desc="prepare n save to disk: {}".format(data_type)):
+                if data_type == "train":
+                    for k, v in sample.items():
+                        if k in {"entity_list", "relation_list", "event_list", "open_spo_list"}:
+                            data_anns.setdefault(k, []).extend(v)
+                line = json.dumps(sample, ensure_ascii=False)
+                out_file.write("{}\n".format(line))
+
+        res_indexed_data = MyLargeFileReader(cache_file_path, shuffle=True)
+    return res_indexed_data, data_anns
+
+
+def get_dataloader(indexed_data, batch_size, collate_fn):
+    if type(indexed_data) is list:
+        dataloader = DataLoader(MyMappingDataset(indexed_data),
+                                batch_size=batch_size,
+                                shuffle=True,
+                                num_workers=2,
+                                drop_last=False,
+                                collate_fn=collate_fn,
+                                worker_init_fn=worker_init_fn4map,
+                                )
+    else:
+        assert type(indexed_data) is MyLargeFileReader
+        indexed_data.shuffle_line_offsets()
+        jsreader = MyLargeJsonlinesFileReader(indexed_data)
+
+        # dataloader
+        dataloader = DataLoader(MyIterableDataset(jsreader, shuffle=True),
+                                batch_size=batch_size,
+                                # shuffle=True,
+                                num_workers=2,
+                                drop_last=False,
+                                collate_fn=collate_fn,
+                                worker_init_fn=worker_init_fn4iter,
+                                )
+
     return dataloader
 
 
 def get_score_fr_path(model_path):
     return float(re.search("_([\d\.]+)\.pt", model_path.split("/")[-1]).group(1))
-
-
-# def get_last_k_paths(path_list, k):
-#     path_list = 
-#     return path_list[-k:]
 
 
 def run():
@@ -128,17 +199,27 @@ def run():
     run_name = settings.run_name
     model_name = settings.model_name
     tagger_name = settings.tagger_name
-    stage = settings.stage
     language = settings.language
 
-    # data
-    data_in_dir = settings.data_in_dir
+    # >>>>>>>>>>>>>>>> data >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     data_out_dir = settings.data_out_dir
 
-    train_data = settings.train_data
-    ori_valid_data = settings.valid_data
-    ori_data4checking = settings.data4checking
-    filename2ori_test_data = settings.filename2ori_test_data
+    opt_train_data = settings.train_data
+    opt_valid_data = settings.valid_data
+    opt_data4checking = settings.data4checking
+    opt_filename2test_data = settings.filename2test_data
+
+    train_data, train_data4gen_tags = itertools.tee(opt_train_data, 2)
+    data4checking, data4checking_dup = itertools.tee(opt_data4checking, 2)
+    valid_data, valid_data_dup = itertools.tee(opt_valid_data, 2)
+    filename2test_data, filename2test_data_dup = {}, {}
+    for filename, opt_test_data in opt_filename2test_data.items():
+        test_data, test_data_dup = itertools.tee(opt_test_data, 2)
+        filename2test_data[filename] = test_data
+        filename2test_data_dup[filename] = test_data_dup
+
+    load_data2memory = settings.load_data2memory
+    # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     key2dict = settings.key2dict  # map from feature key to indexing dict
 
@@ -160,11 +241,9 @@ def run():
     default_log_path = settings.default_log_path
     default_run_id = settings.default_run_id
     default_dir_to_save_model = settings.default_dir_to_save_model
-    log_interval = settings.log_interval
 
     # training settings
     check_tagging_n_decoding = settings.check_tagging_n_decoding
-    device_num = settings.device_num
     token_level = settings.token_level
     epochs = settings.epochs
     batch_size_train = settings.batch_size_train
@@ -191,14 +270,6 @@ def run():
     # optimizer
     optimizer_config = settings.optimizer_config
 
-    # test settings
-    model_dir_for_test = settings.model_dir_for_test
-    target_run_ids = settings.target_run_ids
-    model_path_ids2infer = settings.model_path_ids2infer
-    metric4testing = settings.metric4testing
-    main_test_set_name = settings.main_test_set_name
-    cal_scores = settings.cal_scores
-
     # save model
     metric_keyword = settings.metric_keyword
     model_bag_size = settings.model_bag_size
@@ -222,28 +293,24 @@ def run():
     # env
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # choose features and spans by token level
-    train_data = Preprocessor.choose_features_by_token_level(train_data, token_level, do_lower_case)
-    train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
+    def get_golden_data_must(data):
+        must_keys4golden_data = {"id", "text", "relation_list", "entity_list", "event_list", "open_spo_list"}
+        new_data = []
+        for sample in tqdm(data, "get golden data"):
+            # Preprocessor.choose_features_by_token_level4sample(sample, token_level, do_lower_case)
+            Preprocessor.choose_spans_by_token_level4sample(sample, token_level)
+            new_sample = {}
+            for key in sample.keys():
+                if key in must_keys4golden_data:
+                    new_sample[key] = sample[key]
+            new_data.append(new_sample)
+        return new_data
 
-    ori_valid_data = Preprocessor.choose_features_by_token_level(ori_valid_data, token_level, do_lower_case)
-    ori_valid_data = Preprocessor.choose_spans_by_token_level(ori_valid_data, token_level)
-
-    ori_data4checking = Preprocessor.choose_features_by_token_level(ori_data4checking, token_level, do_lower_case)
-    ori_data4checking = Preprocessor.choose_spans_by_token_level(ori_data4checking, token_level)
-    for filename, test_data in filename2ori_test_data.items():
-        filename2ori_test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level,
-                                                                                       do_lower_case)
-        filename2ori_test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
-
-    # # copy original data
-    # to maintain the original data clean for evaluation (should not be changed by any preprocessing operations)
-
-    print("copy ...")
-    valid_data = copy.deepcopy(ori_valid_data)
-    data4checking = copy.deepcopy(ori_data4checking)
-    filename2test_data = copy.deepcopy(filename2ori_test_data)
-    print("done copy!")
+    #  copy ori data, maintain clean for evaluation
+    ori_valid_data = get_golden_data_must(valid_data_dup)
+    ori_data4checking = get_golden_data_must(data4checking_dup)
+    filename2ori_test_data = {filename: get_golden_data_must(test_data_dup)
+                              for filename, test_data_dup in filename2test_data_dup.items()}
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # tagger
@@ -260,41 +327,20 @@ def run():
         tagger_class_name = taggers.create_rebased_tfboys4doc_ee_tagger(tagger_class_name)
 
     # additional preprocessing
-    def additional_preprocess(data, data_type):
-        return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
+    def additional_preprocess(data):
+        return tagger_class_name.additional_preprocess(data, **addtional_preprocessing_config)
 
-    train_data = additional_preprocess(train_data, "train")
-    valid_data = additional_preprocess(valid_data, "valid")
-    for filename, test_data in filename2test_data.items():
-        filename2test_data[filename] = additional_preprocess(test_data, "test")
-
-    # tagger
-    tagger = tagger_class_name(train_data, **tagger_config)
-
-    # metrics_calculator
-    metrics_cal = MetricsCalculator(use_ghm)
-
-    # model
-    print("init model...")
-    model_class_name = getattr(models, model_name)
-    model = model_class_name(tagger, metrics_cal, **model_settings)
-    model = model.to(device)
-    print("done!")
-    print(">>>>>>>>>>>>>>>>>>>>>>>>> Model >>>>>>>>>>>>>>>>>>>>>>>")
-    print(model)
-    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-
-    # function for generating data batch
-    collate_fn = model.generate_batch
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     # logger
     if use_wandb:
         # init wandb
         wandb.init(project=exp_name, name=run_name, config=config2log)
+        run_id = wandb.run.id
         dir_to_save_model = wandb.run.dir
         logger = wandb
     else:
+        run_id = default_run_id
         logger = DefaultLogger(default_log_path,
                                exp_name,
                                run_name,
@@ -306,223 +352,181 @@ def run():
     # save settings #@
     copyfile("./{}.py".format(settings_name), os.path.join(dir_to_save_model, "{}.py".format(settings_name)))
 
-    # trainer and evaluator
+    # index train data
+    indexed_train_data, train_data_anns = prepare_data(train_data,
+                                      load_data2memory,
+                                      language,
+                                      do_lower_case,
+                                      "train",
+                                      token_level,
+                                      max_seq_len_train,
+                                      sliding_len_train,
+                                      combine,
+                                      run_id,
+                                      key2dict,
+                                      task_type,
+                                      wdp_prefix,
+                                      max_char_num_in_tok,
+                                      split_early_stop,
+                                      drop_neg_samples,
+                                      additional_preprocess,
+                                      )
+
+    def train_dataloader_fn():
+        return get_dataloader(indexed_train_data, batch_size_train, collate_fn)
+
+    # init tagger
+    tagger = tagger_class_name(train_data_anns, **tagger_config)
+
+    # init metrics_calculator
+    metrics_cal = MetricsCalculator(use_ghm)
+
+    # init model
+    print("init model...")
+    model_class_name = getattr(models, model_name)
+    model = model_class_name(tagger, metrics_cal, **model_settings)
+    model = model.to(device)
+    print("done!")
+    print(">>>>>>>>>>>>>>>>>>>>>>>>> Model >>>>>>>>>>>>>>>>>>>>>>>")
+    print(model)
+    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+
+    # function for generating data batch
+    collate_fn = model.generate_batch
+
+    # evaluator
     evaluator = Evaluator(model, device)
 
-    # test dataloader
+    indexed_valid_data, _ = prepare_data(valid_data,
+                                      load_data2memory,
+                                      language,
+                                      do_lower_case,
+                                      "valid",
+                                      token_level,
+                                      max_seq_len_valid,
+                                      sliding_len_valid,
+                                      combine,
+                                      run_id,
+                                      key2dict,
+                                      task_type,
+                                      wdp_prefix,
+                                      max_char_num_in_tok,
+                                      split_early_stop,
+                                      drop_neg_samples
+                                      )
+    valid_dataloader = get_dataloader(indexed_valid_data, batch_size_valid, collate_fn)
+
     filename2test_data_loader = {}
     for filename, test_data in filename2test_data.items():
-        test_dataloader = get_dataloader(test_data,
+        indexed_test_data, _ = prepare_data(test_data,
+                                         load_data2memory,
                                          language,
+                                         do_lower_case,
                                          "test",
                                          token_level,
                                          max_seq_len_test,
                                          sliding_len_test,
                                          combine,
-                                         batch_size_test,
+                                         run_id,
                                          key2dict,
-                                         tagger,
-                                         collate_fn,
                                          task_type,
                                          wdp_prefix,
                                          max_char_num_in_tok,
                                          split_early_stop,
-                                         drop_neg_samples
+                                         drop_neg_samples,
                                          )
-        filename2test_data_loader[filename] = test_dataloader
+        filename2test_data_loader[filename] = get_dataloader(indexed_test_data, batch_size_test, collate_fn)
 
-    if stage == "train":
-        train_dataloader = get_dataloader(train_data,
+    # debug: checking tagging and decoding
+    if check_tagging_n_decoding:
+        indexed_debug_data, _ = prepare_data(data4checking,
+                                          load_data2memory,
                                           language,
-                                          "train",
-                                          token_level,
-                                          max_seq_len_train,
-                                          sliding_len_train,
-                                          combine,
-                                          batch_size_train,
-                                          key2dict,
-                                          tagger,
-                                          collate_fn,
-                                          task_type,
-                                          wdp_prefix,
-                                          max_char_num_in_tok,
-                                          split_early_stop,
-                                          drop_neg_samples
-                                          )
-        valid_dataloader = get_dataloader(valid_data,
-                                          language,
-                                          "valid",
+                                          do_lower_case,
+                                          "debug",
                                           token_level,
                                           max_seq_len_valid,
                                           sliding_len_valid,
                                           combine,
-                                          batch_size_valid,
+                                          run_id,
                                           key2dict,
-                                          tagger,
-                                          collate_fn,
                                           task_type,
                                           wdp_prefix,
                                           max_char_num_in_tok,
                                           split_early_stop,
-                                          drop_neg_samples
+                                          drop_neg_samples,
+                                          additional_preprocess,
                                           )
-        # debug: checking tagging and decoding
-        if check_tagging_n_decoding:
-            data4checking = additional_preprocess(data4checking, "debug")
-            dataloader4checking = get_dataloader(data4checking,
-                                                 language,
-                                                 "debug",
-                                                 token_level,
-                                                 max_seq_len_valid,
-                                                 sliding_len_valid,
-                                                 combine,
-                                                 batch_size_valid,
-                                                 key2dict,
-                                                 tagger,
-                                                 collate_fn,
-                                                 task_type,
-                                                 wdp_prefix,
-                                                 max_char_num_in_tok,
-                                                 split_early_stop,
-                                                 drop_neg_samples
-                                                 )
-            pprint(evaluator.check_tagging_n_decoding(dataloader4checking, ori_data4checking))
+        dataloader4checking = get_dataloader(indexed_debug_data, batch_size_valid, collate_fn)
+        pprint(evaluator.check_tagging_n_decoding(dataloader4checking, ori_data4checking))
 
-        # load pretrained model
-        if model_state_dict_path is not None:
-            model.load_state_dict(torch.load(model_state_dict_path))
-            print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
+    # load pretrained model
+    if model_state_dict_path is not None:
+        model.load_state_dict(torch.load(model_state_dict_path))
+        print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
 
-        # optimizer
-        optimizer_class_name = getattr(torch.optim, optimizer_config["class_name"])
-        optimizer = optimizer_class_name(model.parameters(), lr=float(lr), **optimizer_config["parameters"])
+    # optimizer
+    optimizer_class_name = getattr(torch.optim, optimizer_config["class_name"])
+    optimizer = optimizer_class_name(model.parameters(), lr=float(lr), **optimizer_config["parameters"])
 
-        trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
+    trainer = Trainer(model, train_dataloader_fn, device, optimizer, trainer_config, logger)
 
-        # train and valid
-        score_dict4comparing = {}
-        for ep in range(epochs):
-            # train
-            trainer.train(ep, epochs)
-            # valid
-            pred_samples = evaluator.predict(valid_dataloader, ori_valid_data)
-            score_dict = evaluator.score(pred_samples, ori_valid_data, "val")
+    # train and valid
+    score_dict4comparing = {}
+    for ep in range(epochs):
+        # train
+        trainer.train(ep, epochs)
+        # valid
+        pred_samples = evaluator.predict(valid_dataloader, ori_valid_data)
+        score_dict = evaluator.score(pred_samples, ori_valid_data, "val")
+        logger.log(score_dict)
+        dataset2score_dict = {
+            "valid_data.json": score_dict,
+        }
+
+        for metric_key, current_val_score in score_dict.items():
+            if metric_keyword not in metric_key:
+                continue
+
+            if metric_key not in score_dict4comparing:
+                score_dict4comparing[metric_key] = {
+                    "current": 0.0,
+                    "best": 0.0,
+                }
+            score_dict4comparing[metric_key]["current"] = current_val_score
+            score_dict4comparing[metric_key]["best"] = max(current_val_score,
+                                                           score_dict4comparing[metric_key]["best"])
+
+            # save models
+            if current_val_score > 0. and model_bag_size > 0:
+                dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)
+                if not os.path.exists(dir_to_save_model_this_key):
+                    os.makedirs(dir_to_save_model_this_key)
+
+                # save model state
+                torch.save(model.state_dict(),
+                           os.path.join(dir_to_save_model_this_key,
+                                        "model_state_dict_{}_{:.5}.pt".format(ep, current_val_score * 100)))
+
+                # all state paths
+                model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model_this_key))
+                # sorted by scores
+                sorted_model_state_path_list = sorted(model_state_path_list,
+                                                      key=get_score_fr_path)
+                # only save <model_bag_size> model states
+                if len(sorted_model_state_path_list) > model_bag_size:
+                    os.remove(sorted_model_state_path_list[0])  # remove the state dict with the minimum score
+
+        # test
+        for filename, test_data_loader in filename2test_data_loader.items():
+            gold_test_data = filename2ori_test_data[filename]
+            pred_samples = evaluator.predict(test_data_loader, gold_test_data)
+            score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
             logger.log(score_dict)
-            dataset2score_dict = {
-                "valid_data.json": score_dict,
-            }
+            dataset2score_dict[filename] = score_dict
 
-            for metric_key, current_val_score in score_dict.items():
-                if metric_keyword not in metric_key:
-                    continue
-
-                if metric_key not in score_dict4comparing:
-                    score_dict4comparing[metric_key] = {
-                        "current": 0.0,
-                        "best": 0.0,
-                    }
-                score_dict4comparing[metric_key]["current"] = current_val_score
-                score_dict4comparing[metric_key]["best"] = max(current_val_score,
-                                                               score_dict4comparing[metric_key]["best"])
-
-                # save models
-                if current_val_score > 0. and model_bag_size > 0:
-                    dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)
-                    if not os.path.exists(dir_to_save_model_this_key):
-                        os.makedirs(dir_to_save_model_this_key)
-
-                    # save model state
-                    torch.save(model.state_dict(),
-                               os.path.join(dir_to_save_model_this_key,
-                                            "model_state_dict_{}_{:.5}.pt".format(ep, current_val_score * 100)))
-
-                    # all state paths
-                    model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model_this_key))
-                    # sorted by scores
-                    sorted_model_state_path_list = sorted(model_state_path_list,
-                                                          key=get_score_fr_path)
-                    # only save <model_bag_size> model states
-                    if len(sorted_model_state_path_list) > model_bag_size:
-                        os.remove(sorted_model_state_path_list[0])  # remove the state dict with the minimum score
-
-            # test
-            for filename, test_data_loader in filename2test_data_loader.items():
-                gold_test_data = filename2ori_test_data[filename]
-                pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-                score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
-                logger.log(score_dict)
-                dataset2score_dict[filename] = score_dict
-
-            pprint(dataset2score_dict)
-            pprint(score_dict4comparing)
-
-    elif stage == "inference":
-        # get model state paths
-        target_run_ids = set(target_run_ids)
-        assert model_dir_for_test is not None and model_dir_for_test.strip() != "", "Please set model state directory!"
-
-        run_id2model_state_paths = {}
-        for root, dirs, files in os.walk(model_dir_for_test):
-            for file_name in files:
-                path_se = re.search("run-\d{8}_\d{6}-(\w{8})\/.*?(val_.*)", root)
-                if path_se is None:
-                    continue
-                run_id = path_se.group(1)
-                metric = path_se.group(2)
-                if metric == "val_{}".format(metric4testing) \
-                        and run_id in target_run_ids \
-                        and re.match(".*model_state.*\.pt", file_name):
-                    if run_id not in run_id2model_state_paths:
-                        run_id2model_state_paths[run_id] = []
-                    model_state_path = os.path.join(root, file_name)
-                    run_id2model_state_paths[run_id].append(model_state_path)
-
-        # predicting
-        run_id2scores = {}
-        for run_id, model_path_list in run_id2model_state_paths.items():
-            # only top k models
-            sorted_model_path_list = sorted(model_path_list, key=get_score_fr_path)
-            model_path_list = []
-            for idx in model_path_ids2infer:
-                model_path_list.append(sorted_model_path_list[idx])
-            
-            for path in model_path_list:
-                # load model
-                model.load_state_dict(torch.load(path))
-                print("model state loaded: {}".format("/".join(path.split("/")[-2:])))
-                model.eval()
-                model_name = re.sub("\.pt", "", path.split("/")[-1])
-                save_dir = os.path.join(data_out_dir, exp_name, run_name, run_id, model_name)
-                if not os.path.exists(save_dir):
-                    os.makedirs(save_dir)
-
-                # test
-                for filename, test_data_loader in filename2test_data_loader.items():
-                    gold_test_data = filename2ori_test_data[filename]
-                    # predicate
-                    pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-
-                    num = len(glob(save_dir + "/*.json"))
-                    # save results
-                    save_as_json_lines(pred_samples, os.path.join(save_dir, "{}_{}".format(filename, num)))
-
-                    # score
-                    if cal_scores:
-                        score_dict = evaluator.score(pred_samples, gold_test_data)
-                        if run_id not in run_id2scores:
-                            run_id2scores[run_id] = {}
-                        if model_name not in run_id2scores[run_id]:
-                            run_id2scores[run_id][model_name] = {}
-                        run_id2scores[run_id][model_name][filename] = score_dict
-
-        if cal_scores:
-            # # median score of top k models
-            # for run_id, m2scr_dict in run_id2scores.items():
-            #     if main_test_set_name is None or main_test_set_name not in filename2test_data_loader:
-            #         main_test_set_name = list(filename2test_data_loader.keys())[0]
-            #     sorted_dicts = sorted(m2scr_dict.values(), key=lambda x: x[main_test_set_name][metric4testing])
-            #     run_id2scores[run_id]["median"] = sorted_dicts[len(sorted_dicts) // 2]
-            pprint(run_id2scores)
+        pprint(dataset2score_dict)
+        pprint(score_dict4comparing)
 
 
 if __name__ == "__main__":

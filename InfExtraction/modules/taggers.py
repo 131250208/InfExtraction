@@ -15,7 +15,7 @@ import random
 
 class Tagger(metaclass=ABCMeta):
     @classmethod
-    def additional_preprocess(cls, data, data_type, **kwargs):
+    def additional_preprocess(cls, data, **kwargs):
         return data
 
     @abstractmethod
@@ -146,8 +146,7 @@ class HandshakingTagger4TPLPlus(Tagger):
             return True
 
     @classmethod
-    def additional_preprocess(cls, data, data_type, **kwargs):
-        assert data_type in {"train", "debug"}
+    def additional_preprocess(cls, data, **kwargs):
         for sample in data:
             assert "entity_list" in sample
             fin_ent_list = copy.deepcopy(sample["entity_list"])
@@ -629,10 +628,7 @@ def create_rebased_ee_tagger(base_class):
                     self.event_type2arg_rols[event_type].add(arg["type"])
 
         @classmethod
-        def additional_preprocess(cls, data, data_type, **kwargs):
-            if data_type not in {"train", "debug"}:
-                return data
-
+        def additional_preprocess(cls, data, **kwargs):
             new_data = copy.deepcopy(data)
             separator = "\u2E82"
             for sample in new_data:
@@ -678,7 +674,7 @@ def create_rebased_ee_tagger(base_class):
                     fin_ent_list.extend(sample["entity_list"])
 
                 sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
-            new_data = super().additional_preprocess(new_data, data_type, **kwargs)
+            new_data = super().additional_preprocess(new_data, **kwargs)
             return new_data
 
         def decode(self, sample, pred_tags, pred_outs=None):
@@ -787,20 +783,6 @@ def create_rebased_ee_tagger(base_class):
                     **trigger,
                     "argument_list": arg_list,
                 })
-
-            # # if some arguments left without aligned to triggers, try the best to recall them
-            # for event_type, roles in self.event_type2arg_rols.items():
-            #     event = {
-            #         "event_type": event_type,
-            #         "argument_list": []
-            #     }
-            #     for arg in arg_mark2arg.values():
-            #         arg_mark = "{},{},{}".format(*arg["tok_span"], arg["type"])
-            #         if arg_mark not in arg_used_mem and arg["type"] in roles:
-            #             event["argument_list"].append(arg)
-            #
-            #     if len(event["argument_list"]) > 0:
-            #         event_list.append(event)
 
             sample["event_list"] = event_list
             return sample
@@ -948,9 +930,7 @@ def create_rebased_tfboys4doc_ee_tagger(base_class):
             self.dtm_arg_type_by_edges = kwargs["dtm_arg_type_by_edges"]
 
         @classmethod
-        def additional_preprocess(cls, data, data_type, **kwargs):
-            if data_type not in {"train", "debug"}:
-                return data
+        def additional_preprocess(cls, data, **kwargs):
 
             new_data = copy.deepcopy(data)
             separator = "\u2E82"
@@ -1026,7 +1006,7 @@ def create_rebased_tfboys4doc_ee_tagger(base_class):
                 sample["entity_list"] = fin_ent_list
                 sample["relation_list"] = fin_rel_list
 
-            new_data = super().additional_preprocess(new_data, data_type, **kwargs)
+            new_data = super().additional_preprocess(new_data, **kwargs)
             return new_data
 
         def decode(self, sample, pred_tags, pred_outs=None):
@@ -1163,16 +1143,18 @@ def create_rebased_tfboys4doc_ee_tagger(base_class):
                         else:
                             new_argument_list.append(arg)
 
-                    # if the role sets corresponding to the nodes are all empty,
-                    # this clique is invalid and the corresponding event without argument list and triggers
-                    # will not be appended into the event list.
-                    if len(new_argument_list) > 0 or len(triggers) > 0:
+                    if len(triggers) > 0:
                         trigger = random.choice(triggers)
                         event["trigger"] = trigger["text"]
                         event["trigger_tok_span"] = trigger["tok_span"]
                         event["trigger_char_span"] = trigger["char_span"]
+                        event["trigger_list"] = triggers
+
+                    # if the role sets corresponding to the nodes are all empty,
+                    # this clique is invalid and the corresponding event without argument list and triggers
+                    # will not be appended into the event list.
+                    if len(new_argument_list) > 0 or "trigger" in event:
                         event["argument_list"] = new_argument_list
-                        event["triggers"] = triggers
                         event_list.append(event)
 
             sample["event_list"] = event_list
@@ -1186,19 +1168,19 @@ def create_rebased_tfboys_tagger(base_class):
         def __init__(self, data_anns, *args, **kwargs):
             super(REBasedTFBoysTagger, self).__init__(data_anns, *args, **kwargs)
             self.event_type2arg_rols = {}
-            self.combine_spans = False
+            # self.combine_spans = False
 
             for event in data_anns["event_list"]:
                 event_type = event["event_type"]
                 for arg in event["argument_list"]:
                     self.event_type2arg_rols.setdefault(event_type, set()).add(arg["type"])
-                    if type(arg["char_span"][0]) is list:
-                        self.combine_spans = True
+                    # if type(arg["char_span"][0]) is list:
+                    #     self.combine_spans = True
 
             self.dtm_arg_type_by_edges = kwargs["dtm_arg_type_by_edges"]
 
         @classmethod
-        def additional_preprocess(cls, data, data_type, **kwargs):
+        def additional_preprocess(cls, data, **kwargs):
             separator = "\u2E82"
 
             def inheritor_gen(data):
@@ -1278,7 +1260,7 @@ def create_rebased_tfboys_tagger(base_class):
                     sample["relation_list"] = fin_rel_list
                     yield sample
 
-            for sample in super().additional_preprocess(inheritor_gen(data), data_type, **kwargs):
+            for sample in super().additional_preprocess(inheritor_gen(data), **kwargs):
                 yield sample
 
         def decode(self, sample, pred_tags, pred_outs):
@@ -1389,35 +1371,41 @@ def create_rebased_tfboys_tagger(base_class):
                                     "tok_span": tok_span,
                                 })
 
-                    if self.combine_spans:
-                        arguments_combined = []
-                        arg_text2args = {}
-                        for arg in arguments:
-                            arg_text2args.setdefault(separator.join([arg["type"], arg["text"]]), []).append(arg)
-                        for role_argtext, args in arg_text2args.items():
-                            new_tk_sps = [a["tok_span"] for a in args]
-                            new_ch_sps = [a["char_span"] for a in args]
-                            role, arg_text = role_argtext.split(separator)
-                            arguments_combined.append({
-                                "text": arg_text,
-                                "type": role,
-                                "char_span": new_ch_sps,
-                                "tok_span": new_tk_sps,
-                            })
-                        arguments = arguments_combined
+                    # if self.combine_spans:
+                    #     arguments_combined = []
+                    #     arg_text2args = {}
+                    #     for arg in arguments:
+                    #         arg_text2args.setdefault(separator.join([arg["type"], arg["text"]]), []).append(arg)
+                    #     for role_argtext, args in arg_text2args.items():
+                    #         new_tk_sps = [a["tok_span"] for a in args]
+                    #         new_ch_sps = [a["char_span"] for a in args]
+                    #         role, arg_text = role_argtext.split(separator)
+                    #         arguments_combined.append({
+                    #             "text": arg_text,
+                    #             "type": role,
+                    #             "char_span": new_ch_sps,
+                    #             "tok_span": new_tk_sps,
+                    #         })
+                    #     arguments = arguments_combined
 
                     # find trigger
                     new_argument_list = []
+                    triggers = []
                     for arg in arguments:
                         if arg["type"] == "Trigger":
-                            event["trigger"] = arg["text"]
-                            event["trigger_tok_span"] = arg["tok_span"]
-                            event["trigger_char_span"] = arg["char_span"]
+                            triggers.append(arg)
                         else:
                             new_argument_list.append(arg)
 
+                    if len(triggers) > 0:
+                        trigger = random.choice(triggers)
+                        event["trigger"] = trigger["text"]
+                        event["trigger_tok_span"] = trigger["tok_span"]
+                        event["trigger_char_span"] = trigger["char_span"]
+                        event["trigger_list"] = triggers
+
                     # if the role sets corresponding to the nodes are all empty,
-                    # this clique is invalid and the corresponding event without argument list and trigger
+                    # this clique is invalid and the corresponding event without argument list and triggers
                     # will not be appended into the event list.
                     if len(new_argument_list) > 0 or "trigger" in event:
                         event["argument_list"] = new_argument_list
@@ -1439,9 +1427,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
             self.seg_tag_scheme = kwargs["seg_tag_scheme"]
 
         @classmethod
-        def additional_preprocess(cls, data, data_type, **kwargs):
-            if data_type not in {"train", "debug"}:
-                return data
+        def additional_preprocess(cls, data, **kwargs):
 
             use_bound = kwargs["use_bound"]
             seg_tag_scheme = kwargs["seg_tag_scheme"]
@@ -1666,9 +1652,7 @@ def create_rebased_oie_tagger(base_class):
                                             for arg in spo if arg["type"] == "predicate")
 
         @classmethod
-        def additional_preprocess(cls, data, data_type, **kwargs):
-            if data_type not in {"train", "debug"}:
-                return data
+        def additional_preprocess(cls, data, **kwargs):
 
             new_tag_sep = "\u2E82"
             new_data = []
