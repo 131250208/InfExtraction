@@ -64,7 +64,7 @@ def trans_genia():
         json.dump(out_data, open(out_path, "w", encoding="utf-8"), ensure_ascii=False)
 
 
-def clean_entity(ent):
+def clean_text(ent):
     ent = re.sub("�", "", ent)
     ent = ent.strip("\xad")
     return ent.strip()
@@ -2068,9 +2068,9 @@ def preprocess_duie2():
                     spo["object"]["@value"] = "0" + spo["object"]["@value"]
 
                 # strip redundant whitespaces and unknown characters
-                spo["subject"] = clean_entity(spo["subject"])
+                spo["subject"] = clean_text(spo["subject"])
                 for k, item in spo["object"].items():
-                    spo["object"][k] = clean_entity(item)
+                    spo["object"][k] = clean_text(item)
 
             # fix text by patterns
             text = clean_txt(text)
@@ -2820,16 +2820,64 @@ def rm_triggers(data):
     return data
 
 if __name__ == "__main__":
+
+    train_path = "../../data/ori_data/few_fc_bk/train.json"
+    valid_path = "../../data/ori_data/few_fc_bk/dev.json"
+    test_path = "../../data/ori_data/few_fc_bk/test.json"
+    train_data = load_data(train_path)
+    valid_data = load_data(valid_path)
+    test_data = load_data(test_path)
+
+    def trans_few_fc(data):
+        def mysub(txt):
+            return re.sub("�", "_", txt)
+        new_data = []
+        for sample in data:
+            new_sample = {
+                "id": sample["id"],
+                "text": mysub(sample["content"]),
+                "event_list": [],
+            }
+            for event in sample["events"]:
+                new_event = {
+                    "event_type": event["type"],
+                    "trigger": mysub(event["trigger"]["word"]),
+                    "trigger_char_span": event["trigger"]["span"],
+                    "argument_list": [],
+                }
+                for role, args in event["args"].items():
+                    for arg in args:
+                        new_event["argument_list"].append({
+                            "text": mysub(arg["word"]),
+                            "char_span": arg["span"],
+                            "type": role,
+                        })
+                new_sample["event_list"].append(new_event)
+            new_data.append(new_sample)
+        return new_data
+
+    new_train = trans_few_fc(train_data)
+    new_valid = trans_few_fc(valid_data)
+    new_test = trans_few_fc(test_data)
+
+    train_sv = "../../data/ori_data/few_fc/train_data.json"
+    valid_sv = "../../data/ori_data/few_fc/valid_data.json"
+    test_sv = "../../data/ori_data/few_fc/test_data.json"
+
+    save_as_json_lines(new_train, train_sv)
+    save_as_json_lines(new_valid, valid_sv)
+    save_as_json_lines(new_test, test_sv)
+
     # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys4doc_ee+RAIN+TRAIN/263bstht/model_state_dict_10_66.19/test_data_1.json"
     # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys4doc_ee+RAIN+TRAIN/263bstht/model_state_dict_10_66.19/duee_fin.json"
     # data = load_data(in_path)
     # data_formated = trans2duee_fin_format(data)
     # save_as_json_lines(data_formated, out_path)
 
-    in_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/3_test_data_1.json"
-    out_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/duie_3.json"
-    formated_data = trans2duie2_format(load_data(in_path))
-    save_as_json_lines(formated_data, out_path)
+    # in_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/3_test_data_1.json"
+    # out_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/duie_3.json"
+    # formated_data = trans2duie2_format(load_data(in_path))
+    # save_as_json_lines(formated_data, out_path)
 
     # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/test_data_1.json"
     # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/duee_fin.json"
@@ -2843,13 +2891,13 @@ if __name__ == "__main__":
     # gold_data_path = "../../data/normal_data/ace2005_lu/test_data.json"
     #
     # tbee_pred_data = load_data(tbee_pred_data_path)
-    # tfee_pred_data = load_data(tfee_pred_data_path)
+    # # tfee_pred_data = load_data(tfee_pred_data_path)
     # gold_data = load_data(gold_data_path)
     # gold_data = Preprocessor.choose_spans_by_token_level(gold_data, "subword")
     #
     # # pred_data = rm_triggers(pred_data)
     # # gold_data = rm_triggers(gold_data)
-    # score_dict = MetricsCalculator.score(tfee_pred_data, gold_data)
+    # score_dict = MetricsCalculator.score(tbee_pred_data, gold_data)
     # pprint(score_dict)
     #
     # gold_id2events_dict = {sample["id"]:sample["event_list"] for sample in gold_data}

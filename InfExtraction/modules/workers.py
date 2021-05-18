@@ -7,6 +7,7 @@ import time
 import numpy as np
 from InfExtraction.work_flows import format_conv
 import json
+import os
 
 
 class Trainer:
@@ -287,6 +288,7 @@ class Evaluator:
                     file_out.write("{}\n".format(json.dumps(sample, ensure_ascii=False)))
         total_pred_sample_list = load_data(cache_file_path)
         pred_data = self._alignment(total_pred_sample_list, golden_data)
+        os.remove(cache_file_path)
         return pred_data
         
     def score(self, pred_data, golden_data, data_filename=""):

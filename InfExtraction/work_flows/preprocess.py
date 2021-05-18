@@ -53,52 +53,54 @@ preprocessor = Preprocessor(language, pretrained_model_tokenizer_path, do_lower_
 # load data
 file_name2data = {}
 save_paths = []
+statistics = {}
 for path, folds, files in os.walk(data_in_dir):
     for file_name in files:
         file_path = os.path.join(path, file_name)
         data_path = os.path.join(data_out_dir, file_name)
         save_paths.append(data_path)
 
-        # train_jsreader = MyLargeJsonlinesFileReader(MyLargeFileReader(file_path))
-        # data = train_jsreader.get_jsonlines_generator()
-        #
-        # data_type = None
-        # if "train" in file_name:
-        #     data_type = "train"
-        # if "valid" in file_name:
-        #     data_type = "valid"
-        # if "test" in file_name:
-        #     data_type = "test"
-        # # transform data
-        # data = preprocessor.transform_data(data, ori_format=ori_data_format, dataset_type=data_type, add_id=add_id)
-        # # add char spans
-        # if add_char_span:
-        #     data = preprocessor.add_char_span(data, ignore_subword_match=ignore_subword_match)
-        # # check char span and list alignment
-        # data = preprocessor.pre_check_data_annotation(data, language)
-        # # create features
-        # if parser == "ddp":
-        #     parse_results = gen_ddp_data(file_path)
-        # else:
-        #     parse_results = None
-        # data = preprocessor.create_features(data, word_tokenizer_type,
-        #                                     parse_format=parser,
-        #                                     parse_results=parse_results,
-        #                                     ent_spo_extractor=ent_spo_extractor)
-        # # add token level spans
-        # data = preprocessor.add_tok_span(data)
-        #
-        # # check tok spans
-        # data = preprocessor.check_tok_span(data, language)
-        #
-        # # save
-        # data_size = save_as_json_lines(data, data_path)
-        # statistics[file_name] = data_size
+        train_jsreader = MyLargeJsonlinesFileReader(MyLargeFileReader(file_path))
+        data = train_jsreader.get_jsonlines_generator()
+
+        data_type = None
+        if "train" in file_name:
+            data_type = "train"
+        if "valid" in file_name:
+            data_type = "valid"
+        if "test" in file_name:
+            data_type = "test"
+        # transform data
+        data = preprocessor.transform_data(data, ori_format=ori_data_format, dataset_type=data_type, add_id=add_id)
+        # add char spans
+        if add_char_span:
+            data = preprocessor.add_char_span(data, ignore_subword_match=ignore_subword_match)
+        # check char span and list alignment
+        data = preprocessor.pre_check_data_annotation(data, language)
+        # create features
+        if parser == "ddp":
+            parse_results = gen_ddp_data(file_path)
+        else:
+            parse_results = None
+        data = preprocessor.create_features(data, word_tokenizer_type,
+                                            parse_format=parser,
+                                            parse_results=parse_results,
+                                            ent_spo_extractor=ent_spo_extractor)
+        # add token level spans
+        data = preprocessor.add_tok_span(data)
+
+        # check tok spans
+        data = preprocessor.check_tok_span(data, language)
+
+        # save
+        data_size = save_as_json_lines(data, data_path)
+        statistics[file_name] = data_size
 
 
 # generate supporting data: word and character dict, relation type dict, entity type dict, ...
 
-dicts, statistics = preprocessor.generate_supporting_data(save_paths, max_word_dict_size, min_word_freq)
+dicts, add_statistics = preprocessor.generate_supporting_data(save_paths, max_word_dict_size, min_word_freq)
+statistics.update(add_statistics)
 dicts["bert_dict"] = preprocessor.get_subword_tokenizer().get_vocab()
 
 # save supporting data

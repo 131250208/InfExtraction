@@ -276,19 +276,20 @@ class MetricsCalculator:
         '''
         cpg is a list: [correct_num, pred_num, gold_num]
         '''
-        # correct_num = 0
-        # for mark_str in pred_set:
-        #     if mark_str in gold_set:
-        #         correct_num += 1
-        #     # else:
-        #     #     raise Exception("debug")
+        correct_num = 0
+        for mark_str in pred_set:
+            if mark_str in gold_set:
+                correct_num += 1
+            else:
+                raise Exception("debug")
 
-        cpg[0] += len(gold_set.intersection(pred_set))
+        # cpg[0] += len(gold_set.intersection(pred_set))
+        cpg[0] = correct_num
         cpg[1] += len(pred_set)
         cpg[2] += len(gold_set)
 
-        # if len(pred_set) != len(gold_set):
-        #     raise Exception("debug")
+        if len(pred_set) != len(gold_set):
+            raise Exception("debug")
 
     @staticmethod
     def get_mark_sets4disc_ent_analysis(ent_list):

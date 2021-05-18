@@ -629,53 +629,55 @@ def create_rebased_ee_tagger(base_class):
 
         @classmethod
         def additional_preprocess(cls, data, **kwargs):
-            new_data = copy.deepcopy(data)
+
             separator = "\u2E82"
-            for sample in new_data:
-                # transform event list to relation list and entity list
-                fin_ent_list = []
-                fin_rel_list = []
-                for event in sample["event_list"]:
-                    fin_ent_list.append({
-                        "text": event["trigger"],
-                        "type": "EE:{}{}{}".format("Trigger", separator, event["event_type"]),
-                        "char_span": event["trigger_char_span"],
-                        "tok_span": event["trigger_tok_span"],
-                    })
-                    for arg in event["argument_list"]:
+            def inner_gen(data):
+                for sample in data:
+                    # transform event list to relation list and entity list
+                    fin_ent_list = []
+                    fin_rel_list = []
+                    for event in sample["event_list"]:
                         fin_ent_list.append({
-                            "text": arg["text"],
-                            "type": "EE:{}{}{}".format("Argument", separator, arg["type"]),
-                            "char_span": arg["char_span"],
-                            "tok_span": arg["tok_span"],
+                            "text": event["trigger"],
+                            "type": "EE:{}{}{}".format("Trigger", separator, event["event_type"]),
+                            "char_span": event["trigger_char_span"],
+                            "tok_span": event["trigger_tok_span"],
                         })
-                        fin_rel_list.append({
-                            "subject": arg["text"],
-                            "subj_char_span": arg["char_span"],
-                            "subj_tok_span": arg["tok_span"],
-                            "object": event["trigger"],
-                            "obj_char_span": event["trigger_char_span"],
-                            "obj_tok_span": event["trigger_tok_span"],
-                            "predicate": "ARG2TRI",
-                        })
-                        fin_rel_list.append({
-                            "subject": arg["text"],
-                            "subj_char_span": arg["char_span"],
-                            "subj_tok_span": arg["tok_span"],
-                            "object": event["trigger"],
-                            "obj_char_span": event["trigger_char_span"],
-                            "obj_tok_span": event["trigger_tok_span"],
-                            "predicate": "EE:{}{}{}".format(arg["type"], separator, event["event_type"]),
-                        })
-                sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
+                        for arg in event["argument_list"]:
+                            fin_ent_list.append({
+                                "text": arg["text"],
+                                "type": "EE:{}{}{}".format("Argument", separator, arg["type"]),
+                                "char_span": arg["char_span"],
+                                "tok_span": arg["tok_span"],
+                            })
+                            fin_rel_list.append({
+                                "subject": arg["text"],
+                                "subj_char_span": arg["char_span"],
+                                "subj_tok_span": arg["tok_span"],
+                                "object": event["trigger"],
+                                "obj_char_span": event["trigger_char_span"],
+                                "obj_tok_span": event["trigger_tok_span"],
+                                "predicate": "ARG2TRI",
+                            })
+                            fin_rel_list.append({
+                                "subject": arg["text"],
+                                "subj_char_span": arg["char_span"],
+                                "subj_tok_span": arg["tok_span"],
+                                "object": event["trigger"],
+                                "obj_char_span": event["trigger_char_span"],
+                                "obj_tok_span": event["trigger_tok_span"],
+                                "predicate": "EE:{}{}{}".format(arg["type"], separator, event["event_type"]),
+                            })
+                    sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
 
-                # extend original entity list
-                if "entity_list" in sample:
-                    fin_ent_list.extend(sample["entity_list"])
+                    # extend original entity list
+                    if "entity_list" in sample:
+                        fin_ent_list.extend(sample["entity_list"])
+                    sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
+                    yield sample
 
-                sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
-            new_data = super().additional_preprocess(new_data, **kwargs)
-            return new_data
+            for sample in super().additional_preprocess(inner_gen(data), **kwargs):
+                yield sample
 
         def decode(self, sample, pred_tags, pred_outs=None):
             pred_sample = super(REBasedEETagger, self).decode(sample, pred_tags, pred_outs)
@@ -931,64 +933,53 @@ def create_rebased_tfboys4doc_ee_tagger(base_class):
 
         @classmethod
         def additional_preprocess(cls, data, **kwargs):
-
-            new_data = copy.deepcopy(data)
             separator = "\u2E82"
-            for sample in tqdm(new_data, desc="additional preprocessing"):
-                fin_ent_list = []
-                fin_rel_list = []
-                for event in sample["event_list"]:
-                    event_type = event["event_type"]
-                    arg_list = copy.deepcopy(event["argument_list"])
+            def inheritor_gen(data):
+                for sample in data:
+                    fin_ent_list = []
+                    fin_rel_list = []
+                    for event in sample["event_list"]:
+                        event_type = event["event_type"]
+                        arg_list = copy.deepcopy(event["argument_list"])
 
-                    if "trigger" in event:
-                        pseudo_arg = {
-                            "type": "Trigger",
-                            "char_span": event["trigger_char_span"],
-                            "tok_span": event["trigger_tok_span"],
-                            "text": event["trigger"],
-                        }
-                        arg_list += [pseudo_arg]
+                        if "trigger" in event:
+                            pseudo_arg = {
+                                "type": "Trigger",
+                                "char_span": event["trigger_char_span"],
+                                "tok_span": event["trigger_tok_span"],
+                                "text": event["trigger"],
+                            }
+                            arg_list += [pseudo_arg]
 
-                    for i, arg_i in enumerate(arg_list):
-                        ch_sp_list_i = arg_i["char_span"]
-                        tk_sp_list_i = arg_i["tok_span"]
-                        if type(arg_i["char_span"][0]) is not list:
-                            ch_sp_list_i = [arg_i["char_span"], ]
-                            tk_sp_list_i = [arg_i["tok_span"], ]
+                        for i, arg_i in enumerate(arg_list):
+                            ch_sp_list_i = arg_i["char_span"]
+                            tk_sp_list_i = arg_i["tok_span"]
+                            if type(arg_i["char_span"][0]) is not list:
+                                ch_sp_list_i = [arg_i["char_span"], ]
+                                tk_sp_list_i = [arg_i["tok_span"], ]
 
-                        for sp_idx, ch_sp in enumerate(ch_sp_list_i):
-                            tk_sp = tk_sp_list_i[sp_idx]
-                            fin_ent_list.append({
-                                "text": arg_i["text"],
-                                "type": "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
-                                "char_span": ch_sp,
-                                "tok_span": tk_sp,
-                            })
+                            for sp_idx, ch_sp in enumerate(ch_sp_list_i):
+                                tk_sp = tk_sp_list_i[sp_idx]
+                                fin_ent_list.append({
+                                    "text": arg_i["text"],
+                                    "type": "EE:{}{}{}".format(event_type, separator, arg_i["type"]),
+                                    "char_span": ch_sp,
+                                    "tok_span": tk_sp,
+                                })
 
-                        for j, arg_j in enumerate(arg_list):
-                            assert type(arg_j["char_span"][0]) is list
-                            ch_sp_list_j = arg_j["char_span"]
-                            tk_sp_list_j = arg_j["tok_span"]
-                            # if type(arg_j["char_span"][0]) is not list:
-                            #     ch_sp_list_j = [arg_j["char_span"], ]
-                            #     tk_sp_list_j = [arg_j["tok_span"], ]
+                            for j, arg_j in enumerate(arg_list):
+                                assert type(arg_j["char_span"][0]) is list
+                                ch_sp_list_j = arg_j["char_span"]
+                                tk_sp_list_j = arg_j["tok_span"]
+                                # if type(arg_j["char_span"][0]) is not list:
+                                #     ch_sp_list_j = [arg_j["char_span"], ]
+                                #     tk_sp_list_j = [arg_j["tok_span"], ]
 
-                            for sp_idx_i, ch_sp_i in enumerate(ch_sp_list_i):
-                                for sp_idx_j, ch_sp_j in enumerate(ch_sp_list_j):
-                                    tk_sp_i = tk_sp_list_i[sp_idx_i]
-                                    tk_sp_j = tk_sp_list_j[sp_idx_j]
+                                for sp_idx_i, ch_sp_i in enumerate(ch_sp_list_i):
+                                    for sp_idx_j, ch_sp_j in enumerate(ch_sp_list_j):
+                                        tk_sp_i = tk_sp_list_i[sp_idx_i]
+                                        tk_sp_j = tk_sp_list_j[sp_idx_j]
 
-                                    fin_rel_list.append({
-                                        "subject": arg_i["text"],
-                                        "subj_char_span": ch_sp_i,
-                                        "subj_tok_span": tk_sp_i,
-                                        "object": arg_j["text"],
-                                        "obj_char_span": ch_sp_j,
-                                        "obj_tok_span": tk_sp_j,
-                                        "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
-                                    })
-                                    if kwargs["dtm_arg_type_by_edges"]:
                                         fin_rel_list.append({
                                             "subject": arg_i["text"],
                                             "subj_char_span": ch_sp_i,
@@ -996,18 +987,28 @@ def create_rebased_tfboys4doc_ee_tagger(base_class):
                                             "object": arg_j["text"],
                                             "obj_char_span": ch_sp_j,
                                             "obj_tok_span": tk_sp_j,
-                                            "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
+                                            "predicate": "EE:{}".format(separator.join(["IN_SAME_EVENT", event_type])),
                                         })
+                                        if kwargs["dtm_arg_type_by_edges"]:
+                                            fin_rel_list.append({
+                                                "subject": arg_i["text"],
+                                                "subj_char_span": ch_sp_i,
+                                                "subj_tok_span": tk_sp_i,
+                                                "object": arg_j["text"],
+                                                "obj_char_span": ch_sp_j,
+                                                "obj_tok_span": tk_sp_j,
+                                                "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
+                                            })
 
-                # if "relation_list" in sample:
-                #     fin_rel_list.extend(sample["relation_list"])
-                # if "entity_list" in sample:
-                #     fin_ent_list.extend(sample["entity_list"])
-                sample["entity_list"] = fin_ent_list
-                sample["relation_list"] = fin_rel_list
-
-            new_data = super().additional_preprocess(new_data, **kwargs)
-            return new_data
+                    # if "relation_list" in sample:
+                    #     fin_rel_list.extend(sample["relation_list"])
+                    # if "entity_list" in sample:
+                    #     fin_ent_list.extend(sample["entity_list"])
+                    sample["entity_list"] = fin_ent_list
+                    sample["relation_list"] = fin_rel_list
+                    yield sample
+            for sample in super().additional_preprocess(inheritor_gen(data), **kwargs):
+                yield sample
 
         def decode(self, sample, pred_tags, pred_outs=None):
             pred_sample = super(REBasedTFBoys4DocEETagger, self).decode(sample, pred_tags, pred_outs)
