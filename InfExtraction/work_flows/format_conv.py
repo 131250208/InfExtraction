@@ -2284,7 +2284,7 @@ def trans2duie2_format(pred_data):
         "官方语言": {"object_type": {"@value": "语言"}, "predicate": "官方语言", "subject_type": "国家"},
     }
     new_pred_data = []
-    ori_test_data = load_data("../../data/ori_data/duie_comp2021_bk/test_data_1.json")
+    ori_test_data = load_data("../../data/ori_data/duie_comp2021_bk/test_data_2.json")
 
     for sample_idx, sample in tqdm(enumerate(pred_data), "trans 2 duie2 format"):
         new_spo_list = []
@@ -2368,7 +2368,10 @@ def trans2duie2_format(pred_data):
         # text and spo might have been split with blanks by clean_txt()
         # recover text and spo by original text
         ori_text = ori_test_data[sample_idx]["text"]
+        # try:
         assert re.sub("\s", "", sample["text"]) == re.sub("\s", "", ori_text)
+        # except Exception:
+        #     print("debug")
         for spo in filtered_spo_list:
             if spo["subject"] not in ori_text:
                 segs = [s for s in utils.search_segs(spo["subject"], ori_text) if s.strip() != ""]
@@ -2750,7 +2753,7 @@ def trans_ace05(data):
             event = {
                 "event_span": [even_word_idx_list[0], even_word_idx_list[-1]],
                 "trigger": " ".join(article["word_list"][trigger_wd_span[0]:trigger_wd_span[1]]),
-                "trigger_type": trigger_type,
+                "event_type": trigger_type,
                 "trigger_wd_span": trigger_wd_span,
                 "argument_list": arguments_new,
             }
@@ -2799,6 +2802,7 @@ def trans_ace05(data):
             })
     return new_data
 
+
 def rm_triggers(data):
     for sample in data:
         new_event_list = []
@@ -2819,8 +2823,8 @@ def rm_triggers(data):
         sample["event_list"] = new_event_list
     return data
 
-if __name__ == "__main__":
 
+def trans_few_fc():
     train_path = "../../data/ori_data/few_fc_bk/train.json"
     valid_path = "../../data/ori_data/few_fc_bk/dev.json"
     test_path = "../../data/ori_data/few_fc_bk/test.json"
@@ -2828,7 +2832,7 @@ if __name__ == "__main__":
     valid_data = load_data(valid_path)
     test_data = load_data(test_path)
 
-    def trans_few_fc(data):
+    def trans_few_fc_(data):
         def mysub(txt):
             return re.sub("�", "_", txt)
         new_data = []
@@ -2856,9 +2860,9 @@ if __name__ == "__main__":
             new_data.append(new_sample)
         return new_data
 
-    new_train = trans_few_fc(train_data)
-    new_valid = trans_few_fc(valid_data)
-    new_test = trans_few_fc(test_data)
+    new_train = trans_few_fc_(train_data)
+    new_valid = trans_few_fc_(valid_data)
+    new_test = trans_few_fc_(test_data)
 
     train_sv = "../../data/ori_data/few_fc/train_data.json"
     valid_sv = "../../data/ori_data/few_fc/valid_data.json"
@@ -2868,21 +2872,30 @@ if __name__ == "__main__":
     save_as_json_lines(new_valid, valid_sv)
     save_as_json_lines(new_test, test_sv)
 
+
+if __name__ == "__main__":
+
     # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys4doc_ee+RAIN+TRAIN/263bstht/model_state_dict_10_66.19/test_data_1.json"
     # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys4doc_ee+RAIN+TRAIN/263bstht/model_state_dict_10_66.19/duee_fin.json"
     # data = load_data(in_path)
     # data_formated = trans2duee_fin_format(data)
     # save_as_json_lines(data_formated, out_path)
 
-    # in_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/3_test_data_1.json"
-    # out_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/duie_3.json"
+    # in_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/3_test_data_2.json"
+    # out_path = "../../data/res_data/duie_comp2021/re+RAIN+TRAIN/3psxiqpr/model_state_dict_3_76.299/3_duie_2.json"
     # formated_data = trans2duie2_format(load_data(in_path))
     # save_as_json_lines(formated_data, out_path)
 
-    # in_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/test_data_1.json"
-    # out_path = "../../data/res_data/duee_fin_comp2021_mac/re+tfboys+RAIN+TRAIN/16qvxgkw/model_state_dict_5_48.983/duee_fin.json"
-    # formated_data = trans2duee_fin_format(load_data(in_path))
-    # save_as_json_lines(formated_data, out_path)
+    # in_dir = "../../data/res_data/duee_comp2021/re+tfboys+RAIN+TRAIN/mj9p5ngf/"
+    # # out_path = "../../data/res_data/duee_comp2021/re+tfboys+RAIN+TRAIN/mj9p5ngf/model_state_dict_19_82.893/duee.json"
+    # for path, folds, files in os.walk(in_dir):
+    #     for file_name in files:
+    #         if re.match("\d+_test_data_2.json", file_name) is not None:
+    #             file_path = os.path.join(path, file_name)
+    #             out_path = os.path.join(path, re.sub("test_data", "duee", file_name))
+    #             ori_data = load_data(file_path)
+    #             formated_data = trans2duee_fin_format(ori_data)
+    #             save_as_json_lines(formated_data, out_path)
 
     # pred_data, gold_data = trans_tfboys_baselines2normal_format("dbrnn")
 
@@ -2930,25 +2943,6 @@ if __name__ == "__main__":
     # json.dump(tfree_id2events_dict, open("../../data/res_data/analysis/tfboys/tri_free.json", "w", encoding="utf-8"), ensure_ascii=False)
     # json.dump(mul_tri_id2events_dict, open("../../data/res_data/analysis/tfboys/mul_tri.json", "w", encoding="utf-8"), ensure_ascii=False)
     # # preprocess_duie2()
-
-    # train_path = "../../data/ori_data/ace2005_lu_bk/train_data.json"
-    # dev_path = "../../data/ori_data/ace2005_lu_bk/dev_data.json"
-    # test_path = "../../data/ori_data/ace2005_lu_bk/test_data.json"
-    # train_data = load_data(train_path)
-    # valid_data = load_data(dev_path)
-    # test_data = load_data(test_path)
-    # new_train_data = trans_ace05(train_data)
-    # new_valid_data = trans_ace05(valid_data)
-    # new_test_data = trans_ace05(test_data)
-    # sv_dir = "../../data/ori_data/ace2005_lu_2"
-    # if not os.path.exists(sv_dir):
-    #     os.mkdir(sv_dir)
-    # train_sv_path = os.path.join(sv_dir, "train_data.json")
-    # dev_sv_path = os.path.join(sv_dir, "valid_data.json")
-    # test_sv_path = os.path.join(sv_dir, "test_data.json")
-    # save_as_json_lines(new_train_data, train_sv_path)
-    # save_as_json_lines(new_valid_data, dev_sv_path)
-    # save_as_json_lines(new_test_data, test_sv_path)
 
     # # rm triggers
     # train_path = "../../data/ori_data/ace2005_lu/train_data.json"

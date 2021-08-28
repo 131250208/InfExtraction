@@ -14,11 +14,11 @@ from InfExtraction.modules.utils import MyMatrix
 from gensim.models import KeyedVectors
 import logging
 import torch.nn.functional as F
-from flair.embeddings import StackedEmbeddings
-from flair.data import Sentence
-from flair import embeddings as flair_embeddings
-from flair.tokenization import SpaceTokenizer
-from allennlp.modules.elmo import Elmo, batch_to_ids
+# from flair.embeddings import StackedEmbeddings
+# from flair.data import Sentence
+# from flair import embeddings as flair_embeddings
+# from flair.tokenization import SpaceTokenizer
+# from allennlp.modules.elmo import Elmo, batch_to_ids
 
 
 class IEModel(nn.Module, metaclass=ABCMeta):
@@ -163,53 +163,53 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                                         batch_first=True)
             self.cat_hidden_size += word_bilstm_hidden_size[1]
 
-        # flair embeddings
-        self.flair_config = flair_config
-        if flair_config is not None:
-            print("init flair embedding models...")
-            embedding_model_configs = flair_config["embedding_models"]
-            embedding_models = [getattr(flair_embeddings, config["model_name"])(*config["parameters"]) for config in
-                                embedding_model_configs]
-            for elmo_model in embedding_models:
-                self.cat_hidden_size += elmo_model.embedding_length
-            self.flair_emb = StackedEmbeddings(embedding_models)
-            print("done!")
+        # # flair embeddings
+        # self.flair_config = flair_config
+        # if flair_config is not None:
+        #     print("init flair embedding models...")
+        #     embedding_model_configs = flair_config["embedding_models"]
+        #     embedding_models = [getattr(flair_embeddings, config["model_name"])(*config["parameters"]) for config in
+        #                         embedding_model_configs]
+        #     for elmo_model in embedding_models:
+        #         self.cat_hidden_size += elmo_model.embedding_length
+        #     self.flair_emb = StackedEmbeddings(embedding_models)
+        #     print("done!")
 
-        # elmo
-        self.elmo_config = elmo_config
-        if elmo_config is not None:
-
-            elmo_model = elmo_config["model"]
-            finetune_elmo = elmo_config["finetune"]
-            elmo_dropout = elmo_config["dropout"]
-            # num_output_representations = elmo_config["num_output_representations"]
-
-            options_file, weight_file = None, None
-            if elmo_model == "small":
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x1024_128_2048cnn_1xhighway/elmo_2x1024_128_2048cnn_1xhighway_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x1024_128_2048cnn_1xhighway/elmo_2x1024_128_2048cnn_1xhighway_weights.hdf5"
-            if elmo_model == "medium":
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x2048_256_2048cnn_1xhighway/elmo_2x2048_256_2048cnn_1xhighway_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x2048_256_2048cnn_1xhighway/elmo_2x2048_256_2048cnn_1xhighway_weights.hdf5"
-            if elmo_model in ["large", "5.5B"]:
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_weights.hdf5"
-            if elmo_model == "pt" or elmo_model == "portuguese":
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pt/elmo_pt_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pt/elmo_pt_weights.hdf5"
-            if elmo_model == "pubmed":
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pubmed/elmo_2x4096_512_2048cnn_2xhighway_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pubmed/elmo_2x4096_512_2048cnn_2xhighway_weights_PubMed_only.hdf5"
-
-            print("init elmo ...")
-            self.elmo = Elmo(options_file,
-                             weight_file,
-                             num_output_representations=1,
-                             requires_grad=finetune_elmo,
-                             dropout=elmo_dropout,
-                             )
-            self.cat_hidden_size += self.elmo.get_output_dim()
-            print("done!")
+        # # elmo
+        # self.elmo_config = elmo_config
+        # if elmo_config is not None:
+        #
+        #     elmo_model = elmo_config["model"]
+        #     finetune_elmo = elmo_config["finetune"]
+        #     elmo_dropout = elmo_config["dropout"]
+        #     # num_output_representations = elmo_config["num_output_representations"]
+        #
+        #     options_file, weight_file = None, None
+        #     if elmo_model == "small":
+        #         options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x1024_128_2048cnn_1xhighway/elmo_2x1024_128_2048cnn_1xhighway_options.json"
+        #         weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x1024_128_2048cnn_1xhighway/elmo_2x1024_128_2048cnn_1xhighway_weights.hdf5"
+        #     if elmo_model == "medium":
+        #         options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x2048_256_2048cnn_1xhighway/elmo_2x2048_256_2048cnn_1xhighway_options.json"
+        #         weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x2048_256_2048cnn_1xhighway/elmo_2x2048_256_2048cnn_1xhighway_weights.hdf5"
+        #     if elmo_model in ["large", "5.5B"]:
+        #         options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_options.json"
+        #         weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_weights.hdf5"
+        #     if elmo_model == "pt" or elmo_model == "portuguese":
+        #         options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pt/elmo_pt_options.json"
+        #         weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pt/elmo_pt_weights.hdf5"
+        #     if elmo_model == "pubmed":
+        #         options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pubmed/elmo_2x4096_512_2048cnn_2xhighway_options.json"
+        #         weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pubmed/elmo_2x4096_512_2048cnn_2xhighway_weights_PubMed_only.hdf5"
+        #
+        #     print("init elmo ...")
+        #     self.elmo = Elmo(options_file,
+        #                      weight_file,
+        #                      num_output_representations=1,
+        #                      requires_grad=finetune_elmo,
+        #                      dropout=elmo_dropout,
+        #                      )
+        #     self.cat_hidden_size += self.elmo.get_output_dim()
+        #     print("done!")
 
         # subword_encoder
         self.subwd_encoder_config = subwd_encoder_config
@@ -315,17 +315,17 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             features.append(word_hiddens)
             feature_dict["word_hiddens"] = word_hiddens
 
-        # flair embedding
-        if self.flair_config is not None:
-            self.flair_emb.embed(padded_text_list)
-            flair_embeddings = torch.stack([torch.stack([tok.embedding for tok in sent]) for sent in padded_text_list])
-            features.append(flair_embeddings)
-            feature_dict["flair_embeddings"] = flair_embeddings
-
-        if self.elmo_config is not None:
-            embeddings = self.elmo(elmo_ids)
-            features.append(embeddings["elmo_representations"][0])
-            feature_dict["elmo_embeddings"] = embeddings["elmo_representations"][0]
+        # # flair embedding
+        # if self.flair_config is not None:
+        #     self.flair_emb.embed(padded_text_list)
+        #     flair_embeddings = torch.stack([torch.stack([tok.embedding for tok in sent]) for sent in padded_text_list])
+        #     features.append(flair_embeddings)
+        #     feature_dict["flair_embeddings"] = flair_embeddings
+        #
+        # if self.elmo_config is not None:
+        #     embeddings = self.elmo(elmo_ids)
+        #     features.append(embeddings["elmo_representations"][0])
+        #     feature_dict["elmo_embeddings"] = embeddings["elmo_representations"][0]
 
         # subword
         if self.subwd_encoder_config is not None:
@@ -386,15 +386,15 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
 
         # >>>>>>>>>>>>>>>>>>>>> feature >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-        if self.flair_config is not None:
-            batch_dict["padded_text_list"] = [
-                Sentence(sample["features"]["padded_text"],
-                         use_tokenizer=SpaceTokenizer())
-                for sample in batch_data]
-
-        if self.elmo_config is not None:
-            elmo_ids_list = [sample["features"]["word_list"] for sample in batch_data]
-            batch_dict["elmo_ids"] = batch_to_ids(elmo_ids_list)
+        # if self.flair_config is not None:
+        #     batch_dict["padded_text_list"] = [
+        #         Sentence(sample["features"]["padded_text"],
+        #                  use_tokenizer=SpaceTokenizer())
+        #         for sample in batch_data]
+        #
+        # if self.elmo_config is not None:
+        #     elmo_ids_list = [sample["features"]["word_list"] for sample in batch_data]
+        #     batch_dict["elmo_ids"] = batch_to_ids(elmo_ids_list)
 
         if self.subwd_encoder_config is not None:
             subword_input_ids_list = []
@@ -434,8 +434,10 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                 dep_matrix_hnt_points_batch = [sample["features"]["deprel_points_hnt"] for sample in batch_data]
                 batch_dict["dep_hnt_matrix"] = Indexer.points2matrix_batch(dep_matrix_hnt_points_batch, seq_length)
 
-        # >>>>>>>>>>>>>>>>>>>>>> tag >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        # >>>>>>>>>>>>>>>>>>>>>> add annotation points >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         self.tagger.tag(batch_data)
+
+        #
         # batch_dict["golden_tags"] need to be set by inheritors
         return batch_dict
 
@@ -464,13 +466,13 @@ class TPLinkerPlus(IEModel):
                  metrics_cal,
                  handshaking_kernel_config=None,
                  fin_hidden_size=None,
+                 pred_threshold=0.,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
         '''
         :parameters: see model settings in settings_default.py
         '''
-
         self.tag_size = tagger.get_tag_size()
         self.metrics_cal = metrics_cal
 
@@ -478,10 +480,14 @@ class TPLinkerPlus(IEModel):
 
         # handshaking kernel
         shaking_type = handshaking_kernel_config["shaking_type"]
-        self.handshaking_kernel = SingleSourceHandshakingKernel(fin_hidden_size, shaking_type)
+        dist_emb_dim = handshaking_kernel_config["dist_emb_dim"]
+        self.handshaking_kernel = SingleSourceHandshakingKernel(fin_hidden_size, shaking_type,
+                                                                distance_emb_dim=dist_emb_dim)
 
         # decoding fc
         self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
+
+        self.pred_threshold = pred_threshold
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
@@ -497,7 +503,7 @@ class TPLinkerPlus(IEModel):
         cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
         # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # shaking_seq_len: max_seq_len * vf - sum(1, vf)
-        shaking_hiddens = self.handshaking_kernel(cat_hiddens, cat_hiddens)
+        shaking_hiddens = self.handshaking_kernel(cat_hiddens)
 
         # predicted_oudtuts: (batch_size, shaking_seq_len, tag_num)
         predicted_oudtuts = self.dec_fc(shaking_hiddens)
@@ -505,7 +511,7 @@ class TPLinkerPlus(IEModel):
         return predicted_oudtuts
 
     def pred_output2pred_tag(self, pred_output):
-        return (pred_output > 0.).long()
+        return (pred_output > self.pred_threshold).long()
 
     def get_metrics(self, pred_outputs, gold_tags):
         pred_out, gold_tag = pred_outputs[0], gold_tags[0]
@@ -614,7 +620,7 @@ class RAIN(IEModel):
     def __init__(self,
                  tagger,
                  metrics_cal,
-                 top_multi_attn_config=None,
+                 # top_multi_attn_config=None,
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  rel_dim=None,
@@ -639,19 +645,19 @@ class RAIN(IEModel):
         self.pred_threshold = pred_threshold
 
         inp_dim = self.cat_hidden_size
-        # top multi-head attentions
-        self.top_multi_attn_config = top_multi_attn_config
-        if top_multi_attn_config is not None:
-            num_heads = top_multi_attn_config["num_heads"]
-            pos_emb_dim = top_multi_attn_config["pos_emb_dim"]
-            fusion_dim = top_multi_attn_config["fusion_dim"]
-            multi_attn_layers = top_multi_attn_config["layers"]
-            self.position_emb4top_multi_attn = nn.Embedding(512, pos_emb_dim)
-            self.fusion_fc4top_multi_attn = nn.Linear(self.cat_hidden_size + pos_emb_dim, fusion_dim)
-            self.top_multi_attn_layers = nn.ModuleList()
-            for _ in range(multi_attn_layers):
-                self.top_multi_attn_layers.append(nn.MultiheadAttention(fusion_dim, num_heads))
-            inp_dim = fusion_dim
+        # # top multi-head attentions
+        # self.top_multi_attn_config = top_multi_attn_config
+        # if top_multi_attn_config is not None:
+        #     num_heads = top_multi_attn_config["num_heads"]
+        #     pos_emb_dim = top_multi_attn_config["pos_emb_dim"]
+        #     fusion_dim = top_multi_attn_config["fusion_dim"]
+        #     multi_attn_layers = top_multi_attn_config["layers"]
+        #     self.position_emb4top_multi_attn = nn.Embedding(512, pos_emb_dim)
+        #     self.fusion_fc4top_multi_attn = nn.Linear(self.cat_hidden_size + pos_emb_dim, fusion_dim)
+        #     self.top_multi_attn_layers = nn.ModuleList()
+        #     for _ in range(multi_attn_layers):
+        #         self.top_multi_attn_layers.append(nn.MultiheadAttention(fusion_dim, num_heads))
+        #     inp_dim = fusion_dim
 
         self.aggr_fc4ent_hsk = nn.Linear(inp_dim, ent_dim)
         self.aggr_fc4rel_hsk = nn.Linear(inp_dim, rel_dim)
@@ -793,13 +799,13 @@ class RAIN(IEModel):
         inp_hiddens, feature_dict = self.get_base_features(**kwargs)
         batch_size, seq_len, _ = inp_hiddens.size()
 
-        if self.top_multi_attn_config is not None:
-            position_idx = torch.arange(0, seq_len).to(inp_hiddens.device)[None, :].repeat(batch_size, 1)
-            pos_emb = self.position_emb4top_multi_attn(position_idx)
-            inp_hiddens = self.fusion_fc4top_multi_attn(torch.cat([inp_hiddens, pos_emb], dim=-1)).permute(1, 0, 2)
-            for multi_attn in self.top_multi_attn_layers:
-                inp_hiddens, _ = multi_attn(inp_hiddens, inp_hiddens, inp_hiddens)
-            inp_hiddens = inp_hiddens.permute(1, 0, 2)
+        # if self.top_multi_attn_config is not None:
+        #     position_idx = torch.arange(0, seq_len).to(inp_hiddens.device)[None, :].repeat(batch_size, 1)
+        #     pos_emb = self.position_emb4top_multi_attn(position_idx)
+        #     inp_hiddens = self.fusion_fc4top_multi_attn(torch.cat([inp_hiddens, pos_emb], dim=-1)).permute(1, 0, 2)
+        #     for multi_attn in self.top_multi_attn_layers:
+        #         inp_hiddens, _ = multi_attn(inp_hiddens, inp_hiddens, inp_hiddens)
+        #     inp_hiddens = inp_hiddens.permute(1, 0, 2)
 
         ent_hiddens = self.aggr_fc4ent_hsk(inp_hiddens)
         rel_hiddens = self.aggr_fc4rel_hsk(inp_hiddens)

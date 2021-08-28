@@ -93,8 +93,6 @@ def prepare_data(data,
                  drop_neg_samples=False,
                  additional_preprocess=None,
                  ):
-    # if combine and data_type == "train":
-    #     data = Preprocessor.combine(data, 1024)
 
     data = Preprocessor.choose_features_by_token_level_gen(data, token_level, do_lower_case)
     data = Preprocessor.choose_spans_by_token_level_gen(data, token_level)
@@ -128,12 +126,12 @@ def prepare_data(data,
                                                max_seq_len,
                                                max_char_num_in_tok)
     # # tagging
-    # indexed_data = tagger.tag(indexed_data)
+    # indexed_data = tagger.tag(indexed_data) # was moved to model.generate_batch
     data_anns = {}
     if load_data2memory:
         if data_type == "train":
             res_indexed_data = []
-            for sample in tqdm(indexed_data, desc="prepare n load into memory: {}".format(data_type)):
+            for sample in tqdm(indexed_data, desc="prepare data and load into memory: {}".format(data_type)):
                 for k, v in sample.items():
                     if k in {"entity_list", "relation_list", "event_list", "open_spo_list"}:
                         data_anns.setdefault(k, []).extend(v)
@@ -148,7 +146,7 @@ def prepare_data(data,
         cache_file_path = os.path.join(cache_dir, "indexed_{}_data_cache_{}.jsonlines".format(data_type, run_id))
 
         with open(cache_file_path, "w", encoding="utf-8") as out_file:
-            for sample in tqdm(indexed_data, desc="prepare n save to disk: {}".format(data_type)):
+            for sample in tqdm(indexed_data, desc="prepare data and save to disk: {}".format(data_type)):
                 if data_type == "train":
                     for k, v in sample.items():
                         if k in {"entity_list", "relation_list", "event_list", "open_spo_list"}:
@@ -293,10 +291,10 @@ def run():
     # env
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    def get_golden_data_must(data):
+    def get_golden_data_must(data, desc):
         must_keys4golden_data = {"id", "text", "relation_list", "entity_list", "event_list", "open_spo_list"}
         new_data = []
-        for sample in tqdm(data, "get golden data"):
+        for sample in tqdm(data, "get golden annotations for {}".format(desc)):
             # Preprocessor.choose_features_by_token_level4sample(sample, token_level, do_lower_case)
             Preprocessor.choose_spans_by_token_level4sample(sample, token_level)
             new_sample = {}
@@ -306,10 +304,10 @@ def run():
             new_data.append(new_sample)
         return new_data
 
-    #  copy ori data, maintain clean for evaluation
-    ori_valid_data = get_golden_data_must(valid_data_dup)
-    ori_data4checking = get_golden_data_must(data4checking_dup)
-    filename2ori_test_data = {filename: get_golden_data_must(test_data_dup)
+    #  copy ori data, guarantee clean for evaluation
+    ori_valid_data = get_golden_data_must(valid_data_dup, "valid")
+    ori_data4checking = get_golden_data_must(data4checking_dup, "checking tagging/decoding")
+    filename2ori_test_data = {filename: get_golden_data_must(test_data_dup, "test")
                               for filename, test_data_dup in filename2test_data_dup.items()}
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -328,8 +326,8 @@ def run():
 
     # additional preprocessing
     def additional_preprocess(data):
-        return tagger_class_name.additional_preprocess(data, **addtional_preprocessing_config)
-
+        for sample in data:
+            yield tagger_class_name.additional_preprocess(sample, **addtional_preprocessing_config)
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     # logger
@@ -349,8 +347,9 @@ def run():
         dir_to_save_model = default_dir_to_save_model
         if not os.path.exists(dir_to_save_model):
             os.makedirs(dir_to_save_model)
-    # save settings #@
-    copyfile("./{}.py".format(settings_name), os.path.join(dir_to_save_model, "{}.py".format(settings_name)))
+
+    # # save settings #@
+    # copyfile("./{}.py".format(settings_name), os.path.join(dir_to_save_model, "{}.py".format(settings_name)))
 
     # index train data
     indexed_train_data, train_data_anns = prepare_data(train_data,
@@ -387,9 +386,10 @@ def run():
     model = model_class_name(tagger, metrics_cal, **model_settings)
     model = model.to(device)
     print("done!")
-    print(">>>>>>>>>>>>>>>>>>>>>>>>> Model >>>>>>>>>>>>>>>>>>>>>>>")
-    print(model)
-    print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+
+    # print(">>>>>>>>>>>>>>>>>>>>>>>>> Model >>>>>>>>>>>>>>>>>>>>>>>")
+    # print(model)
+    # print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 
     # function for generating data batch
     collate_fn = model.generate_batch

@@ -13,6 +13,51 @@ import unicodedata
 import functools
 import logging
 
+from functools import wraps
+import time
+
+
+def clean_text(text):
+    text = re.sub("�", "", text)
+    # text = re.sub("([,;.?!]+)", r" \1 ", text)
+    text = re.sub("\ufeff", "", text)
+    text = re.sub("\s+", " ", text).strip()
+    return text
+
+
+class CodePieceTimer(object):
+    '''
+    用上下文管理器计时
+    '''
+    def __init__(self, desc="default desc"):
+        self.desc = desc
+
+    def __enter__(self):
+        self.t0 = time.time()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        spent = time.time() - self.t0
+        if spent > 1:
+            print("debug")
+        print('[{}, spent time: {time:.6f}s]'.format(self.desc, time =spent))
+
+
+def func_timer(function):
+    '''
+    用装饰器实现函数计时
+    :param function: 需要计时的函数
+    :return: None
+    '''
+    @wraps(function)
+    def function_timer(*args, **kwargs):
+        print('[Function: {name} start...]'.format(name = function.__name__))
+        t0 = time.time()
+        result = function(*args, **kwargs)
+        t1 = time.time()
+        print('[Function: {name} finished, spent time: {time:.2f}s]'.format(name = function.__name__, time = t1 - t0))
+        return result
+    return function_timer
+
 
 def is_invalid_extr_ent(ent, char_span, text):
     def check_invalid(pat):
@@ -593,8 +638,6 @@ def merge_spans(spans, text=None):
 #     return data
 
 
-
-
 def file_len(fname):
     with open(fname) as f:
         for i, l in enumerate(f):
@@ -603,21 +646,22 @@ def file_len(fname):
 
 
 def get_file_line_offsets(file_path, max_lines=None):
-    line_offset = [0]
+    line_offset = []
     tqdm_desc = "init line offsets: {}".format(file_path)
 
     with open(file_path, "r", encoding="utf-8") as file_in, tqdm(desc=tqdm_desc) as pbar:
-        line = file_in.readline()
-        pbar.update()
-        while line:
+        while True:
             offset = file_in.tell()
             line_offset.append(offset)  # returns the location of the next line
+            line = file_in.readline()
+            if line.strip() == "":
+                break
             pbar.update()
+
             if max_lines is not None and len(line_offset) >= max_lines:
                 break
-            line = file_in.readline()
 
-    return line_offset
+    return line_offset[:-1]
 
 
 class MyLargeFileReader:
@@ -625,7 +669,6 @@ class MyLargeFileReader:
         self.line_offsets = get_file_line_offsets(file_path, max_lines)
         if shuffle:
             self.shuffle_line_offsets()
-        # self.file = open(file_path, "r", encoding="utf-8")
         self.path = file_path
 
     def __len__(self):
@@ -638,7 +681,6 @@ class MyLargeFileReader:
         with open(self.path, "r", encoding="utf-8") as file_in:
             file_in.seek(self.line_offsets[idx])
             line = file_in.readline()
-            # file.seek(0)
         return line
 
     def get_lines_generator(self, star_idx=0, end_idx=None, shuffle=False):
@@ -653,7 +695,6 @@ class MyLargeFileReader:
             for offset in selected_line_offsets:
                 file_in.seek(offset)
                 yield file_in.readline()
-            # self.file.seek(0)
 
 
 class MyLargeJsonlinesFileReader:

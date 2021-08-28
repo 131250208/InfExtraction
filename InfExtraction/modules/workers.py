@@ -210,8 +210,6 @@ class Evaluator:
             if "open_spo_list" in sample:
                 if "open_spo_list" not in merged_pred_samples[id_]:
                     merged_pred_samples[id_]["open_spo_list"] = []
-                # if id_ == 10467:
-                #     print("de")
                 merged_pred_samples[id_]["open_spo_list"].extend(sample["open_spo_list"])
 
         # alignment by id (in order)

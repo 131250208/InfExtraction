@@ -245,8 +245,8 @@ class MetricsCalculator:
             "ent_offset": ent_offset_set,
             "disc_ent_offset": disc_ent_offset_set,
             "disc_ent_text": disc_ent_text_set,
-            "sents_w_disc_ent_offset": ent_offset_on_sents_w_disc_set,
-            "sents_w_disc_ent_text": ent_text_on_sents_w_disc_set,
+            "ent_offset_on_sents_w_disc": ent_offset_on_sents_w_disc_set,
+            "ent_text_on_sents_w_disc": ent_text_on_sents_w_disc_set,
         }
 
     @staticmethod
@@ -640,7 +640,7 @@ class MetricsCalculator:
         # if any discontinuous entity exists, calculate corresponding scores
         if any(len(ent["char_span"]) > 2 for sample in golden_sample_list for ent in sample["entity_list"]):
             # discontinuous ner metrics
-            disc_keys = {"disc_ent_offset", "disc_ent_text", "sents_w_disc_ent_offset", "sents_w_disc_ent_text"}
+            disc_keys = {"disc_ent_offset", "disc_ent_text", "ent_offset_on_sents_w_disc", "ent_text_on_sents_w_disc"}
             for key in disc_keys:
                 ent_cpg_dict[key] = [0, 0, 0]
 
@@ -649,19 +649,9 @@ class MetricsCalculator:
             gold_sample = golden_sample_list[idx]
             pred_ent_list = pred_sample["entity_list"]
             gold_ent_list = gold_sample["entity_list"]
-
             sent_w_disc = any(len(ent["tok_span"]) > 2 for ent in gold_ent_list)
-            # all_correct = MetricsCalculator.cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict, sent_w_disc)
-            # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-            pred_set_dict = MetricsCalculator.get_mark_sets_ent(pred_ent_list, sent_w_disc)
-            gold_set_dict = MetricsCalculator.get_mark_sets_ent(gold_ent_list, sent_w_disc)
 
-            all_correct = True
-            for key in ent_cpg_dict.keys():
-                correct = MetricsCalculator.cal_cpg(pred_set_dict[key], gold_set_dict[key], ent_cpg_dict[key])
-                if not correct:
-                    all_correct = False
-
+            all_correct = MetricsCalculator.cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict, sent_w_disc)
             if not all_correct:
                 wrong_pred_list.append({
                     "pred": pred_sample,

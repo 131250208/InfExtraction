@@ -1,24 +1,24 @@
 from InfExtraction.modules.utils import load_data
 
-data_in_dir = "../../data/ori_data/few_fc"
-data_out_dir = "../../data/normal_data/few_fc"
+data_in_dir = "../../data/ori_data/cadec"
+data_out_dir = "../../data/normal_data/cadec4yelp"
 
-language = "ch"  # en, ch
+language = "en"  # en, ch
 
 # used only if "word_list" or "word2char_span" are not given in the data
-word_tokenizer_type = "normal_chinese"  # stanza, white, normal_chinese;
+word_tokenizer_type = "white"  # stanza, white, normal_chinese;
 
-pretrained_model_tokenizer_path = "../../data/pretrained_models/macbert-large"
-do_lower_case = True  # transform to lower case and rm accents, only for bert tokenizer and lower the subword_list,
+pretrained_model_tokenizer_path = "../../data/pretrained_models/yelpbert"
+do_lower_case = True  # transform to lower case and rm accents, only set for bert tokenizer and lower the subword_list,
                     # it does not change the original text or word_list,
                     # set True if use uncased bert
 
 ori_data_format = "normal"  # normal, casrel (webnlg_star, nyt_star), etl_span (webnlg), raw_nyt (nyt),
                               # duie_1, duie_2, duee_1, duee_fin
-add_id = False  # set True if id is not given in the data
+add_id = True  # set True if id is not given in the data
 
 add_char_span = False  # for data without annotated character level spans
-ignore_subword_match = False  # used only if add_char_span is True, whether add whitespaces around the entities
+ignore_subword_match = True  # used only if add_char_span is True, whether add whitespaces around the entities
 # when matching and adding character level spans,
 # e.g. if ignore_subword_match is set true, " home " will not match the subword "home" in "hometown"
 # it should be set to False when handling Chinese datasets

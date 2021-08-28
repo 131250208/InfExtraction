@@ -60,8 +60,11 @@ for path, folds, files in os.walk(data_in_dir):
         data_path = os.path.join(data_out_dir, file_name)
         save_paths.append(data_path)
 
-        train_jsreader = MyLargeJsonlinesFileReader(MyLargeFileReader(file_path))
-        data = train_jsreader.get_jsonlines_generator()
+        try:
+            data = json.load(open(file_path, "r", encoding="utf-8"))
+        except json.decoder.JSONDecodeError:
+            train_jsreader = MyLargeJsonlinesFileReader(MyLargeFileReader(file_path))
+            data = train_jsreader.get_jsonlines_generator()
 
         data_type = None
         if "train" in file_name:
@@ -101,12 +104,12 @@ for path, folds, files in os.walk(data_in_dir):
 
 dicts, add_statistics = preprocessor.generate_supporting_data(save_paths, max_word_dict_size, min_word_freq)
 statistics.update(add_statistics)
-dicts["bert_dict"] = preprocessor.get_subword_tokenizer().get_vocab()
+# dicts["bert_dict"] = preprocessor.get_subword_tokenizer().get_vocab()
 
 # save supporting data
-print("save data!")
+print("Saving supporting data and statistics ...")
 dicts_path = os.path.join(data_out_dir, "dicts.json")
 json.dump(dicts, open(dicts_path, "w", encoding="utf-8"), ensure_ascii=False, indent=4)
 statistics_path = os.path.join(data_out_dir, "statistics.json")
 json.dump(statistics, open(statistics_path, "w", encoding="utf-8"), ensure_ascii=False, indent=4)
-print("done!")
+print("Done!")

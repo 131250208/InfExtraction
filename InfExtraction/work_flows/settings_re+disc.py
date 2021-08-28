@@ -1,5 +1,5 @@
 import os
-device_num = 1 
+device_num = 1
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -7,9 +7,10 @@ import random
 import numpy as np
 from datetime import date
 import time
-from InfExtraction.modules.utils import load_data
+from InfExtraction.modules.utils import MyLargeFileReader, MyLargeJsonlinesFileReader
+from transformers import BertTokenizer
 
-seed = 2333
+seed = 2021
 enable_bm = True
 
 
@@ -39,15 +40,15 @@ from glob import glob
 
 # Frequent changes
 exp_name = "cadec4yelp"
+load_data2memory = True
 language = "en"
-stage = "train"  # inference
 task_type = "re+disc_ner"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "yelpbert"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
+use_wandb = True
 note = ""
 epochs = 300
 lr = 1e-5  # 5e-5, 1e-4
@@ -65,13 +66,13 @@ batch_size_train = 12
 batch_size_valid = 12
 batch_size_test = 12 
 
-max_seq_len_train = 64
+max_seq_len_train = 100
 max_seq_len_valid = 100
 max_seq_len_test = 100
 
-sliding_len_train = 64
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_train = 100
+sliding_len_valid = 100
+sliding_len_test = 100
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
@@ -84,29 +85,32 @@ dep_gcn = False
 word_encoder = False
 subwd_encoder = True
 use_attns4rel = True  # use only if subwd_encoder (bert) is True
-flair = False
-elmo = False
-top_attn = False
 
-# data
+# >>>>>>>>>>>>>>>>>>>>>> data >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 data_in_dir = "../../data/normal_data"
 data_out_dir = "../../data/res_data"
 train_path = os.path.join(data_in_dir, exp_name, "train_data.json")
 val_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
-max_lines = None  # None
-train_data = load_data(train_path, lines=max_lines)
-valid_data = load_data(val_path, lines=max_lines)
-
-checking_num = 1000
-data4checking = copy.deepcopy(valid_data[:checking_num])
-random.shuffle(data4checking)
-
 test_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
-filename2ori_test_data = {}
+
+max_lines = None
+train_lfreader = MyLargeFileReader(train_path, max_lines=max_lines)
+train_jsreader = MyLargeJsonlinesFileReader(train_lfreader)
+val_lfreader = MyLargeFileReader(val_path, max_lines=max_lines)
+val_jsreader = MyLargeJsonlinesFileReader(val_lfreader)
+
+train_data = train_jsreader.get_jsonlines_generator()
+
+valid_data = val_jsreader.get_jsonlines_generator()
+data4checking = val_jsreader.get_jsonlines_generator(end_idx=1000)
+
+filename2test_data = {}
 for test_data_path in test_path_list:
     filename = test_data_path.split("/")[-1]
-    ori_test_data = load_data(test_data_path, lines=max_lines)
-    filename2ori_test_data[filename] = ori_test_data
+    test_lfreader = MyLargeFileReader(test_data_path, max_lines=max_lines)
+    test_jsreader = MyLargeJsonlinesFileReader(test_lfreader)
+    test_data = test_jsreader.get_jsonlines_generator()
+    filename2test_data[filename] = test_data
 
 dicts = "dicts.json"
 statistics = "statistics.json"
@@ -114,17 +118,20 @@ statistics_path = os.path.join(data_in_dir, exp_name, statistics)
 dicts_path = os.path.join(data_in_dir, exp_name, dicts)
 statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
 dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 # for preprocessing
 key_map = {
     "char2id": "char_list",
     "word2id": "word_list",
-    "bert_dict": "subword_list",
+    # "bert_dict": "subword_list",
     "pos_tag2id": "pos_tag_list",
     "ner_tag2id": "ner_tag_list",
     "deprel_type2id": "dependency_list",
 }
-key2dict = {}
+key2dict = {
+    "subword_list": BertTokenizer.from_pretrained("../../data/pretrained_models/{}".format(pretrained_model_name)).get_vocab()
+}
 for key, val in dicts.items():
     key2dict[key_map[key]] = val
 
@@ -157,7 +164,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_epochs": 4,
+        "rewarm_epochs": 10,
     },
     "StepLR": {
         "name": "StepLR",
@@ -231,21 +238,6 @@ word_encoder_config = {
     "freeze_word_emb": False,
 } if word_encoder else None
 
-flair_config = {
-    "embedding_models": [
-        {
-            "model_name": "ELMoEmbeddings",
-            "parameters": ["5.5B"],
-        },
-    ]
-} if flair else None
-
-elmo_config = {
-    "model": "5.5B",
-    "finetune": False,
-    "dropout": 0.1,
-} if elmo else None
-
 subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
@@ -262,24 +254,11 @@ dep_config = {
     "gcn_layer_num": 1,
 } if dep_gcn else None
 
-top_multi_attn_config = {
-    "num_heads": 6,
-    "layers": 2,
-    "pos_emb_dim": 64,
-    "fusion_dim": 768,
-}
 
 handshaking_kernel_config = {
     "ent_shaking_type": "cln+lstm",
     "rel_shaking_type": "cln",
 }
-
-top_multi_attn_config = {
-    "num_heads": 3,
-    "layers": 1,
-    "pos_emb_dim": 64,
-    "fusion_dim": 768,
-} if top_attn else None
 
 # model settings
 model_settings = {
@@ -288,10 +267,7 @@ model_settings = {
     "char_encoder_config": char_encoder_config,
     "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
-    "flair_config": flair_config,
-    "elmo_config": elmo_config,
     "dep_config": dep_config,
-    "top_multi_attn_config": top_multi_attn_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,

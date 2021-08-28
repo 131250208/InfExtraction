@@ -14,7 +14,7 @@ def gen_ddp_data(in_file_path):
     cache_path = "../../data/cache/parse_cache_{}.jsonlines".format(in_file_id)
 
     if os.path.exists(cache_path):
-        parse_results = load_data(cache_path, mute=True)
+        parse_results = load_data(cache_path)
         print(">>>>>>>>>>>>>> loaded parse res >>>>>>>>>>>>>>>>>>\n{}".format(in_file_path))
     else:
         parse_results = []

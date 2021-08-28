@@ -3,7 +3,7 @@ from tqdm import tqdm
 import copy
 from transformers import BertTokenizerFast
 import stanza
-from InfExtraction.modules.utils import MyMatrix, save_as_json_lines, load_data
+from InfExtraction.modules.utils import MyMatrix, save_as_json_lines, load_data, func_timer
 from InfExtraction.modules import utils
 import torch
 from pprint import pprint
@@ -12,6 +12,7 @@ import Levenshtein
 import hashlib
 import time
 import json
+
 
 class Indexer:
     def __init__(self, tag2id, max_seq_len, spe_tag_dict):
@@ -680,9 +681,19 @@ class Preprocessor:
 
     @staticmethod
     def trans_duie_2(sample):
+        if "text" in sample:
+            sample["text"] = utils.clean_text(sample["text"])
+
         if "spo_list" in sample:
             rel_list, ent_list = [], []
             for spo in sample["spo_list"]:
+                # clean
+                spo["subject"] = utils.clean_text(spo["subject"])
+                for k, v in spo["object"].items():
+                    spo["object"][k] = utils.clean_text(v)
+
+                spo["object"]["@value"] = utils.clean_text(spo["object"]["@value"])
+
                 rel_list.append({
                     "subject": spo["subject"],
                     "object": spo["object"]["@value"],
@@ -726,12 +737,11 @@ class Preprocessor:
         dataset_type: "train", "valid", "test"; only for generate id for the data
         '''
         for ind, sample in enumerate(data):
-            normal_sample = {}
+            # normal_sample = {}
             if add_id:
-                normal_sample["id"] = "{}_{}".format(dataset_type, ind)
+                sample["id"] = "{}_{}".format(dataset_type, ind)
             else:
                 assert "id" in sample, "miss id in data!"
-                normal_sample["id"] = sample["id"]
 
             if ori_format == "duie_1":
                 Preprocessor.trans_duie_1(sample)
@@ -745,7 +755,7 @@ class Preprocessor:
                 Preprocessor.trans_duee_fin(sample)
 
             if ori_format in {"normal", "duee_fin", "duee_1", "duie_2"}:
-                yield {**normal_sample, **sample}
+                yield sample
                 continue
 
             text, rel_list, subj_key, pred_key, obj_key = None, None, None, None, None
@@ -761,7 +771,7 @@ class Preprocessor:
                 text = sample["sentText"]
                 rel_list = sample["relationMentions"]
                 subj_key, pred_key, obj_key = "em1Text", "label", "em2Text"
-            normal_sample["text"] = text
+            sample["text"] = text
 
             normal_rel_list = []
             normal_ent_list = []
@@ -793,8 +803,8 @@ class Preprocessor:
                         "predicate": rel[pred_key],
                         "object": rel[obj_key],
                     })
-            normal_sample["relation_list"] = normal_rel_list
-            normal_sample["entity_list"] = normal_ent_list
+            sample["relation_list"] = normal_rel_list
+            sample["entity_list"] = normal_ent_list
 
             # clean
             if ori_format in {"casrel", "etl_span", "raw_nyt"}:
@@ -804,15 +814,15 @@ class Preprocessor:
                     text = re.sub("\s+", " ", text).strip()
                     return text
 
-                normal_sample["text"] = clean_text(sample["text"])
+                sample["text"] = clean_text(sample["text"])
                 for ent in sample["entity_list"]:
                     ent["text"] = clean_text(ent["text"])
 
-                for rel in normal_sample["relation_list"]:
+                for rel in sample["relation_list"]:
                     rel["subject"] = clean_text(rel["subject"])
                     rel["object"] = clean_text(rel["object"])
 
-            yield normal_sample
+            yield sample
 
     @staticmethod
     def pre_check_data_annotation(data, language):
@@ -908,8 +918,11 @@ class Preprocessor:
                     entities.extend([arg["text"] for arg in event["argument_list"]])
 
             entities = Preprocessor.unique_list(entities)
+            # try:
             ent2char_spans = self._get_ent2char_spans(sample["text"], entities,
                                                       ignore_subword_match=ignore_subword_match)
+            # except Exception:
+            #     print("debug")
             for ent, sps in ent2char_spans.items():
                 if len(sps) == 0:
                     print("\n>>>>>>>>>>>>>entity: {} not found!>>>>>>>>>>>>>>>>>".format(ent))
@@ -1219,7 +1232,7 @@ class Preprocessor:
                 char_span_list = tok2char_span[tk_sp[0]:tk_sp[1]]
                 char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
             except Exception:
-                print("tok_span2char_span!")
+                print("error in tok_span2char_span function!")
         return char_span
 
     @staticmethod
@@ -1718,7 +1731,7 @@ class Preprocessor:
 
         for data_path in data_paths:
             with open(data_path, "r", encoding="utf-8") as file_in:
-                for line in tqdm(file_in, desc="gen sup data 4 {}".format(data_path)):
+                for line in tqdm(file_in, desc="statistics and sup data fr {}".format(data_path)):
                     sample = json.loads(line)
                     min_subwd_span_start = 99999
                     max_subwd_span_end = 0
@@ -1729,11 +1742,14 @@ class Preprocessor:
                     # POS tag
                     if "pos_tag_list" in sample["features"]:
                         pos_tag_list.extend(sample["features"]["pos_tag_list"])
+                        pos_tag = True
                     # NER tag
                     if "ner_tag_list" in sample["features"]:
                         ner_tag_list.extend(sample["features"]["ner_tag_list"])
+                        ner_tag = True
                     # dependency relations
                     if "word_dependency_list" in sample["features"]:
+                        wd_dep = True
                         deprel_type_list.extend([deprel[-1] for deprel in sample["features"]["word_dependency_list"]])
 
                     t2 = time.time()
@@ -3119,7 +3135,6 @@ class Preprocessor:
         :param key2dict: feature key to dict for indexing
         :param max_seq_len:
         :param max_char_num_in_tok: max character number in a token, truncate or pad to this length
-        :param pretrained_model_padding: for subword ids padding
         :return:
         '''
 
