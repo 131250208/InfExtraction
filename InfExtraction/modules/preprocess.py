@@ -628,7 +628,7 @@ class Preprocessor:
 
                 normal_sample["id"] = sample["id"]
 
-            if ori_format == "tplinker":
+            if ori_format == "normal":
                 normal_sample_list.append({**normal_sample, **sample})
                 continue
 
