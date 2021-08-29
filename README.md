@@ -10,7 +10,6 @@ transformers
 wandb
 stanza
 networkx
-pattern (only for the evaluation of Open Information Extraction tasks)
 python-Levenshtein
 pyahocorasick
 ```
