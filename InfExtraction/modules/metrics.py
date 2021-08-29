@@ -561,7 +561,7 @@ class MetricsCalculator:
 
     @staticmethod
     def get_ee_cpg_dict(pred_sample_list, golden_sample_list):
-        # >>>>>>>>>>>>> init cpg dict >>>>>>>>>>>>>>>>>>>>>>>>
+        # >>>>>>>>>>>>>>>>>> init cpg dict >>>>>>>>>>>>>>>>>>>>>>>>
         ee_cpg_dict = {
             "event_type": [0, 0, 0],
         }
@@ -585,7 +585,7 @@ class MetricsCalculator:
                                                                 "arg_hard_class"}:
                     continue
                 ee_cpg_dict[key] = [0, 0, 0]
-        # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        # >>>>>>>>>>>>>>>> end: init cpg dict >>>>>>>>>>>>>>>>>>>>>>>>>>>
         
         for idx, pred_sample in enumerate(pred_sample_list):
             gold_sample = golden_sample_list[idx]
