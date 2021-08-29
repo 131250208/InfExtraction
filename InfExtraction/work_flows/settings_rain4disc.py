@@ -38,18 +38,18 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "cadec"
+exp_name = "cadec4yelp_"
 language = "en"
 stage = "train"  # inference
 task_type = "re+ner"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "bert-base-cased"
+pretrained_model_name = "yelpbert"
 pretrained_emb_name = "glove.6B.100d.txt"
 use_wandb = True
 note = ""
-epochs = 1000
+epochs = 300
 lr = 1e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
@@ -83,8 +83,6 @@ dep_gcn = False
 word_encoder = False
 subwd_encoder = True
 use_attns4rel = True  # used only if subwd_encoder (bert) is True
-flair = False
-elmo = False
 
 # data
 data_in_dir = "../../data/normal_data"
@@ -127,12 +125,8 @@ for key, val in dicts.items():
 # additional preprocessing
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
-    "classify_entities_by_relation": False,  # ee, re
-    "add_nested_relation": False,  # ner
-    "add_same_type_relation": False,  # ner
-    "add_next_link": True,  # if set to False, can not cover all cases. e.g. ent1: A -> B -> C. ent 2: B -> C,
-                             # only ent 1 will be extracted by clique finding
-    "use_bound": False,
+    "classify_entities_by_relation": False,
+    "use_bound": True,
 }
 
 # tagger config
@@ -140,7 +134,6 @@ tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "add_h2t_n_t2h_links": True,
     "language": language,
-    "add_next_link": addtional_preprocessing_config["add_next_link"],
     "use_bound": addtional_preprocessing_config["use_bound"],
 }
 
@@ -228,21 +221,6 @@ word_encoder_config = {
     "freeze_word_emb": False,
 } if word_encoder else None
 
-flair_config = {
-    "embedding_models": [
-        {
-            "model_name": "ELMoEmbeddings",
-            "parameters": ["5.5B"],
-        },
-    ]
-} if flair else None
-
-elmo_config = {
-    "model": "5.5B",
-    "finetune": True,
-    "dropout": 0.1,
-} if elmo else None
-
 subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
@@ -271,8 +249,6 @@ model_settings = {
     "char_encoder_config": char_encoder_config,
     "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
-    "flair_config": flair_config,
-    "elmo_config": elmo_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,

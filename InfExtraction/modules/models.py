@@ -20,11 +20,6 @@ import logging
 from IPython.core.debugger import set_trace
 import time
 import torch.nn.functional as F
-from flair.embeddings import StackedEmbeddings
-from flair.data import Sentence
-from flair import embeddings as flair_embeddings
-from flair.tokenization import SpaceTokenizer
-from allennlp.modules.elmo import Elmo, batch_to_ids
 
 class IEModel(nn.Module, metaclass=ABCMeta):
     def __init__(self,
@@ -32,8 +27,6 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                  metrics_cal,
                  char_encoder_config=None,
                  subwd_encoder_config=None,
-                 flair_config=None,
-                 elmo_config=None,
                  word_encoder_config=None,
                  ner_tag_emb_config=None,
                  pos_tag_emb_config=None,
@@ -163,54 +156,6 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                                         batch_first=True)
             self.cat_hidden_size += word_bilstm_hidden_size[1]
 
-        # flair embeddings
-        self.flair_config = flair_config
-        if flair_config is not None:
-            print("init flair embedding models...")
-            embedding_model_configs = flair_config["embedding_models"]
-            embedding_models = [getattr(flair_embeddings, config["model_name"])(*config["parameters"]) for config in
-                                embedding_model_configs]
-            for elmo_model in embedding_models:
-                self.cat_hidden_size += elmo_model.embedding_length
-            self.flair_emb = StackedEmbeddings(embedding_models)
-            print("done!")
-
-        # elmo
-        self.elmo_config = elmo_config
-        if elmo_config is not None:
-
-            elmo_model = elmo_config["model"]
-            finetune_elmo = elmo_config["finetune"]
-            elmo_dropout = elmo_config["dropout"]
-            # num_output_representations = elmo_config["num_output_representations"]
-
-            options_file, weight_file = None, None
-            if elmo_model == "small":
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x1024_128_2048cnn_1xhighway/elmo_2x1024_128_2048cnn_1xhighway_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x1024_128_2048cnn_1xhighway/elmo_2x1024_128_2048cnn_1xhighway_weights.hdf5"
-            if elmo_model == "medium":
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x2048_256_2048cnn_1xhighway/elmo_2x2048_256_2048cnn_1xhighway_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x2048_256_2048cnn_1xhighway/elmo_2x2048_256_2048cnn_1xhighway_weights.hdf5"
-            if elmo_model in ["large", "5.5B"]:
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_weights.hdf5"
-            if elmo_model == "pt" or elmo_model == "portuguese":
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pt/elmo_pt_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pt/elmo_pt_weights.hdf5"
-            if elmo_model == "pubmed":
-                options_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pubmed/elmo_2x4096_512_2048cnn_2xhighway_options.json"
-                weight_file = "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/contributed/pubmed/elmo_2x4096_512_2048cnn_2xhighway_weights_PubMed_only.hdf5"
-
-            print("init elmo ...")
-            self.elmo = Elmo(options_file,
-                             weight_file,
-                             num_output_representations=1,
-                             requires_grad=finetune_elmo,
-                             dropout=elmo_dropout,
-                             )
-            self.cat_hidden_size += self.elmo.get_output_dim()
-            print("done!")
-
         # subword_encoder
         self.subwd_encoder_config = subwd_encoder_config
         if subwd_encoder_config is not None:
@@ -245,10 +190,8 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                 self.cat_hidden_size += dep_gcn_dim
 
     def _cat_features(self,
-                      padded_text_list=None,
                       char_input_ids=None,
                       word_input_ids=None,
-                      elmo_ids=None,
                       subword_input_ids=None,
                       attention_mask=None,
                       token_type_ids=None,
@@ -295,16 +238,6 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
             features.append(word_hiddens)
 
-        # flair embedding
-        if self.flair_config is not None:
-            self.flair_emb.embed(padded_text_list)
-            flair_embeddings = torch.stack([torch.stack([tok.embedding for tok in sent]) for sent in padded_text_list])
-            features.append(flair_embeddings)
-
-        if self.elmo_config is not None:
-            embeddings = self.elmo(elmo_ids)
-            features.append(embeddings["elmo_representations"][0])
-
         # subword
         if self.subwd_encoder_config is not None:
             # subword_input_ids, attention_mask, token_type_ids: (batch_size, seq_len)
@@ -347,16 +280,6 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             "sample_list": [sample for sample in batch_data],
         }
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
-
-        if self.flair_config is not None:
-            batch_dict["padded_text_list"] = [
-                Sentence(sample["features"]["padded_text"],
-                         use_tokenizer=SpaceTokenizer())
-                for sample in batch_data]
-
-        if self.elmo_config is not None:
-            elmo_ids_list = [sample["features"]["word_list"] for sample in batch_data]
-            batch_dict["elmo_ids"] = batch_to_ids(elmo_ids_list)
 
         if self.subwd_encoder_config is not None:
             subword_input_ids_list = []
