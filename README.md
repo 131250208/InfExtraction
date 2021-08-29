@@ -1,5 +1,5 @@
 # News
-This repository contains the code for the paper: [Discontinuous Named Entity Recognition as Maximal Clique Discovery](https://aclanthology.org/2021.acl-long.63.pdf), which in the proceedings of [ACL 2021](https://2021.aclweb.org/). 
+This repository contains the code for the paper: [Discontinuous Named Entity Recognition as Maximal Clique Discovery](https://aclanthology.org/2021.acl-long.63.pdf), which is in the proceedings of [ACL 2021](https://2021.aclweb.org/). 
 
 # Information Extraction
 ## Requirements
