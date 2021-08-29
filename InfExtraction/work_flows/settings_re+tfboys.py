@@ -84,8 +84,6 @@ char_encoder = True
 word_encoder = True
 subwd_encoder = True
 use_attns4rel = True  # use only if subwd_encoder (bert) is True
-flair = False
-elmo = False
 
 # >>>>>>>>>>>>>>>>>>>> data >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 data_in_dir = "../../data/normal_data"
@@ -195,7 +193,7 @@ model_state_dict_path = None
 model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
 target_run_ids = ["1bupwzu7", ]
 model_path_ids2infer = [-1, ]
-metric4testing = "arg_link_class_f1"
+metric4testing = "arg_class_f1"
 main_test_set_name = "test_data.json"
 cal_scores = True  # set False if the test sets are not annotated
 
@@ -234,15 +232,6 @@ word_encoder_config = {
     "freeze_word_emb": False,
 } if word_encoder else None
 
-flair_config = {
-    "embedding_models": [
-        {
-            "model_name": "ELMoEmbeddings",
-            "parameters": [],
-        },
-    ]
-} if flair else None
-
 subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
@@ -276,7 +265,6 @@ model_settings = {
     "char_encoder_config": char_encoder_config,
     "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
-    "flair_config": flair_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
