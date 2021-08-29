@@ -1,18 +1,21 @@
+# News
+This repository contains the code for the paper: [Discontinuous Named Entity Recognition as Maximal Clique Discovery](https://aclanthology.org/2021.acl-long.63.pdf), which in the proceedings of [ACL 2021](https://2021.aclweb.org/). 
+
 # Information Extraction
 ## Requirements
 
 ```
 torch
-flair
-allennlp
 transformers
 wandb
 stanza
 networkx
-pattern
+pattern (only for the evaluation of Open Information Extraction tasks)
 python-Levenshtein
 pyahocorasick
 ```
+
+## The pattern.en.lemma Problem (Skip if you do not use OIE)
 **Note: `pattern.en.lemma` is required for the evaluation of OIE (Open Information Extraction) task. 
 To avoid some problems and save your time, please follow these steps to install `pattern`**:
 
@@ -75,15 +78,17 @@ def patch_pattern():
 
 ## Usage
 ### Data format
-We provided some codes for converting several data formats to ours: 
+We provided some codes for converting several data formats to ours, set up in the `setting_preprocessing.py`: 
 ```
-casrel (for nyt_star and webnlg_star), etl_span (for webnlg), raw_nyt (for nyt), 
+ori_data_format: casrel (for nyt_star and webnlg_star), etl_span (for webnlg), raw_nyt (for nyt), 
 duie_1, duie_2, duee_1, duee_fin
 ```
-Check out [TPlinker](https://github.com/131250208/TPlinker-joint-extraction) for the description of `casrel`, `etl_span`, and `raw_nyt`. 
-And `du*` are the Qian Yan datasets provided by Baidu. We provide a fast [link](https://drive.google.com/drive/folders/13cXK0KZYmyhpVKa75m7vcnnlRzZxwSGk?usp=sharing) to download these datasets.
 
-For other datasets, you need to transform your data to our format (check out `data_example/data.json` for more details):
+For the description of `casrel`, `etl_span`, and `raw_nyt`, check it out in [TPlinker](https://github.com/131250208/TPlinker-joint-extraction). 
+The `du*` is for Qian Yan datasets provided by Baidu. 
+We provide a fast [link](https://drive.google.com/drive/folders/13cXK0KZYmyhpVKa75m7vcnnlRzZxwSGk?usp=sharing) to download these datasets.
+
+For other datasets, you need to change the format by yourself (check out `data_example/data.json` for more details):
 ```json
 {
     "id": "<id>",
@@ -269,9 +274,8 @@ Download datasets
 * CADEC: https://data.csiro.au/dap/landingpage?pid=csiro:10948&v=3&d=true
 * ShARe 13: https://physionet.org/content/shareclefehealth2013/1.0/
 * ShARe 14: https://physionet.org/content/shareclefehealth2014task2/1.0/
-Preprocess the datasets by the open-sourced code of [Trans](https://github.com/daixiangau/acl2020-transition-discontinuous-ner).
 
-Transform data
+Preprocess the datasets by the open-sourced code of [transition-discontinuous-ner](https://github.com/daixiangau/acl2020-transition-discontinuous-ner). Then change the data format use following code:
 ```python
 import os
 from  InfExtraction.work_flows.format_conv import trans_daixiang_data
