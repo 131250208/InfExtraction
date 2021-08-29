@@ -1,5 +1,5 @@
 import os
-device_num = 0
+device_num = 1
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -149,7 +149,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_epochs": 4,
+        "rewarm_epochs": 10,
     },
     "StepLR": {
         "name": "StepLR",
@@ -180,10 +180,10 @@ trainer_config = {
 model_state_dict_path = None
 
 # for test
-model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
+model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
 target_run_ids = ["0kQIoiOs", ]
 top_k_models = 1
-metric4testing = "trigger_class_f1"
+metric4testing = "ent_exact_offset_f1"
 cal_scores = True  # set False if the test sets are not annotated
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
