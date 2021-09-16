@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -38,14 +38,14 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "ace2005_lu"
+exp_name = "fewfc"
 load_data2memory = True
 language = "en"
 task_type = "re+tfboys"
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "bert-base-uncased"
+pretrained_model_name = "macbert-base"
 pretrained_emb_name = "glove.6B.100d.txt"
 use_wandb = True
 note = ""
@@ -54,7 +54,7 @@ lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
 split_early_stop = True
 drop_neg_samples = False
-combine = True
+combine = False
 scheduler = "CAWR"
 use_ghm = False
 
@@ -65,23 +65,23 @@ batch_size_train = 12
 batch_size_valid = 12
 batch_size_test = 12
 
-max_seq_len_train = 64
+max_seq_len_train = 100
 max_seq_len_valid = 100
 max_seq_len_test = 100
 
-sliding_len_train = 64
+sliding_len_train = 100
 sliding_len_valid = 100
 sliding_len_test = 100
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
 
-pos_tag_emb = True
-ner_tag_emb = True
-use_deprel = True
+pos_tag_emb = False
+ner_tag_emb = False
+use_deprel = False
 
-char_encoder = True
-word_encoder = True
+char_encoder = False
+word_encoder = False
 subwd_encoder = True
 use_attns4rel = True  # use only if subwd_encoder (bert) is True
 

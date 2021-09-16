@@ -2614,9 +2614,9 @@ def trans2cmeee_format():
     json.dump(new_data, open(out_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
 
-def trans_tfboys_baselines2normal_format(baseline_name):
-    ac_path = "../../data/tfboys_baselines/{}/ac_prediction.json".format(baseline_name)
-    ed_path = "../../data/tfboys_baselines/{}/ed_prediction.json".format(baseline_name)
+def trans_tfboys_baselines2normal_format(dataset, baseline_name):
+    ac_path = "../../data/tfboys_baselines/{}/{}/ac_prediction.json".format(dataset, baseline_name)
+    ed_path = "../../data/tfboys_baselines/{}/{}/ed_prediction.json".format(dataset, baseline_name)
     ed_data = load_data(ed_path)
     ac_data = load_data(ac_path)
     sent_id2event_pred = {}
@@ -2897,21 +2897,21 @@ if __name__ == "__main__":
     #             formated_data = trans2duee_fin_format(ori_data)
     #             save_as_json_lines(formated_data, out_path)
 
-    # pred_data, gold_data = trans_tfboys_baselines2normal_format("dbrnn")
+    baseline_pred_data, baseline_gold_data = trans_tfboys_baselines2normal_format("fewfc", "dbrnn")
 
     # tbee_pred_data_path = "../../data/res_data/ace2005_lu/re+tee+RAIN+TRAIN/h87pgw2q/model_state_dict_97_53.333/0_test_data.json"
     # tfee_pred_data_path = "../../data/res_data/ace2005_lu/re+tfboys+RAIN+TRAIN/1bupwzu7/model_state_dict_71_53.844/2_test_data.json"
     # gold_data_path = "../../data/normal_data/ace2005_lu/test_data.json"
-    #
+    # #
     # tbee_pred_data = load_data(tbee_pred_data_path)
     # # tfee_pred_data = load_data(tfee_pred_data_path)
     # gold_data = load_data(gold_data_path)
     # gold_data = Preprocessor.choose_spans_by_token_level(gold_data, "subword")
-    #
-    # # pred_data = rm_triggers(pred_data)
-    # # gold_data = rm_triggers(gold_data)
-    # score_dict = MetricsCalculator.score(tbee_pred_data, gold_data)
-    # pprint(score_dict)
+
+    # pred_data = rm_triggers(pred_data)
+    # gold_data = rm_triggers(gold_data)
+    score_dict = MetricsCalculator.score(baseline_pred_data, baseline_gold_data)
+    pprint(score_dict)
     #
     # gold_id2events_dict = {sample["id"]:sample["event_list"] for sample in gold_data}
     # tbee_id2events_dict = {sample["id"]: sample["event_list"] for sample in tbee_pred_data}
