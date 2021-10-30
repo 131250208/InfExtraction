@@ -10,7 +10,7 @@ import time
 from InfExtraction.modules.utils import MyLargeFileReader, MyLargeJsonlinesFileReader
 from transformers import BertTokenizer
 
-seed = 2021
+seed = 2333
 enable_bm = True
 
 
@@ -60,17 +60,17 @@ scheduler = "CAWR"
 use_ghm = False
 
 metric_keyword = "f1"  # save models on which metric: f1, ...
-model_bag_size = 15
+model_bag_size = 0
 
 batch_size_train = 12
 batch_size_valid = 12
 batch_size_test = 12 
 
-max_seq_len_train = 100
+max_seq_len_train = 64
 max_seq_len_valid = 100
 max_seq_len_test = 100
 
-sliding_len_train = 100
+sliding_len_train = 64
 sliding_len_valid = 100
 sliding_len_test = 100
 

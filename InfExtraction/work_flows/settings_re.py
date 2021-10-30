@@ -49,7 +49,7 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-base-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
+use_wandb = True
 note = ""
 epochs = 100
 lr = 5e-5  # 5e-5, 1e-4
@@ -60,8 +60,8 @@ combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
 
-metric_keyword = "rel_exact_text_f1"  # save models on which metric: f1, ...
-model_bag_size = 3
+metric_keyword = "f1"  # save models on which metric: f1, ...
+model_bag_size = 0
 
 batch_size_train = 6
 batch_size_valid = 6
@@ -85,7 +85,7 @@ char_encoder = False
 dep_gcn = False
 word_encoder = False
 subwd_encoder = True
-use_attns4rel = True  # used only if subwd_encoder (bert) is True
+use_attns4rel = False  # used only if subwd_encoder (bert) is True
 # flair = False
 # elmo = False
 # top_attn = False
@@ -272,10 +272,10 @@ dep_config = {
 
 
 handshaking_kernel_config = {
-    "ent_shaking_type": "cln+bilstm",
+    "ent_shaking_type": "cln+lstm",
     "rel_shaking_type": "cln",
-    "ent_dist_emb_dim": 64,
-    "rel_dist_emb_dim": -1,
+    # "ent_dist_emb_dim": 64,
+    # "rel_dist_emb_dim": -1,
 }
 
 # top_multi_attn_config = {
@@ -301,7 +301,7 @@ model_settings = {
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
     "rel_dim": 768,
-    "span_len_emb_dim": -1,
+    "span_len_emb_dim": 64,
     "emb_ent_info2rel": False,
     "golden_ent_cla_guide": False,
     "loss_weight": 0.5,
