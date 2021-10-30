@@ -439,6 +439,8 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
                 tok_sp = [pt[0], pt[1] + 1]
                 char_span_list = tok2char_span[tok_sp[0]:tok_sp[1]]
                 char_sp = [char_span_list[0][0], char_span_list[-1][1]]
+                if char_sp[1] == 0:  # if [PAD] tokens are included, char_sp would be [*, 0]
+                    continue
                 ent_text = text[char_sp[0]:char_sp[1]]
 
                 entity = {

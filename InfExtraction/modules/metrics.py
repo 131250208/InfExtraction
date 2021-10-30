@@ -223,7 +223,7 @@ class MetricsCalculator:
 
         for rel in rel_list:
             part_subj = MetricsCalculator.get_partial_ent(rel["subject"])
-            part_obj = MetricsCalculator.get_partial_ent(rel["subject"])
+            part_obj = MetricsCalculator.get_partial_ent(rel["object"])
             rel_partial_text_set.add(str([part_subj, rel["predicate"], part_obj]))
             rel_exact_text_set.add(str([rel["subject"], rel["predicate"], rel["object"]]))
             rel_partial_offset_set.add(str([rel["subj_tok_span"][0], rel["predicate"], rel["obj_tok_span"][0]]))

@@ -38,7 +38,7 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "webnlg"
+exp_name = "webnlg_star"
 language = "en"
 stage = "train"  # inference
 task_type = "re"  # re, re+ee
@@ -47,7 +47,7 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-base-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
+use_wandb = True
 note = ""
 epochs = 100
 lr = 5e-5  # 5e-5, 1e-4
@@ -57,7 +57,7 @@ drop_neg_samples = True
 combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 5  # if no saving, set to 0
+model_bag_size = 0  # if no saving, set to 0
 
 batch_size_train = 6
 batch_size_valid = 6
@@ -114,9 +114,7 @@ for key, val in dicts.items():
 # additional preprocessing
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
-    "classify_entities_by_relation": False,  # ee, re
-    "add_nested_relation": False,  # ner
-    "add_same_type_relation": False,  # ner
+    "classify_entities_by_relation": False,
 }
 
 # tagger config
@@ -124,7 +122,6 @@ tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "add_h2t_n_t2h_links": False,
     "language": "en",
-    "add_next_link": addtional_preprocessing_config["add_next_link"],
 }
 
 # optimizers and schedulers
@@ -228,15 +225,6 @@ word_encoder_config = {
     "freeze_word_emb": False,
 } if word_encoder else None
 
-flair_config = {
-    "embedding_models": [
-        {
-            "model_name": "ELMoEmbeddings",
-            "parameters": [],
-        },
-    ]
-} if flair else None
-
 subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
@@ -265,15 +253,15 @@ model_settings = {
     "char_encoder_config": char_encoder_config,
     "subwd_encoder_config": subwd_encoder_config,
     "word_encoder_config": word_encoder_config,
-    "flair_config": flair_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
     "rel_dim": 768,
     "do_span_len_emb": True,
-    "emb_ent_info2rel": True,
-    "golden_ent_cla_guide": True,
+    "emb_ent_info2rel": False,  # 加速收敛
+    "golden_ent_cla_guide": False,
+    "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
 }
 
