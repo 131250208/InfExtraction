@@ -614,12 +614,20 @@ class Tagger4RAIN(Tagger4TPLinkerPlus):
                     (subj_tok_span[0], obj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "SH2OH"])]))
                 rel_matrix_points.append(
                     (subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "ST2OT"])]))
+                rel_matrix_points.append(
+                    (obj_tok_span[0], subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OH2SH"])]))
+                rel_matrix_points.append(
+                    (obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OT2ST"])]))
 
                 if self.add_h2t_n_t2h_links:
                     rel_matrix_points.append(
                         (subj_tok_span[0], obj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "SH2OT"])]))
                     rel_matrix_points.append(
                         (subj_tok_span[1] - 1, obj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "ST2OH"])]))
+                    rel_matrix_points.append(
+                        (obj_tok_span[1] - 1, subj_tok_span[0], self.rel_tag2id[self.separator.join([rel, "OT2SH"])]))
+                    rel_matrix_points.append(
+                        (obj_tok_span[0], subj_tok_span[1] - 1, self.rel_tag2id[self.separator.join([rel, "OH2ST"])]))
 
         return Preprocessor.unique_list(ent_matrix_points), Preprocessor.unique_list(rel_matrix_points)
 
@@ -687,13 +695,26 @@ class Tagger4RAIN(Tagger4TPLinkerPlus):
         for pt in rel_points:
             tag = self.id2rel_tag[pt[2]]
             rel, link_type = tag.split(self.separator)
+            index_pair = "{},{}".format(pt[0], pt[1])
+
+            if link_type[0] == "O":  # OH2SH, OT2ST ... -> SH2OH, ST2OT
+                sph, spt = link_type.split("2")
+                link_type = "2".join([spt, sph])
+                index_pair = "{},{}".format(pt[1], pt[0])
+
             if rel not in rel2link_type_map:
                 rel2link_type_map[rel] = {}
-            index_pair = "{},{}".format(pt[0], pt[1])
             if index_pair not in rel2link_type_map[rel]:
                 rel2link_type_map[rel][index_pair] = {}
-            rel2link_type_map[rel][index_pair][link_type] = pred_rel_conf[pt[0]][pt[1]][pt[2]].item() \
-                if pred_rel_conf is not None else 1.
+
+            # cal conf
+            if pred_rel_conf is None:
+                rel2link_type_map[rel][index_pair][link_type] = 1.
+            elif link_type in rel2link_type_map[rel][index_pair]:  # confident score may be already in because of the transfer (OH2SH, OT2ST ... -> SH2OH, ST2OT
+                rel2link_type_map[rel][index_pair][link_type] = max(rel2link_type_map[rel][index_pair][link_type],
+                                                                    pred_rel_conf[pt[0]][pt[1]][pt[2]].item())
+            else:
+                rel2link_type_map[rel][index_pair][link_type] = pred_rel_conf[pt[0]][pt[1]][pt[2]].item()
 
         for rel, link_type_map in rel2link_type_map.items():
             cand_ent_list4rel = rel2candidate_ents.get(rel, []) \
@@ -745,6 +766,7 @@ class Tagger4RAIN(Tagger4TPLinkerPlus):
             [ent for ent in ent_list if re.search(ent_filter_pattern, ent["type"]) is None])
 
         return pred_sample
+
 
 
 def create_rebased_ee_tagger(base_class):
