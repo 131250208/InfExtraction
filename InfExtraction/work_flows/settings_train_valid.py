@@ -47,11 +47,11 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-base-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
+use_wandb = True
 note = ""
 epochs = 100
 lr = 5e-5  # 5e-5, 1e-4
-check_tagging_n_decoding = True
+check_tagging_n_decoding = False
 split_early_stop = True
 drop_neg_samples = True
 combine = False  # combine splits
@@ -264,6 +264,7 @@ model_settings = {
     "init_loss_weight": 0.5,
     "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
+    "rel_description_dict": statistics["rel_type2desc"],
 }
 
 model_settings_log = copy.deepcopy(model_settings)

@@ -4,14 +4,12 @@ from abc import ABCMeta, abstractmethod
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
-from transformers import BertModel
+from transformers import BertModel, BertTokenizerFast
 from InfExtraction.modules.model_components import (HandshakingKernel,
-                                                    HandshakingKernelDora,
-                                                    HandshakingKernel4TP3,
                                                     LayerNorm,
                                                     GraphConvLayer,
-                                                    InteractionKernel,
-                                                    SingleSourceHandshakingKernel)
+                                                    SingleSourceHandshakingKernel,
+                                                    MatchingLinear)
 from torch.nn.parameter import Parameter
 from InfExtraction.modules.preprocess import Indexer
 from InfExtraction.modules.utils import MyMatrix
@@ -189,30 +187,33 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                 self.gcn_layers.append(GraphConvLayer(dep_type_emb_dim, dep_gcn_dim, "avg"))
                 self.cat_hidden_size += dep_gcn_dim
 
-    def _cat_features(self,
-                      char_input_ids=None,
-                      word_input_ids=None,
-                      subword_input_ids=None,
-                      attention_mask=None,
-                      token_type_ids=None,
-                      ner_tag_ids=None,
-                      pos_tag_ids=None,
-                      dep_adj_matrix=None):
+    def get_basic_features(self,
+                           char_input_ids=None,
+                           word_input_ids=None,
+                           subword_input_ids=None,
+                           attention_mask=None,
+                           token_type_ids=None,
+                           ner_tag_ids=None,
+                           pos_tag_ids=None,
+                           dep_adj_matrix=None):
 
         # features
         features = []
+        feature_dict = {}
 
         # ner tag
         if self.ner_tag_emb_config is not None:
             ner_tag_embeddings = self.ner_tag_emb(ner_tag_ids)
             ner_tag_embeddings = self.ner_tag_emb_dropout(ner_tag_embeddings)
             features.append(ner_tag_embeddings)
+            feature_dict["ner_tag_embeddings"] = ner_tag_embeddings
 
         # pos tag
         if self.pos_tag_emb_config is not None:
             pos_tag_embeddings = self.pos_tag_emb(pos_tag_ids)
             pos_tag_embeddings = self.pos_tag_emb_dropout(pos_tag_embeddings)
             features.append(pos_tag_embeddings)
+            feature_dict["pos_tag_embeddings"] = pos_tag_embeddings
 
         # char
         if self.char_encoder_config is not None:
@@ -223,8 +224,9 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             char_input_emb = self.char_emb_dropout(char_input_emb)
             char_hiddens, _ = self.char_lstm_l1(char_input_emb)
             char_hiddens, _ = self.char_lstm_l2(self.char_lstm_dropout(char_hiddens))
-            char_conv_oudtut = self.char_cnn(char_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
-            features.append(char_conv_oudtut)
+            char_conv_output = self.char_cnn(char_hiddens.permute(0, 2, 1)).permute(0, 2, 1)
+            features.append(char_conv_output)
+            feature_dict["char_conv_output"] = char_conv_output
 
         # word
         if self.word_encoder_config is not None:
@@ -237,6 +239,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             word_hiddens, _ = self.word_lstm_l1(word_fts)
             word_hiddens, _ = self.word_lstm_l2(self.word_lstm_dropout(word_hiddens))
             features.append(word_hiddens)
+            feature_dict["word_hiddens"] = word_hiddens
 
         # subword
         if self.subwd_encoder_config is not None:
@@ -248,6 +251,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
             subword_hiddens = torch.mean(torch.stack(list(hidden_states)[-self.use_last_k_layers_bert:], dim=0),
                                          dim=0)
             features.append(subword_hiddens)
+            feature_dict["subword_hiddens"] = subword_hiddens
 
         # dependencies
         if self.dep_config is not None:
@@ -267,7 +271,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         # concatenated_hiddens: (batch_size, seq_len, concatenated_size)
         cat_hiddens = torch.cat(features, dim=-1)
 
-        return cat_hiddens
+        return cat_hiddens, feature_dict
 
     def forward(self):
         if self.training:
@@ -370,7 +374,7 @@ class TPLinkerPlus(IEModel):
 
     def forward(self, **kwargs):
         super(TPLinkerPlus, self).forward()
-        cat_hiddens = self._cat_features(**kwargs)
+        cat_hiddens, _ = self.get_basic_features(**kwargs)
         cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
         # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # shaking_seq_len: max_seq_len * vf - sum(1, vf)
@@ -407,6 +411,7 @@ class RAIN(IEModel):
                  loss_weight_recover_steps=None,
                  loss_weight=.5,
                  init_loss_weight=.5,
+                 rel_description_dict=None,
                  **kwargs,
                  ):
         super().__init__(tagger, metrics_cal, **kwargs)
@@ -432,6 +437,7 @@ class RAIN(IEModel):
                                                                     only_look_after=False,
                                                                     )
 
+        # attention matrices
         self.use_attns4rel = use_attns4rel
         if use_attns4rel:
             self.attns_fc = nn.Linear(self.bert.config.num_hidden_layers * self.bert.config.num_attention_heads,
@@ -460,8 +466,38 @@ class RAIN(IEModel):
             self.cln4rel_guide = LayerNorm(rel_dim, tp_dim, conditional=True)
 
         # decoding fc
-        self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
-        self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
+        self.use_rel_desc = False
+        if rel_description_dict is None:
+            self.ent_fc = nn.Linear(ent_dim, self.ent_tag_size)
+            self.rel_fc = nn.Linear(rel_dim, self.rel_tag_size)
+        else:
+            self.use_rel_desc = True
+            self.ent_fc = nn.Linear(ent_dim + self.bert.config.hidden_size, self.ent_tag_size)
+            # self.rel_mat_fc = nn.Linear(rel_dim,
+            #                             self.rel_tag_size)
+            # self.rel_tri_fc = nn.Linear(self.bert.config.hidden_size, len(self.tagger.get_rel_link_types()))
+
+            self.rel_fc = MatchingLinear(rel_dim, len(self.tagger.get_rel_link_types()))
+
+            rel_descriptions = [rel_description_dict[rel] for rel in sorted(self.tagger.get_rel2id())]
+            bert_tokenizer = BertTokenizerFast.from_pretrained(self.subwd_encoder_config["pretrained_model_path"])
+            self.rel_desc_codes = bert_tokenizer.batch_encode_plus(rel_descriptions,
+                                                                   padding=True,
+                                                                   truncation=True,
+                                                                   max_length=20,
+                                                                   return_tensors="pt")
+
+            self.rel_randint_embeddings = Parameter(torch.randn(len(rel_descriptions), self.bert.config.hidden_size))
+            # self.tri_randint_embeddings = Parameter(torch.randn(len(rel_descriptions), self.bert.config.hidden_size))
+
+            # lamtha for mix pooling
+            self.lamtha_1 = Parameter(torch.rand(self.bert.config.hidden_size))
+            self.lamtha_2 = Parameter(torch.rand(self.bert.config.hidden_size))
+            self.lamtha_3 = Parameter(torch.rand(self.bert.config.hidden_size))
+            # self.lamtha_4 = Parameter(torch.rand(self.bert.config.hidden_size))
+
+            # attention for relation trigger representation
+            self.attn4rel_tri = nn.MultiheadAttention(self.bert.config.hidden_size, 4)
 
     def generate_batch(self, batch_data):
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
@@ -541,7 +577,7 @@ class RAIN(IEModel):
         super(RAIN, self).forward()
         ent_class_guide = kwargs["golden_ent_class_guide"]
         del kwargs["golden_ent_class_guide"]
-        cat_hiddens = self._cat_features(**kwargs)
+        cat_hiddens, basic_feature_dict = self.get_basic_features(**kwargs)
 
         batch_size, seq_len, _ = cat_hiddens.size()
 
@@ -574,7 +610,55 @@ class RAIN(IEModel):
             span_len_emb = self.span_len_emb(self.span_len_seq)
             ent_hs_hiddens = torch.cat([ent_hs_hiddens, span_len_emb], dim=-1)
 
-        pred_ent_output = self.ent_fc(ent_hs_hiddens)
+        # rel descriptions
+        if self.use_rel_desc:
+            rel_desc_input_ids, \
+            rel_desc_attention_mask, \
+            rel_desc_token_type_ids = self.rel_desc_codes["input_ids"], \
+                                      self.rel_desc_codes["attention_mask"], \
+                                      self.rel_desc_codes["token_type_ids"]
+            rel_desc_input_ids = rel_desc_input_ids.to(cat_hiddens.device)
+            rel_desc_attention_mask = rel_desc_attention_mask.to(cat_hiddens.device)
+            rel_desc_token_type_ids = rel_desc_token_type_ids.to(cat_hiddens.device)
+
+            context_outputs4rel_desc = self.bert(rel_desc_input_ids,
+                                                 rel_desc_attention_mask,
+                                                 rel_desc_token_type_ids)
+
+            # (rel_size, desc_len, hidden_size)
+            rel_desc_hiddens = context_outputs4rel_desc[0]
+            rel_size = rel_desc_hiddens.size()[0]
+            # (rel_size, hidden_size)
+            rel_desc_hiddens = self.lamtha_1 * torch.mean(rel_desc_hiddens, dim=1) + \
+                               (1 - self.lamtha_1) * torch.max(rel_desc_hiddens, dim=1)[0]
+            rel_desc_hiddens = self.lamtha_3 * rel_desc_hiddens + \
+                               (1 - self.lamtha_3) * self.rel_randint_embeddings
+
+            # (batch_size, rel_size, hidden_size)
+            rel_desc_hiddens = rel_desc_hiddens[None, :, :].repeat(batch_size, 1, 1)
+            rel_tri_rep, attn_output_weights = self.attn4rel_tri(rel_desc_hiddens.permute(1, 0, 2),
+                                                                 basic_feature_dict["subword_hiddens"].permute(1, 0,
+                                                                                                               2),
+                                                                 basic_feature_dict["subword_hiddens"].permute(1, 0,
+                                                                                                               2))
+            # (batch_size, rel size, hidden_size)
+            rel_tri_rep = rel_tri_rep.permute(1, 0, 2)
+            # rel_tri_rep = self.lamtha_4 * rel_tri_rep + \
+            #                    (1 - self.lamtha_4) * self.tri_randint_embeddings
+
+            # (batch_size, hidden_size)
+            rel_tri_rep4ent = self.lamtha_2 * torch.mean(rel_tri_rep, dim=1) + \
+                              (1 - self.lamtha_2) * torch.max(rel_tri_rep, dim=1)[0]
+            # (batch_size, shaking_seq_len, hidden_size)
+            rel_tri_rep4ent = rel_tri_rep4ent[:, None, :].repeat(1, ent_hs_hiddens.size()[1], 1)
+            # (batch_size, seq_len, seq_len, rel_size, hidden_size)
+            # rel_tri_rep4rel = rel_tri_rep[:, None, None, :, :].repeat(1, seq_len, seq_len, 1, 1)
+            # print("!!")
+
+        if not self.use_rel_desc:
+            pred_ent_output = self.ent_fc(ent_hs_hiddens)
+        else:
+            pred_ent_output = self.ent_fc(torch.cat([ent_hs_hiddens, rel_tri_rep4ent], dim=-1))
 
         # embed entity info into relation hiddens
         if self.emb_ent_info2rel:
@@ -584,7 +668,17 @@ class RAIN(IEModel):
             boundary_tok_inter_pre = self.get_rel_guide(ent_hs_hiddens, ent_class_guide)
             rel_hs_hiddens = self.cln4rel_guide(rel_hs_hiddens, boundary_tok_inter_pre)
 
-        pred_rel_output = self.rel_fc(rel_hs_hiddens)
+        if not self.use_rel_desc:
+            pred_rel_output = self.rel_fc(rel_hs_hiddens)
+        else:
+            # pred_rel_output = self.rel_mat_fc(rel_hs_hiddens) + self.rel_tri_fc(rel_tri_rep).view(batch_size, -1)[:, None, None, :]
+
+            # pred_rel_output = self.rel_mat_fc(rel_hs_hiddens)[:, :, :, None, :] + self.rel_tri_fc(rel_tri_rep)[:, None, None, :, :]
+            # pred_rel_output = pred_rel_output.view(batch_size, seq_len, seq_len, -1)
+
+            # (batch_size, seq_len, seq_len, rel_size * link_type_num)
+            pred_rel_output = self.rel_fc.my_forward(rel_hs_hiddens, rel_tri_rep)
+
         return pred_ent_output, pred_rel_output
 
     def pred_output2pred_tag(self, pred_output):
@@ -751,7 +845,7 @@ class TPLinker3(IEModel):
         super(TPLinker3, self).forward()
         ent_class_guide = kwargs["golden_ent_class_guide"]
         del kwargs["golden_ent_class_guide"]
-        cat_hiddens = self._cat_features(**kwargs)
+        cat_hiddens = self.get_basic_features(**kwargs)
 
         ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
         head_rel_hiddens = self.aggr_fc4head_rel_hsk(cat_hiddens)
@@ -919,7 +1013,7 @@ class TPLinkerTree(IEModel):
         super(TPLinkerTree, self).forward()
         ent_class_guide = kwargs["golden_ent_class_guide"]
         del kwargs["golden_ent_class_guide"]
-        cat_hiddens = self._cat_features(**kwargs)
+        cat_hiddens = self.get_basic_features(**kwargs)
 
         ent_hiddens = self.aggr_fc4ent_hsk(cat_hiddens)
         # ent_hs_hiddens: (batch_size, shaking_seq_len, hidden_size)
@@ -1035,7 +1129,7 @@ class TableFillingBackbone(IEModel):
     def forward(self, **kwargs):
         super(TableFillingBackbone, self).forward()
 
-        cat_hiddens = self._cat_features(**kwargs)
+        cat_hiddens = self.get_basic_features(**kwargs)
         event_con = self.aggr_fc4event_context(cat_hiddens)
 
         # event_con = event_con.permute(1, 0, 2)

@@ -3,6 +3,7 @@ import re
 import copy
 from IPython.core.debugger import set_trace
 
+
 class MetricsCalculator:
     def __init__(self,
                  task_type,
@@ -100,18 +101,99 @@ class MetricsCalculator:
 
         return sample_acc
 
+    # @staticmethod
+    # def get_mark_sets_ee(event_list):
+    #     trigger_iden_set, trigger_class_set = set(), set()
+    #     arg_hard_iden_set, arg_hard_class_set = set(), set()  # consider trigger offset
+    #     arg_soft_iden_set, arg_soft_class_set = set(), set()  # do not consider trigger offset
+    #     arg_link_iden_set, arg_link_class_set = set(), set()  # for trigger-free
+    #
+    #     for event in event_list:
+    #         # trigger-based metrics
+    #         trigger_offset = None
+    #         if "trigger" in event:
+    #             event_type = event["trigger_type"]
+    #             trigger_offset = event["trigger_tok_span"]
+    #             trigger_iden_set.add(str(trigger_offset))
+    #             trigger_class_set.add(str([event_type] + trigger_offset))
+    #
+    #         for arg in event["argument_list"]:
+    #             argument_offset = arg["tok_span"]
+    #             argument_role = arg["type"]
+    #             event_type = arg["event_type"]
+    #
+    #             arg_soft_iden_set.add(str([event_type] + argument_offset))
+    #             arg_soft_class_set.add(str([event_type] + argument_offset + [argument_role]))
+    #             if "trigger" in event:
+    #                 assert trigger_offset is not None
+    #                 arg_hard_iden_set.add(str([event_type] + argument_offset + trigger_offset))
+    #                 arg_hard_class_set.add(str([event_type] + argument_offset + trigger_offset + [argument_role]))
+    #
+    #         # trigger-free metrics
+    #         arg_list = copy.deepcopy(event["argument_list"])
+    #         if "trigger" in event and event["trigger"] != "":
+    #             # take trigger as an ordinary argument
+    #             arg_list.append({
+    #                 "text": event["trigger"],
+    #                 "tok_span": event["trigger_tok_span"],
+    #                 "char_span": event["trigger_char_span"],
+    #                 "type": "Trigger",  # argument role
+    #                 "event_type": event["trigger_type"],
+    #             })
+    #
+    #         for arg_i in arg_list:
+    #             for arg_j in arg_list:
+    #                 arg_i_event_type = arg_i["event_type"]
+    #                 arg_i_offset = arg_i["tok_span"]
+    #                 arg_i_role = arg_i["type"]
+    #
+    #                 arg_j_event_type = arg_j["event_type"]
+    #                 arg_j_offset = arg_j["tok_span"]
+    #                 arg_j_role = arg_j["type"]
+    #
+    #                 link_iden_mark = str([arg_i_event_type] + [arg_j_event_type] + arg_i_offset + arg_j_offset)
+    #                 link_class_mark = str([arg_i_event_type] + [arg_j_event_type] +
+    #                                       arg_i_offset + arg_j_offset +
+    #                                       [arg_i_role] + [arg_j_role])
+    #                 arg_link_iden_set.add(link_iden_mark)
+    #                 arg_link_class_set.add(link_class_mark)
+    #
+    #     return {
+    #         "trigger_iden": trigger_iden_set,
+    #         "trigger_class": trigger_class_set,
+    #         "arg_soft_iden": arg_soft_iden_set,
+    #         "arg_soft_class": arg_soft_class_set,
+    #         "arg_hard_iden": arg_hard_iden_set,
+    #         "arg_hard_class": arg_hard_class_set,
+    #         "arg_link_iden": arg_link_iden_set,
+    #         "arg_link_class": arg_link_class_set,
+    #     }
+
     @staticmethod
     def get_mark_sets_ee(event_list):
         trigger_iden_set, trigger_class_set = set(), set()
         arg_hard_iden_set, arg_hard_class_set = set(), set()  # consider trigger offset
         arg_soft_iden_set, arg_soft_class_set = set(), set()  # do not consider trigger offset
         arg_link_iden_set, arg_link_class_set = set(), set()  # for trigger-free
+        event_type_set = set()
+
+        offset_must_metrics = True
+        # if not offset in arg or num of spans > 1,
+        # this is an doc level ee task result, so no offset-must metric would be considered
+        if any("tok_span" not in arg or type(arg["tok_span"][0]) is list for event in event_list for arg in
+               event["argument_list"]):
+            offset_must_metrics = False
 
         for event in event_list:
+            event_type = event["event_type"]
+            event_type_set.add(event_type)
+
+            if offset_must_metrics is False:
+                continue
+
             # trigger-based metrics
             trigger_offset = None
             if "trigger" in event:
-                event_type = event["trigger_type"]
                 trigger_offset = event["trigger_tok_span"]
                 trigger_iden_set.add(str(trigger_offset))
                 trigger_class_set.add(str([event_type] + trigger_offset))
@@ -119,7 +201,6 @@ class MetricsCalculator:
             for arg in event["argument_list"]:
                 argument_offset = arg["tok_span"]
                 argument_role = arg["type"]
-                event_type = arg["event_type"]
 
                 arg_soft_iden_set.add(str([event_type] + argument_offset))
                 arg_soft_class_set.add(str([event_type] + argument_offset + [argument_role]))
@@ -131,22 +212,20 @@ class MetricsCalculator:
             # trigger-free metrics
             arg_list = copy.deepcopy(event["argument_list"])
             if "trigger" in event and event["trigger"] != "":
-                # take trigger as an ordinary argument
+                # take trigger as a normal argument
                 arg_list.append({
                     "text": event["trigger"],
                     "tok_span": event["trigger_tok_span"],
-                    "char_span": event["trigger_char_span"],
                     "type": "Trigger",  # argument role
-                    "event_type": event["trigger_type"],
                 })
 
             for arg_i in arg_list:
                 for arg_j in arg_list:
-                    arg_i_event_type = arg_i["event_type"]
+                    arg_i_event_type = event_type
                     arg_i_offset = arg_i["tok_span"]
                     arg_i_role = arg_i["type"]
 
-                    arg_j_event_type = arg_j["event_type"]
+                    arg_j_event_type = event_type
                     arg_j_offset = arg_j["tok_span"]
                     arg_j_role = arg_j["type"]
 
@@ -166,6 +245,7 @@ class MetricsCalculator:
             "arg_hard_class": arg_hard_class_set,
             "arg_link_iden": arg_link_iden_set,
             "arg_link_class": arg_link_class_set,
+            "event_type": event_type_set,
         }
 
     @staticmethod
@@ -212,8 +292,8 @@ class MetricsCalculator:
             "disc_ent_exact_text": disc_ent_exact_text_set,
             "ent_exact_offset_on_sents_w_disc": ent_exact_offset_on_sents_w_disc_set,
             "ent_exact_text_on_sents_w_disc": ent_exact_text_on_sents_w_disc_set,
-        }  #, tmp
-    
+        }  # , tmp
+
     @staticmethod
     def get_mark_sets_rel(rel_list):
         rel_partial_text_set, \
@@ -322,6 +402,7 @@ class MetricsCalculator:
             "arg_hard_class": [0, 0, 0],
             "arg_link_iden": [0, 0, 0],
             "arg_link_class": [0, 0, 0],
+            "event_type": [0, 0, 0],
         }
         for idx, pred_sample in enumerate(pred_sample_list):
             gold_sample = golden_sample_list[idx]
@@ -370,7 +451,10 @@ class MetricsCalculator:
             pred_ent_list = pred_sample["entity_list"]
             gold_ent_list = gold_sample["entity_list"]
             sent_w_disc = any(len(ent["tok_span"]) > 2 for ent in gold_ent_list)
+            # try:
             MetricsCalculator.cal_ent_cpg(pred_ent_list, gold_ent_list, ent_cpg_dict, sent_w_disc)
+            # except Exception as e:
+            #     print("debug ent")
 
         return ent_cpg_dict
 
@@ -406,19 +490,28 @@ class MetricsCalculator:
         if data_filename != "":
             data_filename += "_"
 
-        assert len(golden_data) > 0
-        golden_sample = golden_data[0]
+        output_ent_scores = any(
+            "entity_list" in sample and len(sample["entity_list"]) > 0 for sample in golden_data)
+        output_rel_scores = any(
+            "relation_list" in sample and len(sample["relation_list"]) > 0 for sample in golden_data)
+        output_event_scores = any(
+            "event_list" in sample and len(sample["event_list"]) > 0 for sample in golden_data)
+        output_oie_scores = any(
+            "open_spo_list" in sample and len(sample["open_spo_list"]) > 0 for sample in golden_data)
+
+        assert len(pred_data) > 0
+        pred_sample = pred_data[0]
 
         total_cpg_dict = {}
-        if "entity_list" in golden_sample:
+        if output_ent_scores and "entity_list" in pred_sample:
             cpg_dict = self.get_ent_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
-        if "relation_list" in golden_sample:
+        if output_rel_scores and "relation_list" in pred_sample:
             cpg_dict = self.get_rel_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
-        if "event_list" in golden_sample:
+        if output_event_scores and "event_list" in pred_sample:
             cpg_dict = self.get_ee_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
 
@@ -431,7 +524,7 @@ class MetricsCalculator:
             for idx, sct in enumerate(["prec", "rec", "f1"]):
                 score_dict["{}{}_{}".format(data_filename, sc_pattern, sct)] = round(prf[idx], 5)
 
-        if "open_spo_list" in golden_sample:
+        if output_oie_scores:
             oie_score_dict = self.get_ioe_score_dict(golden_data, golden_data)
             for sct, val in oie_score_dict.items():
                 score_dict["{}{}".format(data_filename, sct)] = round(val, 5)

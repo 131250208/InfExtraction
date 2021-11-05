@@ -150,6 +150,29 @@ class HandshakingKernelDora(nn.Module):
         return ent_pre, rel_pre
 
 
+class MatchingLinear(nn.Linear):
+    def __init__(self, in_features, out_features, bias=True):
+        super(MatchingLinear, self).__init__(in_features=in_features, out_features=out_features, bias=bias)
+
+    def my_forward(self, input_tensor, matching_tensor):
+        # matching_tensor: (batch_size, matching types, hidden size)
+        # hidden_size of matching tensor must be the same as the in_features
+        assert self.weight.size()[1] == matching_tensor.size()[-1]
+        batch_size, _, _ = matching_tensor.size()
+        new_weight = torch.matmul(matching_tensor.permute(0, 2, 1)[:, :, :, None], self.weight.permute(1, 0)[:, None, :])
+        new_weight = new_weight.view(new_weight.size()[0], new_weight.size()[1], -1)
+        new_bias = torch.matmul(torch.mean(matching_tensor, dim=-1)[:, :, None], self.bias[None, :]).view(batch_size, -1)
+
+        # input (batch_size, seq_len, seq_len, hidden_size),
+        # new_weight: (batch_size, inp_features, out_features)
+        # new_bias: (batch_size, out_features)
+        seq_len = input_tensor.size()[1]
+        input_tensor = input_tensor.view(batch_size, seq_len * seq_len, -1)
+        res = torch.matmul(input_tensor, new_weight).permute(1, 0, 2) + new_bias
+        res = res.permute(1, 0, 2).view(batch_size, seq_len, seq_len, -1)
+        return res
+
+
 class SingleSourceHandshakingKernel(nn.Module):
     def __init__(self, hidden_size, shaking_type, only_look_after=True, distance_emb_dim=-1):
         super().__init__()
