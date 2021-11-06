@@ -905,22 +905,23 @@ def create_rebased_tfboys_tagger(base_class):
                     fin_rel_list.extend(sample["relation_list"])
                 if "entity_list" in sample:
                     fin_ent_list.extend(sample["entity_list"])
+
                 sample["entity_list"] = fin_ent_list
                 sample["relation_list"] = fin_rel_list
 
             new_data = super().additional_preprocess(new_data, data_type, **kwargs)
             return new_data
 
-        def decode(self, sample, pred_outs):
-            pred_sample = super(REBasedTFBOYSTagger, self).decode(sample, pred_outs)
-            pred_sample = self._trans(pred_sample)
+        # def decode(self, sample, pred_outs):
+        #     pred_sample = super(REBasedTFBOYSTagger, self).decode(sample, pred_outs)
+        #     # pred_sample = self._trans(pred_sample)
+        #
+        #     # pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
+        #     # pred_sample["relation_list"] = [rel for rel in pred_sample["relation_list"] if
+        #     #                                 "EE:" not in rel["predicate"]]
+        #     return pred_sample
 
-            pred_sample["entity_list"] = [ent for ent in pred_sample["entity_list"] if "EE:" not in ent["type"]]
-            pred_sample["relation_list"] = [rel for rel in pred_sample["relation_list"] if
-                                            "EE:" not in rel["predicate"]]
-            return pred_sample
-
-        def _trans(self, sample):
+        def trans(self, sample):
             # rel_list = sample["relation_list"]
             # ent_list = sample["entity_list"]
             #
@@ -1091,6 +1092,9 @@ def create_rebased_tfboys_tagger(base_class):
             #
             # return sample
 
+            # if sample["id"] == 'misc.legal.moderated_20041202.1648_7':
+            #     print("debug")
+
             rel_list = sample["relation_list"]
             ent_list = sample["entity_list"]
 
@@ -1221,13 +1225,20 @@ def create_rebased_tfboys_tagger(base_class):
                         event["trigger_list"] = triggers
 
                     # if the role sets corresponding to the nodes are all empty,
-                    # this clique is invalid and the corresponding event without argument list and triggers
+                    # this clique is invalid.
+                    # The corresponding event without argument list and triggers
                     # will not be appended into the event list.
                     if len(new_argument_list) > 0 or "trigger" in event:
                         event["argument_list"] = new_argument_list
                         event_list.append(event)
 
             sample["event_list"] = event_list
+
+            sample["entity_list"] = [ent for ent in sample["entity_list"] if "EE:" not in ent["type"]]
+            sample["relation_list"] = [rel for rel in sample["relation_list"] if
+                                       "EE:" not in rel["predicate"]]
+            # del sample["entity_list"]
+            # del sample["relation_list"]
             return sample
 
     return REBasedTFBOYSTagger
@@ -1509,11 +1520,11 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                 new_data.append(new_sample)
             return new_data
 
-        def decode(self, sample, pred_outs):
-            pred_sample = super(REBasedDiscontinuousNERTagger, self).decode(sample, pred_outs)
-            return self._trans(pred_sample)
+        # def decode(self, sample, pred_outs):
+        #     pred_sample = super(REBasedDiscontinuousNERTagger, self).decode(sample, pred_outs)
+        #     return self._trans(pred_sample)
 
-        def _trans(self, ori_sample):
+        def trans(self, ori_sample):
             # decoding
             ent_list = ori_sample["entity_list"]
             rel_list = ori_sample["relation_list"]
@@ -1566,7 +1577,8 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                     sub_rel_list = anns["rel_list"]
                     if bd_span is not None:
                         # select nodes and edges in this region
-                        sub_seg_list = [seg for seg in anns["seg_list"] if utils.span_contains(bd_span, seg["tok_span"])]
+                        sub_seg_list = [seg for seg in anns["seg_list"] if
+                                        utils.span_contains(bd_span, seg["tok_span"])]
                         sub_rel_list = [rel for rel in anns["rel_list"]
                                         if utils.span_contains(bd_span, rel["subj_tok_span"])
                                         and utils.span_contains(bd_span, rel["obj_tok_span"])]

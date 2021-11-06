@@ -51,13 +51,13 @@ for file_name, data in file_name2data.items():
     data = preprocessor.transform_data(data, ori_format=ori_data_format, dataset_type=data_type, add_id=add_id)
     file_name2data[file_name] = data
 
-    # temp
-    for sample in data:
-        if "event_list" in sample:
-            for event in sample["event_list"]:
-                for arg in event["argument_list"]:
-                    if "event_type" not in arg:
-                        arg["event_type"] = event["trigger_type"]
+    # # temp
+    # for sample in data:
+    #     if "event_list" in sample:
+    #         for event in sample["event_list"]:
+    #             for arg in event["argument_list"]:
+    #                 if "event_type" not in arg:
+    #                     arg["event_type"] = event["trigger_type"]
 
 # process
 for filename, data in file_name2data.items():

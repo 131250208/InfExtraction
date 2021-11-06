@@ -8,7 +8,7 @@ from tqdm import tqdm
 from glob import glob
 import time
 import re
-
+import copy
 
 class Trainer:
     def __init__(self,
@@ -141,6 +141,8 @@ class Evaluator:
             pred_sample_list = self._predict_step_debug(batch_predict_data)
             total_pred_sample_list.extend(pred_sample_list)
         pred_data = self._alignment(total_pred_sample_list, golden_data)
+        if hasattr(self.decoder, "trans"):
+            pred_data = [self.decoder.trans(sample) for sample in pred_data]
         return pred_data
 
     def check_tagging_n_decoding(self, dataloader, golden_data):
@@ -177,51 +179,86 @@ class Evaluator:
         pred_sample_list = Preprocessor.decompose2splits(pred_sample_list)
 
         # merge and alignment
-        id2text = {sample["id"]: sample["text"] for sample in golden_data}
-        merged_pred_samples = {}
+        # id2text = {sample["id"]: sample["text"] for sample in golden_data}
+        merged_pred_res = {}
+        res_keys = {"entity_list", "relation_list", "event_list", "open_spo_list"}
+
         for sample in pred_sample_list:
             id_ = sample["id"]
             # recover spans by offsets
             sample = Preprocessor.span_offset(sample, sample["tok_level_offset"], sample["char_level_offset"])
+            # # merge
+            # if id_ not in merged_pred_samples:
+            #     merged_pred_samples[id_] = {
+            #         "id": id_,
+            #         "text": id2text[id_],
+            #         "entity_list": [],
+            #         "relation_list": [],
+            #         "event_list": [],
+            #         "open_spo_list": [],
+            #     }
+            # if "entity_list" in sample:
+            #     merged_pred_samples[id_]["entity_list"].extend(sample["entity_list"])
+            # if "relation_list" in sample:
+            #     merged_pred_samples[id_]["relation_list"].extend(sample["relation_list"])
+            # if "event_list" in sample:
+            #     merged_pred_samples[id_]["event_list"].extend(sample["event_list"])
+            # if "open_spo_list" in sample:
+            #     merged_pred_samples[id_]["open_spo_list"].extend(sample["open_spo_list"])
+
             # merge
-            if id_ not in merged_pred_samples:
-                merged_pred_samples[id_] = {
-                    "id": id_,
-                    "text": id2text[id_],
-                    "entity_list": [],
-                    "relation_list": [],
-                    "event_list": [],
-                    "open_spo_list": [],
-                }
-            if "entity_list" in sample:
-                merged_pred_samples[id_]["entity_list"].extend(sample["entity_list"])
-            if "relation_list" in sample:
-                merged_pred_samples[id_]["relation_list"].extend(sample["relation_list"])
-            if "event_list" in sample:
-                merged_pred_samples[id_]["event_list"].extend(sample["event_list"])
-            if "open_spo_list" in sample:
-                merged_pred_samples[id_]["open_spo_list"].extend(sample["open_spo_list"])
+            # if id_ not in merged_pred_res:
+            #     merged_pred_res[id_] = {
+            #         "id": id_,
+            #         "text": id2text[id_],
+            #     }
+            merged_pred_res.setdefault(id_, {})
+            for key in res_keys:
+                if key in sample:
+                    merged_pred_res[id_].setdefault(key, []).extend(sample[key])
+
+            # if "entity_list" in sample:
+            #     # if "entity_list" not in merged_pred_res[id_]:
+            #     #     merged_pred_res[id_]["entity_list"] = []
+            #     # merged_pred_res[id_]["entity_list"].extend(sample["entity_list"])
+            #     merged_pred_res.setdefault(merged_pred_res[id_]["entity_list"], []).extend(sample["entity_list"])
+            # if "relation_list" in sample:
+            #     # if "relation_list" not in merged_pred_res[id_]:
+            #     #     merged_pred_res[id_]["relation_list"] = []
+            #     # merged_pred_res[id_]["relation_list"].extend(sample["relation_list"])
+            #     merged_pred_res.setdefault(merged_pred_res[id_]["relation_list"], []).extend(sample["relation_list"])
+            # if "event_list" in sample:
+            #     if "event_list" not in merged_pred_res[id_]:
+            #         merged_pred_res[id_]["event_list"] = []
+            #     merged_pred_res[id_]["event_list"].extend(sample["event_list"])
+            # if "open_spo_list" in sample:
+            #     if "open_spo_list" not in merged_pred_res[id_]:
+            #         merged_pred_res[id_]["open_spo_list"] = []
+            #     merged_pred_res[id_]["open_spo_list"].extend(sample["open_spo_list"])
 
         # alignment by id (in order)
         pred_data = []
         # 如果train set在split的时候扔了负样本，merged_pred_samples里会缺失一些id（最终版可扔可不扔，影响应该不大）
         # 在训练前的伪解码阶段会将valid set当作train set来进行预处理split，所以解码的时候会遇到id缺失，这里用伪样本填补位置。
         # 注意：测试集的负样本没有进行丢弃，所以不影响对比 (comment deprecated)
-        pseudo_pred_sample = {"relation_list": [], "entity_list": [], "event_list": [], "id": -1, "text": ""}
+        pseudo_res = {key:[] for key in res_keys}
         for sample in golden_data:
             id_ = sample["id"]
-            pred_data.append(merged_pred_samples.get(id_, pseudo_pred_sample))
+            pred_res = merged_pred_res.get(id_, pseudo_res)
+            pred_sample = {
+                "id": sample["id"],
+                "text": sample["text"],
+                "features": sample["features"],
+                **pred_res
+            }
+            if id_ not in merged_pred_res:
+                pred_sample["not_in_merged_res"] = True
+            pred_data.append(pred_sample)
 
         for sample in pred_data:
-            if "entity_list" in sample:
-                sample["entity_list"] = Preprocessor.unique_list(sample["entity_list"])
-            if "relation_list" in sample:
-                sample["relation_list"] = Preprocessor.unique_list(sample["relation_list"])
-            if "event_list" in sample:
-                sample["event_list"] = Preprocessor.unique_list(sample["event_list"])
-            if "open_spo_list" in sample:
-                sample["open_spo_list"] = Preprocessor.unique_list(sample["open_spo_list"])
-
+            for key in res_keys:
+                if key in sample:
+                    sample[key] = Preprocessor.unique_list(sample[key])
         return pred_data
 
     def predict(self, dataloader, golden_data):
@@ -232,6 +269,8 @@ class Evaluator:
             pred_sample_list = self._predict_step(batch_predict_data)
             total_pred_sample_list.extend(pred_sample_list)
         pred_data = self._alignment(total_pred_sample_list, golden_data)
+        if hasattr(self.decoder, "trans"):
+            pred_data = [self.decoder.trans(sample) for sample in pred_data]
         return pred_data
         
     def score(self, pred_data, golden_data, data_filename=""):

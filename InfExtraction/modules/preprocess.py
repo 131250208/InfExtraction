@@ -1284,7 +1284,7 @@ class Preprocessor:
             if "event_list" in sample:
                 event_exist = True
                 for event in sample["event_list"]:
-                    event_type_set.add(event["trigger_type"])
+                    event_type_set.add(event["event_type"])
                     for arg in event["argument_list"]:
                         argument_type_set.add(arg["type"])
 
@@ -1559,6 +1559,8 @@ class Preprocessor:
             tokens = features["subword_list"] if token_level == "subword" else features["word_list"]
             tok2char_span = features["tok2char_span"]
 
+            # if id == 'misc.legal.moderated_20041202.1648_7':
+            #     print("debug split_into_short_samples")
             # split by sliding window
             for start_ind in range(0, len(tokens), sliding_len):
                 if token_level == "subword":
