@@ -11,6 +11,8 @@ from InfExtraction.modules import utils
 import torch
 import jieba
 from pprint import pprint
+from ddparser import DDParser
+import LAC
 
 
 class Indexer:
@@ -264,20 +266,31 @@ class WhiteWordTokenizer:
 
 class ChineseWordTokenizer:
     @staticmethod
-    def tokenize(text, ent_list=None):
+    def tokenize(text, ent_list=None, span_list=None, rm_blanks=False, token_level="char"):
         '''
         :param text:
-        :param ent_list: tokenize by entities first
+        :param ent_list: 1. tokenize by entity boundaries
+        :param span_list: 2. tokenize by spans boundaries
+                            3. tokenize to Chinese characters (if token level = char)
+        :param rm_blanks: remove whitespace tokens
+        :param token_level: char-Chinese characters; seg-Chinese words
         :return:
         '''
+        boundary_ids = set()
         if ent_list is not None and len(ent_list) > 0:
-            boundary_ids = set()
             for ent in ent_list:
                 for m in re.finditer(re.escape(ent), text):
                     boundary_ids.add(m.span()[0])
                     boundary_ids.add(m.span()[1])
 
-            split_ids = [0] + sorted(list(boundary_ids)) + [len(text)]
+        if span_list is not None and len(span_list) > 0:
+            for sp in span_list:
+                boundary_ids = boundary_ids.union(set(sp))
+
+        if len(boundary_ids) > 0:
+            boundary_ids.add(0)
+            boundary_ids.add(len(text))
+            split_ids = sorted(list(boundary_ids))
             segs = []
             for idx, split_id in enumerate(split_ids):
                 if idx == len(split_ids) - 1:
@@ -286,25 +299,26 @@ class ChineseWordTokenizer:
         else:
             segs = [text]
 
-        word_pattern = "[0-9]+|[\[\]a-zA-Z]+|[^0-9a-zA-Z]"
         word_list = []
-        for seg in segs:
-            word_list.extend(re.findall(word_pattern, seg))
+        if token_level == "char":
+            word_pattern = "[0-9]+|\[[A-Z]+\]|[a-zA-Z]+|[^0-9a-zA-Z]"
+            for seg in segs:
+                word_list.extend(re.findall(word_pattern, seg))
+        elif token_level == "seg":
+            assert len(boundary_ids) > 0, "please set ent_list or span_list if token level == seg"
+            word_list = segs
+
+        if rm_blanks:
+            word_list = [w for w in word_list if re.sub("\s+", "", w) != ""]
         return word_list
 
     @staticmethod
     def get_tok2char_span_map(word_list):
-        text_fr_word_list = ""
-        word2char_span = []
-        for word in word_list:
-            char_span = [len(text_fr_word_list), len(text_fr_word_list) + len(word)]
-            text_fr_word_list += word
-            word2char_span.append(char_span)
-        return word2char_span
+        return utils.get_tok2char_span_map4ch(word_list)
 
     @staticmethod
-    def tokenize_plus(text, ent_list=None):
-        word_list = ChineseWordTokenizer.tokenize(text, ent_list)
+    def tokenize_plus(text, ent_list=None, span_list=None, rm_blanks=False, token_level="char"):
+        word_list = ChineseWordTokenizer.tokenize(text, ent_list, span_list, rm_blanks, token_level)
         res = {
             "word_list": word_list,
             "word2char_span": ChineseWordTokenizer.get_tok2char_span_map(word_list),
@@ -394,6 +408,79 @@ class Preprocessor:
         self.language = language
         self.pretrained_model_path = pretrained_model_path
         self.do_lower_case = do_lower_case
+
+    @staticmethod
+    def add_ch_parsed_res(sample_list):
+        # >>>>>>>>>>>>>>>>>>>> tokenize, ner, postag
+        lac = LAC.LAC(mode="lac")
+        seg_results = lac.run([sample["text"] for sample in sample_list])
+        for sample_idx, sample in enumerate(sample_list):
+            seg_res = seg_results[sample_idx]
+            words, postags = seg_res[0], seg_res[1]
+
+            # add boundary ids
+            span_list = ChineseWordTokenizer.get_tok2char_span_map(words)
+            for event in sample["event_list"]:
+                span_list.append(event["trigger_char_span"])
+                for arg in event["argument_list"]:
+                    span_list.append(arg["char_span"])
+            boundary_ids = set()
+            for sp in span_list:
+                boundary_ids.add(sp[0])
+                boundary_ids.add(sp[1])
+
+            fin_word_list, fin_postag_list = [], []
+            sen_len = ""
+            for wid, word in enumerate(words):
+                bds = [bid for bid in sorted(boundary_ids) if len(sen_len) <= bid <= len(sen_len) + len(word)]
+                sub_toks = []
+                for bid_idx, bid in enumerate(bds):
+                    if bid_idx == len(bds) - 1:
+                        break
+                    sub_toks.append(sample["text"][bid:bds[bid_idx + 1]])
+                fin_word_list.extend(sub_toks)
+                sen_len += "".join(sub_toks)
+                fin_postag_list.extend([postags[wid]] * len(sub_toks))
+            sample["word_list"] = fin_word_list
+            sample["word2char_span"] = ChineseWordTokenizer.get_tok2char_span_map(fin_word_list)
+
+            ner_tags = {"TIME", "PER", "ORG", "LOC", "nw"}
+            sample["ner_tag_list"] = [t if t in ner_tags else "O" for t in fin_postag_list]
+            sample["pos_tag_list"] = ["n" if t in ner_tags else t for t in fin_postag_list]
+
+        # >>>>>>>>>>>>>>>>>>>>> deprel
+        corpus = [sample["word_list"] for sample in sample_list]
+        ddp = DDParser(buckets=True)
+        ddp_res = ddp.parse_seg(corpus)
+
+        for sample_idx, sample in enumerate(sample_list):
+            ddp_d = ddp_res[sample_idx]
+            sample["dependency_list"] = [[hid - (wid + 1) if hid != 0 else 0, ddp_d["deprel"][wid]]
+                                         for wid, hid in enumerate(ddp_d["head"])]
+
+        # >>>>>>>>>>>>>>>>>>>>>>>>>>>> check
+        for sample_idx, sample in enumerate(sample_list):
+            # check word tokens align with char spans
+            for wid, char_sp in enumerate(sample["word2char_span"]):
+                assert sample["text"][char_sp[0]:char_sp[1]] == sample["word_list"][wid]
+
+            # check whether char spans align with word tokens
+            char2word_span = utils.get_char2tok_span(sample["word2char_span"])
+
+            def ch_sp2wd_sp(ch_sp):
+                wd_sp_slice = char2word_span[ch_sp[0]:ch_sp[1]]
+                return [wd_sp_slice[0][0], wd_sp_slice[-1][1]]
+
+            for event in sample["event_list"]:
+                tri_ch_sp = event["trigger_char_span"]
+                tri_wd_sp = ch_sp2wd_sp(tri_ch_sp)
+                assert sample["text"][tri_ch_sp[0]:tri_ch_sp[1]] == "".join(
+                    sample["word_list"][tri_wd_sp[0]:tri_wd_sp[1]])
+                for arg in event["argument_list"]:
+                    arg_ch_sp = arg["char_span"]
+                    arg_tri_sp = ch_sp2wd_sp(arg_ch_sp)
+                    assert sample["text"][arg_ch_sp[0]:arg_ch_sp[1]] == "".join(
+                        sample["word_list"][arg_tri_sp[0]:arg_tri_sp[1]])
 
     @staticmethod
     def unique_list(inp_list):
@@ -747,8 +834,8 @@ class Preprocessor:
                                 for ent in sample["entity_list"]}
                 for ent in entities_fr_rel:
                     if str(ent) not in entities_mem:
-                        # print("entity list misses some entities in relation list")
-                        raise Exception("entity list misses some entities in relation list")
+                        logging.warning("ent: {} in relations but not in entity_list!".format(ent["text"]))
+                        # raise Exception("entity list misses some entities in relation list")
 
             if "event_list" in sample:
                 entities_fr_event = []
@@ -1087,7 +1174,7 @@ class Preprocessor:
             if "event_list" in sample:
                 bad_events = []
                 for event in sample["event_list"]:
-                    event_cp = copy.deepcopy(event)
+                    bad_event = copy.deepcopy(event)
                     bad = False
                     trigger_wd_span = event["trigger_wd_span"]
                     trigger_subwd_span = event["trigger_subwd_span"]
@@ -1096,10 +1183,10 @@ class Preprocessor:
 
                     if not (trigger_wd == trigger_subwd == event["trigger"]):
                         bad = True
-                        event_cp["extr_trigger_wd"] = trigger_wd
-                        event_cp["extr_trigger_subwd"] = trigger_subwd
+                        bad_event["extr_trigger_wd"] = trigger_wd
+                        bad_event["extr_trigger_subwd"] = trigger_subwd
 
-                    for arg in event_cp["argument_list"]:
+                    for arg in bad_event["argument_list"]:
                         arg_wd_span = arg["wd_span"]
                         arg_subwd_span = arg["subwd_span"]
                         arg_wd = Preprocessor.extract_ent_fr_txt_by_tok_sp(arg_wd_span, word2char_span, text, language)
@@ -1110,7 +1197,7 @@ class Preprocessor:
                             arg["extr_arg_wd"] = arg_wd
                             arg["extr_arg_subwd"] = arg_subwd
                     if bad:
-                        bad_events.append(event)
+                        bad_events.append(bad_event)
                 if len(bad_events) > 0:
                     sample_id2mismatched_ents[sample["id"]]["bad_events"] = bad_events
 
@@ -1140,21 +1227,19 @@ class Preprocessor:
             # word level
             word_level_feature_keys = {"ner_tag_list", "word_list", "pos_tag_list", "dependency_list", "word2char_span"}
             word_features = {}
-            if "word_list" not in sample or "word2char_span" not in sample:
+            if "word2char_span" not in sample:
                 # generate word level features
                 word_tokenizer = self.get_word_tokenizer(word_tokenizer_type)
-                word_features = word_tokenizer.tokenize_plus(text, Preprocessor.get_all_possible_entities(sample)) \
-                    if word_tokenizer_type == "normal_chinese" else word_tokenizer.tokenize_plus(text)
-            else:
-                for key in word_level_feature_keys:
-                    if key in sample:
-                        word_features[key] = sample[key]
-                        del sample[key]
-                # if "word_list" in word_features and "word2char_span" not in word_features:
-                #     if self.language == "en":
-                #         word_features["word2char_span"] = Preprocessor.get_tok2char_span_map(word_features["word_list"])
-                #     else:
-                #         raise Exception("miss word2char_span!")
+                if "word_list" not in sample:
+                    word_features = word_tokenizer.tokenize_plus(text, Preprocessor.get_all_possible_entities(sample)) \
+                        if word_tokenizer_type == "normal_chinese" else word_tokenizer.tokenize_plus(text)
+                else:
+                    sample["word2char_span"] = word_tokenizer.get_tok2char_span_map(sample["word_list"])
+
+            for key in word_level_feature_keys:
+                if key in sample and key not in word_features:
+                    word_features[key] = sample[key]
+                    del sample[key]
 
             sample["features"] = word_features
 
@@ -1221,20 +1306,24 @@ class Preprocessor:
             for subw_id, wid in enumerate(subword2word_id):
                 subw = sample["features"]["subword_list"][subw_id]
                 word = sample["features"]["word_list"][wid]
+                word = utils.rm_accents(word)
+                subw = utils.rm_accents(subw)
                 if self.do_lower_case:
                     word = word.lower()
-                assert re.sub("##", "", subw) in word or subw == "[UNK]"
+                assert re.sub("##", "", subw) in word or subw == "[UNK]", "{} not in {}".format(subw, word)
 
             for subw_id, char_sp in enumerate(feats["subword2char_span"]):
                 subw = sample["features"]["subword_list"][subw_id]
                 subw = re.sub("##", "", subw)
                 subw_extr = sample["text"][char_sp[0]:char_sp[1]]
+                subw_extr = utils.rm_accents(subw_extr)
+                subw = utils.rm_accents(subw)
                 if self.do_lower_case:
                     subw_extr = subw_extr.lower()
                 try:
-                    assert subw_extr == subw or subw == "[UNK]"
+                    assert subw_extr == subw or subw == "[UNK]", "subw_extr: {} != subw: {}".format(subw_extr, subw)
                 except Exception:
-                    print("subw_extr != subw")
+                    print("subw_extr: {} != subw: {}".format(subw_extr, subw))
         return data
 
     def generate_supporting_data(self, data, max_word_dict_size, min_word_freq):

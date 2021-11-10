@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -38,17 +38,17 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "ace2005_lu"
+exp_name = "ace2005_dygiepp_default_settings"
 language = "en"
 stage = "train"  # inference
 task_type = "re+tfboys"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "bert-base-uncased"
+pretrained_model_name = "bert-large-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
 use_wandb = True
-note = "no dep gcn; no ori ent list"
+note = ""
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
@@ -57,7 +57,9 @@ drop_neg_samples = False
 combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 1  # if no saving, set to 0
+
+metric_pattern2save = "val.*arg_(soft_|hard_|)class_(f1|most.*)"
+model_bag_size = 5  # if no saving, set to 0
 
 batch_size_train = 12
 batch_size_valid = 12
@@ -72,7 +74,7 @@ sliding_len_valid = 100
 sliding_len_test = 100
 
 # data
-data_in_dir = "../../data/normal_data"
+data_in_dir = "../../data/preprocessed_data"
 data_out_dir = "../../data/res_data"
 
 train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
@@ -171,7 +173,7 @@ model_state_dict_path = None
 # for test
 model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
 target_run_ids = ["0kQIoiOs", ]
-top_k_models = 1
+model_path_ids2infer = [-1, ]
 metric4testing = "trigger_class_f1"
 cal_scores = True  # set False if the test sets are not annotated
 
@@ -228,7 +230,7 @@ word_encoder_config = {
 subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
-    "use_last_k_layers": 1,
+    "use_last_k_layers": 3,
     "wordpieces_prefix": "##",
 } if subwd_encoder else None
 
@@ -257,7 +259,7 @@ model_settings = {
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
     "ent_dim": 1024,
-    "rel_dim": 1024,
+    "rel_dim": 1280,
     "do_span_len_emb": True,
     "emb_ent_info2rel": False,  # 加速收敛
     "golden_ent_cla_guide": False,

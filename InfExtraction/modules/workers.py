@@ -166,12 +166,21 @@ class Evaluator:
         with torch.no_grad():
             pred_outputs = self.model(**batch_predict_data)
 
+        # if type(pred_outputs) == tuple:
+        #     pred_tags = [self.model.pred_output2pred_tag(pred_out) for pred_out in pred_outputs]
+        # else:
+        #     pred_tags = [self.model.pred_output2pred_tag(pred_outputs), ]
+        #
+        # pred_sample_list = self.decoder.decode_batch(sample_list, pred_tags)
+
         if type(pred_outputs) == tuple:
             pred_tags = [self.model.pred_output2pred_tag(pred_out) for pred_out in pred_outputs]
+            pred_outputs = pred_outputs
         else:
             pred_tags = [self.model.pred_output2pred_tag(pred_outputs), ]
+            pred_outputs = [pred_outputs, ]
 
-        pred_sample_list = self.decoder.decode_batch(sample_list, pred_tags)
+        pred_sample_list = self.decoder.decode_batch(sample_list, pred_tags, pred_outputs)
         return pred_sample_list
 
     def _alignment(self, pred_sample_list, golden_data):

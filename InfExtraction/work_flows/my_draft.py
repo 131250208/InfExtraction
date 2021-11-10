@@ -1,7 +1,6 @@
 import json
 import os
 from InfExtraction.modules.preprocess import Preprocessor, WhiteWordTokenizer
-from InfExtraction.work_flows import settings_tplinker_pp as settings
 from InfExtraction.modules.utils import load_data, save_as_json_lines
 from tqdm import tqdm
 import random
@@ -909,34 +908,13 @@ def preprocess_oie4():
 
 
 if __name__ == "__main__":
-    # train_data, valid_data, test_data = preprocess_oie4()
-    data_in_dir = "../../data/ori_data/cadec_bk"
-    data_out_dir = "../../data/ori_data/cadec"
-    train_data, valid_data, test_data = preprocess_daixiang_data(data_in_dir, data_out_dir)
-    test_data_w_disc = []
-    test_data_only_disc = []
-    for sample in test_data:
-        w_disc = False
-        for ent in sample["entity_list"]:
-            if len(ent["char_span"]) > 2:
-                w_disc = True
-                break
-        o_disc = True
-        for ent in sample["entity_list"]:
-            if len(ent["char_span"]) <= 2:
-                o_disc = False
-                break
-        if len(sample["entity_list"]) == 0:
-            w_disc = False
-            o_disc = False
+    import stanza
 
-        if w_disc:
-            test_data_w_disc.append(sample)
-        if o_disc:
-            test_data_only_disc.append(sample)
-
-    save_as_json_lines(train_data, os.path.join(data_out_dir, "train_data.json"))
-    save_as_json_lines(valid_data, os.path.join(data_out_dir, "valid_data.json"))
-    save_as_json_lines(test_data, os.path.join(data_out_dir, "test_data.json"))
-    save_as_json_lines(test_data_w_disc, os.path.join(data_out_dir, "test_data_w_disc.json"))
-    save_as_json_lines(test_data_only_disc, os.path.join(data_out_dir, "test_data_only_disc.json"))
+    nlp = stanza.Pipeline(lang='en', processors='tokenize,mwt,pos,lemma,depparse', tokenize_pretokenized=True)
+    doc = nlp(["This is my way !", "Sentences split too !"])
+    for i, sent in enumerate(doc.sentences):
+        print(f'====== Sentence {i + 1} tokens =======')
+        print(*[f'id: {word.id}\tword: {word.text}\t'
+                f'head id: {word.head}\thead: {sent.words[word.head-1].text if word.head > 0 else "root"}'
+                f'\tdeprel: {word.deprel}\tpostag: {word.xpos}'
+                for word in sent.words], sep='\n')

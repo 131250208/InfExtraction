@@ -95,7 +95,7 @@ def get_dataloader(data,
     dataloader = DataLoader(MyDataset(indexed_data),
                             batch_size=batch_size,
                             shuffle=True,
-                            num_workers=0,
+                            # num_workers=0,
                             drop_last=False,
                             collate_fn=collate_fn,
                             worker_init_fn=worker_init_fn
@@ -190,7 +190,9 @@ if __name__ == "__main__":
     # test settings
     model_dir_for_test = settings.model_dir_for_test
     target_run_ids = settings.target_run_ids
-    top_k_models = settings.top_k_models
+    # top_k_models = settings.top_k_models
+    model_path_ids2infer = settings.model_path_ids2infer
+    metric_pattern2save = settings.metric_pattern2save
     metric4testing = settings.metric4testing
     cal_scores = settings.cal_scores
 
@@ -264,9 +266,7 @@ if __name__ == "__main__":
     tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
 
     # metrics_calculator
-    metrics_cal = MetricsCalculator(task_type,
-                                    language,
-                                    use_ghm)
+    metrics_cal = MetricsCalculator(use_ghm)
 
     # model
     print("init model...")
@@ -417,7 +417,7 @@ if __name__ == "__main__":
                                                                score_dict4comparing[metric_key]["best"])
 
                 # save models
-                if current_val_score > 0. and model_bag_size > 0:
+                if current_val_score > 0. and model_bag_size > 0 and re.match(metric_pattern2save, metric_key):
                     dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)
                     if not os.path.exists(dir_to_save_model_this_key):
                         os.makedirs(dir_to_save_model_this_key)
@@ -455,7 +455,7 @@ if __name__ == "__main__":
         run_id2model_state_paths = {}
         for root, dirs, files in os.walk(model_dir_for_test):
             for file_name in files:
-                path_se = re.search("run-\d{8}_\d{6}-(\w{8})/(.*)", root)
+                path_se = re.search("run-\d{8}_\d{6}-(\w{8})\/.*?(val_.*)", root)
                 if path_se is None:
                     continue
                 run_id = path_se.group(1)
@@ -472,7 +472,12 @@ if __name__ == "__main__":
         run_id2scores = {}
         for run_id, model_path_list in run_id2model_state_paths.items():
             # only top k models
-            model_path_list = get_last_k_paths(model_path_list, top_k_models)
+            sorted_model_path_list = sorted(model_path_list, key=get_score_fr_path)
+            model_path_list = []
+            for idx in model_path_ids2infer:
+                model_path_list.append(sorted_model_path_list[idx])
+            # model_path_list = get_last_k_paths(model_path_list, top_k_models)
+
             for path in model_path_list:
                 # load model
                 model.load_state_dict(torch.load(path))

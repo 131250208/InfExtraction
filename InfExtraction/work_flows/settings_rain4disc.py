@@ -1,5 +1,5 @@
 import os
-device_num = 0
+device_num = 1
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -57,7 +57,7 @@ drop_neg_samples = False
 combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
-model_bag_size = 10
+model_bag_size = 0
 
 batch_size_train = 12
 batch_size_valid = 12
@@ -85,7 +85,7 @@ subwd_encoder = True
 use_attns4rel = True  # used only if subwd_encoder (bert) is True
 
 # data
-data_in_dir = "../../data/normal_data"
+data_in_dir = "../../data/preprocessed_data"
 data_out_dir = "../../data/res_data"
 train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
 valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
@@ -182,7 +182,7 @@ model_state_dict_path = None
 # for test
 model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
 target_run_ids = ["0kQIoiOs", ]
-top_k_models = 1
+model_path_ids2infer = [1, ]
 metric4testing = "ent_exact_offset_f1"
 cal_scores = True  # set False if the test sets are not annotated
 

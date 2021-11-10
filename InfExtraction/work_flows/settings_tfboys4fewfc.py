@@ -38,38 +38,56 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "webnlg_star"
-language = "en"
-stage = "train"  # inference
-task_type = "re"  # re, re+ee
+exp_name = "few_fc"
+language = "ch"
+stage = "inference"  # inference
+task_type = "re+tfboys"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "bert-base-cased"
-pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = True
+pretrained_model_name = "macbert-base"
+pretrained_emb_name = "glove_fewfc_300.txt"
+use_wandb = False
 note = ""
 epochs = 100
-lr = 5e-5  # 5e-5, 1e-4
-check_tagging_n_decoding = False
+lr = 6e-5  # 5e-5, 1e-4
+check_tagging_n_decoding = True
 split_early_stop = True
-drop_neg_samples = True
+drop_neg_samples = False
 combine = False  # combine splits
 scheduler = "CAWR"
 use_ghm = False
+
+metric_pattern2save = "val.*arg_(soft_|hard_|)class_(f1|most.*)"
 model_bag_size = 0  # if no saving, set to 0
 
-batch_size_train = 6
+batch_size_train = 12
 batch_size_valid = 6
 batch_size_test = 6
 
-max_seq_len_train = 100
-max_seq_len_valid = 100
-max_seq_len_test = 100
+max_seq_len_train = 128
+max_seq_len_valid = 200
+max_seq_len_test = 200
 
-sliding_len_train = 20
-sliding_len_valid = 20
-sliding_len_test = 20
+sliding_len_train = 50
+sliding_len_valid = 200
+sliding_len_test = 200
+
+
+token_level = "subword"  # token is word or subword
+# subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
+# word: use stanza to get words, wich can be fed into both bilstm and bert
+
+# to do an ablation study, you can ablate components by setting it to False
+pos_tag_emb = True
+ner_tag_emb = True
+char_encoder = True
+
+word_encoder = True
+subwd_encoder = True
+
+dep_gcn = False
+use_attns4rel = True
 
 # data
 data_in_dir = "../../data/preprocessed_data"
@@ -82,6 +100,7 @@ data4checking = copy.deepcopy(train_data)
 random.shuffle(data4checking)
 checking_num = 1000
 data4checking = data4checking[:checking_num]
+
 # data4checking = valid_data
 
 test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
@@ -115,13 +134,15 @@ for key, val in dicts.items():
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
     "classify_entities_by_relation": False,
+    "dtm_arg_type_by_edges": True,
 }
 
 # tagger config
 tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
+    "dtm_arg_type_by_edges": addtional_preprocessing_config["dtm_arg_type_by_edges"],
     "add_h2t_n_t2h_links": False,
-    "language": "en",
+    "language": language,
 }
 
 # optimizers and schedulers
@@ -136,7 +157,7 @@ scheduler_dict = {
         # CosineAnnealingWarmRestarts
         "name": "CAWR",
         "T_mult": 1,
-        "rewarm_epochs": 2,
+        "rewarm_epochs": 4,
     },
     "StepLR": {
         "name": "StepLR",
@@ -167,30 +188,13 @@ trainer_config = {
 model_state_dict_path = None
 
 # for test
-model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
-target_run_ids = ["0kQIoiOs", ]
+model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
+target_run_ids = ["2uq6f74s", ]
 model_path_ids2infer = [-1, ]
-metric4testing = "trigger_class_f1"
+metric4testing = "arg_soft_class_f1"
 cal_scores = True  # set False if the test sets are not annotated
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# to do an ablation study, you can ablate components by setting it to False
-
-pos_tag_emb = False
-ner_tag_emb = False
-char_encoder = False
-
-word_encoder = False
-subwd_encoder = True
-
-flair = False
-
-dep_gcn = False
-use_attns4rel = False
-
-token_level = "subword"  # token is word or subword
-# subword: use bert tokenizer to get subwords, use stanza to get words, other features are aligned with the subwords
-# word: use stanza to get words, wich can be fed into both bilstm and bert
 
 pos_tag_emb_config = {
     "pos_tag_num": statistics["pos_tag_num"],
@@ -216,7 +220,6 @@ char_encoder_config = {
 
 word_encoder_config = {
     "word2id": dicts["word2id"],
-    # eegcn_word_emb.txt
     "word_emb_file_path": "../../data/pretrained_emb/{}".format(pretrained_emb_name),
     "emb_dropout": 0.1,
     "bilstm_layers": [1, 1],
@@ -242,7 +245,7 @@ dep_config = {
 } if dep_gcn else None
 
 handshaking_kernel_config = {
-    "ent_shaking_type": "cln+lstm",
+    "ent_shaking_type": "cln+bilstm",
     "rel_shaking_type": "cln",
 }
 
@@ -256,15 +259,15 @@ model_settings = {
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
-    "ent_dim": 768,
-    "rel_dim": 768,
+    "ent_dim": 1024,
+    "rel_dim": 1024,
     "do_span_len_emb": True,
     "emb_ent_info2rel": False,  # 加速收敛
     "golden_ent_cla_guide": False,
     "init_loss_weight": 0.5,
     "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
-    "rel_description_dict": statistics["rel_type2desc"],
+    # "rel_description_dict": statistics["rel_type2desc"],
 }
 
 model_settings_log = copy.deepcopy(model_settings)
