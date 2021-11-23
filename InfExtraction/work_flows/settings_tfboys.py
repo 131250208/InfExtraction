@@ -1,5 +1,5 @@
 import os
-device_num = 0
+device_num = 3
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -41,13 +41,13 @@ from glob import glob
 exp_name = "ace2005_dygiepp_default_settings"
 language = "en"
 stage = "train"  # inference
-task_type = "re+tfboys"  # re, re+ee
+task_type = "re+ee"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "bert-large-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = True
+use_wandb = False
 note = ""
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
@@ -59,7 +59,7 @@ scheduler = "CAWR"
 use_ghm = False
 
 metric_pattern2save = "val.*arg_(soft_|hard_|)class_(f1|most.*)"
-model_bag_size = 5  # if no saving, set to 0
+model_bag_size = 10  # if no saving, set to 0
 
 batch_size_train = 12
 batch_size_valid = 12
@@ -168,7 +168,7 @@ trainer_config = {
 }
 
 # pretrianed model state
-model_state_dict_path = None
+model_state_dict_path = None # "./wandb/run-20211110_145929-39zclu50/files/val_arg_soft_class_f1/model_state_dict_34_59.766.pt"
 
 # for test
 model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"

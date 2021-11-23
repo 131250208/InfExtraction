@@ -15,6 +15,156 @@ from ddparser import DDParser
 import LAC
 
 
+# class Indexer:
+#     def __init__(self, tag2id, max_seq_len, spe_tag_dict):
+#         self.tag2id = tag2id
+#         self.max_seq_len = max_seq_len
+#         self.spe_tag_dict = spe_tag_dict
+#
+#     def index_tag_list_w_matrix_pos(self, tags):
+#         '''
+#         :param tags: [[pos_i, pos_j, tag1], [pos_i, pos_j, tag2], ...]
+#         :return:
+#         '''
+#         for t in tags:
+#             if t[2] in self.tag2id:
+#                 t[2] = self.tag2id[t[2]]
+#             else:
+#                 t[2] = self.spe_tag_dict["[UNK]"]
+#         return tags
+#
+#     @staticmethod
+#     def pad2length(tags, padding_tag, length):
+#         if len(tags) < length:
+#             tags.extend([padding_tag] * (length - len(tags)))
+#         return tags[:length]
+#
+#     def index_tag_list(self, tags):
+#         '''
+#         tags: [t1, t2, t3, ...]
+#         '''
+#         tag_ids = []
+#         for t in tags:
+#             if t not in self.tag2id:
+#                 tag_ids.append(self.spe_tag_dict["[UNK]"])
+#             else:
+#                 tag_ids.append(self.tag2id[t])
+#
+#         if len(tag_ids) < self.max_seq_len:
+#             tag_ids.extend([self.spe_tag_dict["[PAD]"]] * (self.max_seq_len - len(tag_ids)))
+#
+#         return tag_ids[:self.max_seq_len]
+#
+#     @staticmethod
+#     def get_shaking_idx2matrix_idx(matrix_size):
+#         return MyMatrix.get_shaking_idx2matrix_idx(matrix_size)
+#
+#     @staticmethod
+#     def get_matrix_idx2shaking_idx(matrix_size):
+#         return MyMatrix.get_matrix_idx2shaking_idx(matrix_size)
+#
+#     @staticmethod
+#     def points2shaking_seq(points, matrix_size, tag_size):
+#         '''
+#         Convert points to a shaking sequence tensor
+#
+#         points: [(start_ind, end_ind, tag_id), ]
+#         return:
+#             shaking_seq: (shaking_seq_len, tag_size)
+#         '''
+#         matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+#         shaking_seq_len = matrix_size * (matrix_size + 1) // 2
+#         shaking_seq = torch.zeros(shaking_seq_len, tag_size).long()
+#         for sp in points:
+#             shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
+#             shaking_seq[shaking_idx][sp[2]] = 1
+#         return shaking_seq
+#
+#     @staticmethod
+#     def points2shaking_seq_batch(batch_points, matrix_size, tag_size):
+#         '''
+#         Convert points to a shaking sequence tensor in batch (for training tags)
+#
+#         batch_points: a batch of points, [points1, points2, ...]
+#             points: [(start_ind, end_ind, tag_id), ]
+#         return:
+#             batch_shaking_seq: (batch_size_train, shaking_seq_len, tag_size)
+#         '''
+#         matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+#         shaking_seq_len = matrix_size * (matrix_size + 1) // 2
+#         batch_shaking_seq = torch.zeros(len(batch_points), shaking_seq_len, tag_size).long()
+#         for batch_id, points in enumerate(batch_points):
+#             for sp in points:
+#                 shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
+#                 batch_shaking_seq[batch_id][shaking_idx][sp[2]] = 1
+#         return batch_shaking_seq
+#
+#     @staticmethod
+#     def points2matrix_batch(batch_points, matrix_size):
+#         '''
+#         Convert points to a matrix tensor
+#
+#         batch_points: a batch of points, [points1, points2, ...]
+#             points: [(start_ind, end_ind, tag_id), ]
+#         return:
+#             batch_matrix: (batch_size_train, matrix_size, matrix_size)
+#         '''
+#         batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size).long()
+#         for batch_id, points in enumerate(batch_points):
+#             for pt in points:
+#                 batch_matrix[batch_id][pt[0]][pt[1]] = pt[2]
+#         return batch_matrix
+#
+#     @staticmethod
+#     def points2multilabel_matrix_batch(batch_points, matrix_size, tag_size):
+#         '''
+#         Convert points to a matrix tensor for multi-label tasks
+#
+#         batch_points: a batch of points, [points1, points2, ...]
+#             points: [(i, j, tag_id), ]
+#         return:
+#             batch_matrix: shape: (batch_size_train, matrix_size, matrix_size, tag_size) # element 0 or 1
+#         '''
+#         batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size, tag_size).long()
+#         for batch_id, points in enumerate(batch_points):
+#             for pt in points:
+#                 batch_matrix[batch_id][pt[0]][pt[1]][pt[2]] = 1
+#         return batch_matrix
+#
+#     @staticmethod
+#     def shaking_seq2points(shaking_tag):
+#         '''
+#         shaking_tag -> points
+#         shaking_tag: shape: (shaking_seq_len, tag_size)
+#         points: [(start_ind, end_ind, tag_id), ]
+#         '''
+#         points = []
+#         shaking_seq_len = shaking_tag.size()[0]
+#         matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
+#         shaking_idx2matrix_idx = Indexer.get_shaking_idx2matrix_idx(matrix_size)
+#         nonzero_points = torch.nonzero(shaking_tag, as_tuple=False)
+#         for point in nonzero_points:
+#             shaking_idx, tag_idx = point[0].item(), point[1].item()
+#             pos1, pos2 = shaking_idx2matrix_idx[shaking_idx]
+#             point = (pos1, pos2, tag_idx)
+#             points.append(point)
+#         return points
+#
+#     @staticmethod
+#     def matrix2points(matrix_tag):
+#         '''
+#         matrix_tag -> points
+#         matrix_tag: shape: (matrix_size, matrix_size, tag_size)
+#         points: [(i, j, tag_id), ]
+#         '''
+#         points = []
+#         nonzero_points = torch.nonzero(matrix_tag, as_tuple=False)
+#         for point in nonzero_points:
+#             i, j, tag_idx = point[0].item(), point[1].item(), point[2].item()
+#             point = (i, j, tag_idx)
+#             points.append(point)
+#         return points
+
 class Indexer:
     def __init__(self, tag2id, max_seq_len, spe_tag_dict):
         self.tag2id = tag2id
@@ -64,10 +214,42 @@ class Indexer:
         return MyMatrix.get_matrix_idx2shaking_idx(matrix_size)
 
     @staticmethod
-    def points2shaking_seq(points, matrix_size, tag_size):
+    def points2shaking_seq_batch(batch_points, matrix_size):
         '''
         Convert points to a shaking sequence tensor
+        batch_points: a batch of points, [points1, points2, ...]
+            points: [(start_ind, end_ind, tag_id), ]
+        return:
+            batch_shaking_seq: (batch_size_train, shaking_seq_len)
+        '''
+        matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
+        shaking_seq_len = matrix_size * (matrix_size + 1) // 2
+        batch_shaking_seq = torch.zeros(len(batch_points), shaking_seq_len).long()
+        for batch_id, points in enumerate(batch_points):
+            for sp in points:
+                shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
+                batch_shaking_seq[batch_id][shaking_idx] = sp[2]
+        return batch_shaking_seq
 
+    @staticmethod
+    def points2matrix_batch(batch_points, matrix_size):
+        '''
+        Convert points to a matrix tensor
+        batch_points: a batch of points, [points1, points2, ...]
+            points: [(start_ind, end_ind, tag_id), ]
+        return:
+            batch_matrix: (batch_size_train, matrix_size, matrix_size)
+        '''
+        batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size).long()
+        for batch_id, points in enumerate(batch_points):
+            for pt in points:
+                batch_matrix[batch_id][pt[0]][pt[1]] = pt[2]
+        return batch_matrix
+
+    @staticmethod
+    def points2multilabel_shaking_seq(points, matrix_size, tag_size):
+        '''
+        Convert points to a shaking sequence tensor
         points: [(start_ind, end_ind, tag_id), ]
         return:
             shaking_seq: (shaking_seq_len, tag_size)
@@ -81,10 +263,9 @@ class Indexer:
         return shaking_seq
 
     @staticmethod
-    def points2shaking_seq_batch(batch_points, matrix_size, tag_size):
+    def points2multilabel_shaking_seq_batch(batch_points, matrix_size, tag_size):
         '''
         Convert points to a shaking sequence tensor in batch (for training tags)
-
         batch_points: a batch of points, [points1, points2, ...]
             points: [(start_ind, end_ind, tag_id), ]
         return:
@@ -100,26 +281,23 @@ class Indexer:
         return batch_shaking_seq
 
     @staticmethod
-    def points2matrix_batch(batch_points, matrix_size):
+    def points2multilabel_matrix(points, matrix_size, tag_size):
         '''
-        Convert points to a matrix tensor
+        Convert points to a matrix tensor for multi-label tasks
 
-        batch_points: a batch of points, [points1, points2, ...]
-            points: [(start_ind, end_ind, tag_id), ]
+        points: [(i, j, tag_id), ]
         return:
-            batch_matrix: (batch_size_train, matrix_size, matrix_size)
+            matrix: shape: (matrix_size, matrix_size, tag_size) # element 0 or 1
         '''
-        batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size).long()
-        for batch_id, points in enumerate(batch_points):
-            for pt in points:
-                batch_matrix[batch_id][pt[0]][pt[1]] = pt[2]
-        return batch_matrix
+        matrix = torch.zeros(matrix_size, matrix_size, tag_size).long()
+        for pt in points:
+            matrix[pt[0]][pt[1]][pt[2]] = 1
+        return matrix
 
     @staticmethod
     def points2multilabel_matrix_batch(batch_points, matrix_size, tag_size):
         '''
         Convert points to a matrix tensor for multi-label tasks
-
         batch_points: a batch of points, [points1, points2, ...]
             points: [(i, j, tag_id), ]
         return:
@@ -1512,6 +1690,31 @@ class Preprocessor:
         return data
 
     @staticmethod
+    def choose_spans_by_token_level4sample(sample, token_level):
+        tok_key = "subwd_span" if token_level == "subword" else "wd_span"
+        def choose_sps(a_list):
+            for item in a_list:
+                if type(item) is list:
+                    choose_sps(item)
+                elif type(item) is dict:
+                    add_dict = {}
+                    for k, v in item.items():
+                        if tok_key in k:
+                            add_tok_sp_k = re.sub(tok_key, "tok_span", k)
+                            add_dict[add_tok_sp_k] = v
+                        elif type(v) is list:
+                            choose_sps(v)
+                    item.update(add_dict)
+
+        for k, v in sample.items():
+            if type(v) is list:
+                choose_sps(v)
+            elif type(v) is dict:
+                for val in v.values():
+                    if type(val) is list:
+                        choose_sps(val)
+
+    @staticmethod
     def choose_spans_by_token_level(data, token_level):
         '''
         :param data:
@@ -1519,38 +1722,51 @@ class Preprocessor:
         :return:
         '''
         for sample in data:
-            if "entity_list" in sample:
-                for ent in sample["entity_list"]:
-                    ent["tok_span"] = ent["subwd_span"] if token_level == "subword" else ent["wd_span"]
-                    del ent["subwd_span"]
-                    del ent["wd_span"]
-            if "relation_list" in sample:
-                for rel in sample["relation_list"]:
-                    rel["subj_tok_span"] = rel["subj_subwd_span"] if token_level == "subword" else rel["subj_wd_span"]
-                    rel["obj_tok_span"] = rel["obj_subwd_span"] if token_level == "subword" else rel["obj_wd_span"]
-                    del rel["subj_wd_span"]
-                    del rel["obj_wd_span"]
-                    del rel["subj_subwd_span"]
-                    del rel["obj_subwd_span"]
-            if "event_list" in sample:
-                for event in sample["event_list"]:
-                    event["trigger_tok_span"] = event["trigger_subwd_span"] if token_level == "subword" else event[
-                        "trigger_wd_span"]
-                    del event["trigger_subwd_span"]
-                    del event["trigger_wd_span"]
-                    for arg in event["argument_list"]:
-                        arg["tok_span"] = arg["subwd_span"] if token_level == "subword" else arg["wd_span"]
-                        del arg["subwd_span"]
-                        del arg["wd_span"]
-            if "open_spo_list" in sample:
-                tok_key = "subwd_span" if token_level == "subword" else "wd_span"
-                for spo in sample["open_spo_list"]:
-                    spo["subject"]["tok_span"] = spo["subject"][tok_key]
-                    spo["object"]["tok_span"] = spo["object"][tok_key]
-                    spo["predicate"]["tok_span"] = spo["predicate"][tok_key]
-                    for arg in spo["other_args"]:
-                        arg["tok_span"] = arg[tok_key]
+            Preprocessor.choose_spans_by_token_level4sample(sample, token_level)
+            # if "entity_list" in sample:
+            #     for ent in sample["entity_list"]:
+            #         ent["tok_span"] = ent["subwd_span"] if token_level == "subword" else ent["wd_span"]
+            #         del ent["subwd_span"]
+            #         del ent["wd_span"]
+            # if "relation_list" in sample:
+            #     for rel in sample["relation_list"]:
+            #         rel["subj_tok_span"] = rel["subj_subwd_span"] if token_level == "subword" else rel["subj_wd_span"]
+            #         rel["obj_tok_span"] = rel["obj_subwd_span"] if token_level == "subword" else rel["obj_wd_span"]
+            #         del rel["subj_wd_span"]
+            #         del rel["obj_wd_span"]
+            #         del rel["subj_subwd_span"]
+            #         del rel["obj_subwd_span"]
+            # if "event_list" in sample:
+            #     for event in sample["event_list"]:
+            #         event["trigger_tok_span"] = event["trigger_subwd_span"] if token_level == "subword" else event[
+            #             "trigger_wd_span"]
+            #         del event["trigger_subwd_span"]
+            #         del event["trigger_wd_span"]
+            #         for arg in event["argument_list"]:
+            #             arg["tok_span"] = arg["subwd_span"] if token_level == "subword" else arg["wd_span"]
+            #             del arg["subwd_span"]
+            #             del arg["wd_span"]
+            # if "open_spo_list" in sample:
+            #     tok_key = "subwd_span" if token_level == "subword" else "wd_span"
+            #     for spo in sample["open_spo_list"]:
+            #         spo["subject"]["tok_span"] = spo["subject"][tok_key]
+            #         spo["object"]["tok_span"] = spo["object"][tok_key]
+            #         spo["predicate"]["tok_span"] = spo["predicate"][tok_key]
+            #         for arg in spo["other_args"]:
+            #             arg["tok_span"] = arg[tok_key]
         return data
+
+    @staticmethod
+    def filter_spans(inp_list, start_ind, end_ind):
+        limited_span = [start_ind, end_ind]
+        filter_res = []
+        for item in inp_list:
+            if any("tok_span" in k and not utils.span_contains(limited_span, v) for k, v in item.items()):
+                pass
+            else:
+                filter_res.append(item)
+
+        return filter_res
 
     @staticmethod
     def filter_annotations(sample, start_ind, end_ind):
@@ -1561,73 +1777,145 @@ class Preprocessor:
         :param end_ind:
         :return:
         '''
-        new_sample = copy.deepcopy(sample)
+        filter_res = {}
+        valid_span = [start_ind, end_ind]
+
         if "relation_list" in sample:
-            sub_rel_list = []
-            for rel in sample["relation_list"]:
-                subj_tok_span = rel["subj_tok_span"]
-                obj_tok_span = rel["obj_tok_span"]
-                # if subject and object are both in this subtext, add this spo to new sample
-                if subj_tok_span[0] >= start_ind and subj_tok_span[1] <= end_ind \
-                        and obj_tok_span[0] >= start_ind and obj_tok_span[1] <= end_ind:
-                    rel_cp = copy.deepcopy(rel)
-                    sub_rel_list.append(rel_cp)
-            new_sample["relation_list"] = sub_rel_list
+            filter_res["relation_list"] = Preprocessor.filter_spans(sample["relation_list"], start_ind, end_ind)
 
-            # entity
         if "entity_list" in sample:
-            sub_ent_list = []
-            for ent in sample["entity_list"]:
-                tok_span = ent["tok_span"]
-                # if entity in this subtext, add the entity to new sample
-                if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
-                    ent_cp = copy.deepcopy(ent)
-                    sub_ent_list.append(ent_cp)
-            new_sample["entity_list"] = sub_ent_list
+            filter_res["entity_list"] = Preprocessor.filter_spans(sample["entity_list"], start_ind, end_ind)
 
-            # event
         if "event_list" in sample:
             sub_event_list = []
             for event in sample["event_list"]:
-                if "trigger" in event:
-                    trigger_tok_span = event["trigger_tok_span"]
-                    if trigger_tok_span[1] > end_ind or trigger_tok_span[0] < start_ind:
-                        continue
                 event_cp = copy.deepcopy(event)
+                if "trigger" in event_cp:
+                    if not utils.span_contains(valid_span, event_cp["trigger_tok_span"]):
+                        del event_cp["trigger"]
+                        del event_cp["trigger_tok_span"]
+                        del event_cp["trigger_char_span"]
+
                 new_arg_list = []
                 for arg in event_cp["argument_list"]:
-                    tok_span = arg["tok_span"]
-                    if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
-                        arg_cp = copy.deepcopy(arg)
-                        new_arg_list.append(arg_cp)
-                event_cp["argument_list"] = new_arg_list
-                sub_event_list.append(event_cp)
-            new_sample["event_list"] = sub_event_list
+                    if utils.span_contains(valid_span, arg["tok_span"]):
+                        new_arg_list.append(arg)
+
+                if len(new_arg_list) > 0 or "trigger" in event_cp:
+                    event_cp["argument_list"] = new_arg_list
+                    sub_event_list.append(event_cp)
+            filter_res["event_list"] = sub_event_list
+
+        if "event_element_list" in sample:
+            sub_event_element_list = []
+            for event_elements in sample["event_element_list"]:
+                sub_ent_list = Preprocessor.filter_spans(event_elements["entity_list"], start_ind, end_ind)
+                sub_rel_list = Preprocessor.filter_spans(event_elements["relation_list"], start_ind, end_ind)
+                if len(sub_ent_list) + len(sub_rel_list) > 0:
+                    sub_event_element_list.append({
+                        "entity_list": sub_ent_list,
+                        "relation_list": sub_rel_list,
+                    })
+            filter_res["event_element_list"] = sub_event_element_list
 
         if "open_spo_list" in sample:
             sub_open_spo_list = []
             for spo in sample["open_spo_list"]:
-                if "subject" in spo and spo["subject"] is not None and \
-                        not (spo["subject"]["tok_span"][0] >= start_ind and
-                             spo["subject"]["tok_span"][-1] <= end_ind):
-                    continue
-                if "object" in spo and spo["object"] is not None and \
-                        not (spo["object"]["tok_span"][0] >= start_ind and
-                             spo["object"]["tok_span"][-1] <= end_ind):
-                    continue
-                if "predicate" in spo and spo["predicate"] is not None and \
-                        not (spo["predicate"]["tok_span"][0] >= start_ind and
-                             spo["predicate"]["tok_span"][-1] <= end_ind):
-                    continue
-                spo_cp = copy.deepcopy(spo)
-                new_other_args = []
-                for arg in spo_cp["other_args"]:
-                    if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
-                        new_other_args.append(arg)
-                spo_cp["other_args"] = new_other_args
-                sub_open_spo_list.append(spo_cp)
-            new_sample["open_spo_list"] = sub_open_spo_list
-        return new_sample
+                new_spo = []
+                bad_spo = False
+                for arg in spo:
+                    if utils.span_contains(valid_span, arg["tok_span"]):
+                        new_spo.append(arg)
+                    elif not utils.span_contains(valid_span, arg["tok_span"]) \
+                            and arg["type"] in {"predicate", "object", "subject"}:
+                        bad_spo = True
+                        break
+                if not bad_spo:
+                    sub_open_spo_list.append(new_spo)
+
+                # if any(not utils.span_contains(limited_span, arg["tok_span"]) for arg in spo):
+                #     continue
+                # sub_open_spo_list.append(spo)
+            filter_res["open_spo_list"] = sub_open_spo_list
+        return filter_res
+
+
+    # @staticmethod
+    # def filter_annotations(sample, start_ind, end_ind):
+    #     '''
+    #     filter annotations in [start_ind, end_ind]
+    #     :param sample:
+    #     :param start_ind:
+    #     :param end_ind:
+    #     :return:
+    #     '''
+    #     new_sample = copy.deepcopy(sample)
+    #     if "relation_list" in sample:
+    #         sub_rel_list = []
+    #         for rel in sample["relation_list"]:
+    #             subj_tok_span = rel["subj_tok_span"]
+    #             obj_tok_span = rel["obj_tok_span"]
+    #             # if subject and object are both in this subtext, add this spo to new sample
+    #             if subj_tok_span[0] >= start_ind and subj_tok_span[1] <= end_ind \
+    #                     and obj_tok_span[0] >= start_ind and obj_tok_span[1] <= end_ind:
+    #                 rel_cp = copy.deepcopy(rel)
+    #                 sub_rel_list.append(rel_cp)
+    #         new_sample["relation_list"] = sub_rel_list
+    #
+    #         # entity
+    #     if "entity_list" in sample:
+    #         sub_ent_list = []
+    #         for ent in sample["entity_list"]:
+    #             tok_span = ent["tok_span"]
+    #             # if entity in this subtext, add the entity to new sample
+    #             if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
+    #                 ent_cp = copy.deepcopy(ent)
+    #                 sub_ent_list.append(ent_cp)
+    #         new_sample["entity_list"] = sub_ent_list
+    #
+    #         # event
+    #     if "event_list" in sample:
+    #         sub_event_list = []
+    #         for event in sample["event_list"]:
+    #             if "trigger" in event:
+    #                 trigger_tok_span = event["trigger_tok_span"]
+    #                 if trigger_tok_span[1] > end_ind or trigger_tok_span[0] < start_ind:
+    #                     continue
+    #             event_cp = copy.deepcopy(event)
+    #             new_arg_list = []
+    #             for arg in event_cp["argument_list"]:
+    #                 tok_span = arg["tok_span"]
+    #                 if tok_span[0] >= start_ind and tok_span[1] <= end_ind:
+    #                     arg_cp = copy.deepcopy(arg)
+    #                     new_arg_list.append(arg_cp)
+    #             event_cp["argument_list"] = new_arg_list
+    #             sub_event_list.append(event_cp)
+    #         new_sample["event_list"] = sub_event_list
+    #
+    #     if "open_spo_list" in sample:
+    #         sub_open_spo_list = []
+    #         for spo in sample["open_spo_list"]:
+    #             if "subject" in spo and spo["subject"] is not None and \
+    #                     not (spo["subject"]["tok_span"][0] >= start_ind and
+    #                          spo["subject"]["tok_span"][-1] <= end_ind):
+    #                 continue
+    #             if "object" in spo and spo["object"] is not None and \
+    #                     not (spo["object"]["tok_span"][0] >= start_ind and
+    #                          spo["object"]["tok_span"][-1] <= end_ind):
+    #                 continue
+    #             if "predicate" in spo and spo["predicate"] is not None and \
+    #                     not (spo["predicate"]["tok_span"][0] >= start_ind and
+    #                          spo["predicate"]["tok_span"][-1] <= end_ind):
+    #                 continue
+    #             spo_cp = copy.deepcopy(spo)
+    #             new_other_args = []
+    #             for arg in spo_cp["other_args"]:
+    #                 if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
+    #                     new_other_args.append(arg)
+    #             spo_cp["other_args"] = new_other_args
+    #             sub_open_spo_list.append(spo_cp)
+    #         new_sample["open_spo_list"] = sub_open_spo_list
+    #     return new_sample
 
     @staticmethod
     def split_into_short_samples(data, max_seq_len, sliding_len, data_type,
@@ -1705,86 +1993,112 @@ class Preprocessor:
                     if end_ind > len(tokens):
                         break
                 else:
-                    # if not test data, need to filter entities, relations, and events in the subtext
-                    # relation
-                    sub_rel_list = []
-                    if "relation_list" in sample:
-                        for rel in sample["relation_list"]:
-                            subj_tok_span = rel["subj_tok_span"]
-                            obj_tok_span = rel["obj_tok_span"]
-                            # if subject and object are both in this subtext, add this spo to new sample
-                            if subj_tok_span[0] >= start_ind and subj_tok_span[-1] <= end_ind \
-                                    and obj_tok_span[0] >= start_ind and obj_tok_span[-1] <= end_ind:
-                                rel_cp = copy.deepcopy(rel)
-                                sub_rel_list.append(rel_cp)
-                    new_sample["relation_list"] = sub_rel_list
+                    # if train data, need to choose entities, relations, and events in the subtext
+                    filtered_res = Preprocessor.filter_annotations(sample, start_ind, end_ind)
+                    new_sample = {**new_sample, **filtered_res}
 
-                    # entity
-                    sub_ent_list = []
-                    if "entity_list" in sample:
-                        for ent in sample["entity_list"]:
-                            tok_span = ent["tok_span"]
-                            # if entity in this subtext, add the entity to new sample
-                            if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
-                                ent_cp = copy.deepcopy(ent)
-                                sub_ent_list.append(ent_cp)
-                    new_sample["entity_list"] = sub_ent_list
+                    # if "entity_list" in filtered_res:
+                    #     new_sample["entity_list"] = filtered_res["entity_list"]
+                    # if "relation_list" in filtered_res:
+                    #     new_sample["relation_list"] = filtered_res["relation_list"]
+                    # if "event_list" in filtered_res:
+                    #     new_sample["event_list"] = filtered_res["event_list"]
+                    # if "open_spo_list" in filtered_res:
+                    #     new_sample["open_spo_list"] = filtered_res["open_spo_list"]
 
-                    # event
-                    sub_event_list = []
-                    if "event_list" in sample:
-                        for event in sample["event_list"]:
-                            trigger_tok_span = event["trigger_tok_span"]
-                            if not (trigger_tok_span[0] >= start_ind and trigger_tok_span[-1] <= end_ind):
-                                continue
-                            event_cp = copy.deepcopy(event)
-                            new_arg_list = []
-                            for arg in event_cp["argument_list"]:
-                                tok_span = arg["tok_span"]
-                                if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
-                                    arg_cp = copy.deepcopy(arg)
-                                    new_arg_list.append(arg_cp)
-                            event_cp["argument_list"] = new_arg_list
-                            sub_event_list.append(event_cp)
-                    new_sample["event_list"] = sub_event_list
-
-                    # open ie
-                    sub_open_spo_list = []
-                    if "open_spo_list" in sample:
-                        for spo in sample["open_spo_list"]:
-                            if "subject" in spo and spo["subject"] is not None and \
-                                    not (spo["subject"]["tok_span"][0] >= start_ind and
-                                    spo["subject"]["tok_span"][-1] <= end_ind):
-                                continue
-                            if "object" in spo and spo["object"] is not None and \
-                                    not (spo["object"]["tok_span"][0] >= start_ind and
-                                    spo["object"]["tok_span"][-1] <= end_ind):
-                                continue
-                            if "predicate" in spo and spo["predicate"] is not None and \
-                                    not (spo["predicate"]["tok_span"][0] >= start_ind and
-                                    spo["predicate"]["tok_span"][-1] <= end_ind):
-                                continue
-                            spo_cp = copy.deepcopy(spo)
-                            new_other_args = []
-                            for arg in spo_cp["other_args"]:
-                                if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
-                                    new_other_args.append(arg)
-                            spo_cp["other_args"] = new_other_args
-                            sub_open_spo_list.append(spo_cp)
-                    new_sample["open_spo_list"] = sub_open_spo_list
+                    # # relation
+                    # def choose_sub_rels(rel_list):
+                    #     sub_rel_list = []
+                    #     for rel in rel_list:
+                    #         subj_tok_span = rel["subj_tok_span"]
+                    #         obj_tok_span = rel["obj_tok_span"]
+                    #         # if subject and object are both in this subtext, add this spo to new sample
+                    #         if subj_tok_span[0] >= start_ind and subj_tok_span[-1] <= end_ind \
+                    #                 and obj_tok_span[0] >= start_ind and obj_tok_span[-1] <= end_ind:
+                    #             rel_cp = copy.deepcopy(rel)
+                    #             sub_rel_list.append(rel_cp)
+                    #     return sub_rel_list
+                    #
+                    # # entity
+                    # def choose_sub_ents(ent_list):
+                    #     sub_ent_list = []
+                    #     for ent in ent_list:
+                    #         tok_span = ent["tok_span"]
+                    #         # if entity in this subtext, add the entity to new sample
+                    #         if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
+                    #             ent_cp = copy.deepcopy(ent)
+                    #             sub_ent_list.append(ent_cp)
+                    #     return sub_ent_list
+                    #
+                    # if "relation_list" in sample:
+                    #     sub_rel_list = choose_sub_rels(sample["relation_list"])
+                    #     new_sample["relation_list"] = sub_rel_list
+                    #
+                    # if "entity_list" in sample:
+                    #     sub_ent_list = choose_sub_ents(sample["entity_list"])
+                    #     new_sample["entity_list"] = sub_ent_list
+                    #
+                    # # event
+                    # if "event_element_list" in sample:
+                    #     sub_event_element_list = []
+                    #     for event_elements in sample["event_element_list"]:
+                    #         sub_ent_list = choose_sub_ents(event_elements["entity_list"])
+                    #         sub_rel_list = choose_sub_rels(event_elements["relation_list"])
+                    #         if len(sub_ent_list) + len(sub_rel_list) > 0:
+                    #             sub_event_element_list.append({
+                    #                 "entity_list": sub_ent_list,
+                    #                 "relation_list": sub_rel_list,
+                    #             })
+                    #     new_sample["event_element_list"] = sub_event_element_list
+                    #
+                    # if "event_list" in sample:
+                    #     sub_event_list = []
+                    #     for event in sample["event_list"]:
+                    #         trigger_tok_span = event["trigger_tok_span"]
+                    #         if not (trigger_tok_span[0] >= start_ind and trigger_tok_span[-1] <= end_ind):
+                    #             continue
+                    #         event_cp = copy.deepcopy(event)
+                    #         new_arg_list = []
+                    #         for arg in event_cp["argument_list"]:
+                    #             tok_span = arg["tok_span"]
+                    #             if tok_span[0] >= start_ind and tok_span[-1] <= end_ind:
+                    #                 arg_cp = copy.deepcopy(arg)
+                    #                 new_arg_list.append(arg_cp)
+                    #         event_cp["argument_list"] = new_arg_list
+                    #         sub_event_list.append(event_cp)
+                    #     new_sample["event_list"] = sub_event_list
+                    #
+                    # # open ie
+                    # if "open_spo_list" in sample:
+                    #     sub_open_spo_list = []
+                    #     for spo in sample["open_spo_list"]:
+                    #         if "subject" in spo and spo["subject"] is not None and \
+                    #                 not (spo["subject"]["tok_span"][0] >= start_ind and
+                    #                 spo["subject"]["tok_span"][-1] <= end_ind):
+                    #             continue
+                    #         if "object" in spo and spo["object"] is not None and \
+                    #                 not (spo["object"]["tok_span"][0] >= start_ind and
+                    #                 spo["object"]["tok_span"][-1] <= end_ind):
+                    #             continue
+                    #         if "predicate" in spo and spo["predicate"] is not None and \
+                    #                 not (spo["predicate"]["tok_span"][0] >= start_ind and
+                    #                 spo["predicate"]["tok_span"][-1] <= end_ind):
+                    #             continue
+                    #         spo_cp = copy.deepcopy(spo)
+                    #         new_other_args = []
+                    #         for arg in spo_cp["other_args"]:
+                    #             if arg["tok_span"][0] >= start_ind and arg["tok_span"][-1] <= end_ind:
+                    #                 new_other_args.append(arg)
+                    #         spo_cp["other_args"] = new_other_args
+                    #         sub_open_spo_list.append(spo_cp)
+                    #     new_sample["open_spo_list"] = sub_open_spo_list
 
                     # do not introduce excessive negative samples
                     if drop_neg_samples:
-                        # if task_type == "re" and len(new_sample["relation_list"]) == 0:
-                        #     continue
-                        # if "ner" in task_type and len(new_sample["entity_list"]) == 0:
-                        #     continue
-                        # if ("ee" in task_type or "ed" in task_type) and len(new_sample["event_list"]) == 0:
-                        #     continue
-                        if len(new_sample["relation_list"]) == 0 \
-                                and len(new_sample["entity_list"]) == 0 \
-                                and len(new_sample["event_list"]) == 0 \
-                                and len(new_sample["open_spo_list"]) == 0:
+                        if "relation_list" not in new_sample or len(new_sample["relation_list"]) == 0 \
+                                and "entity_list" not in new_sample or len(new_sample["entity_list"]) == 0 \
+                                and "event_list" not in new_sample or len(new_sample["event_list"]) == 0 \
+                                and "open_spo_list" not in new_sample or len(new_sample["open_spo_list"]) == 0:
                             continue
 
                     # offset
@@ -1864,6 +2178,8 @@ class Preprocessor:
                 combined_sample["relation_list"].extend(sample_cp["relation_list"])
             if "event_list" in sample_cp:
                 combined_sample["event_list"].extend(sample_cp["event_list"])
+            if "event_element_list" in sample_cp:
+                combined_sample.setdefault("event_element_list", []).extend(sample_cp["event_element_list"])
             if "open_spo_list" in sample_cp:
                 combined_sample["open_spo_list"].extend(sample_cp["open_spo_list"])
 
@@ -1917,24 +2233,33 @@ class Preprocessor:
     def span_offset(sample, tok_level_offset, char_level_offset):
         def list_add(ori_list, add_num):
             return [e + add_num for e in ori_list]
-        if "relation_list" in sample:
-            for rel in sample["relation_list"]:
+
+        def rel_offset(rel_list):
+            for rel in rel_list:
                 rel["subj_tok_span"] = list_add(rel["subj_tok_span"], tok_level_offset)
                 rel["obj_tok_span"] = list_add(rel["obj_tok_span"], tok_level_offset)
                 rel["subj_char_span"] = list_add(rel["subj_char_span"], char_level_offset)
                 rel["obj_char_span"] = list_add(rel["obj_char_span"], char_level_offset)
-        if "entity_list" in sample:
-            for ent in sample["entity_list"]:
+
+        def ent_offset(ent_list):
+            for ent in ent_list:
                 ent["tok_span"] = list_add(ent["tok_span"], tok_level_offset)
                 ent["char_span"] = list_add(ent["char_span"], char_level_offset)
+
+        if "relation_list" in sample:
+            rel_offset(sample["relation_list"])
+
+        if "entity_list" in sample:
+            ent_offset(sample["entity_list"])
+
+        if "event_element_list" in sample:
+            for event_elements in sample["event_element_list"]:
+                rel_offset(event_elements["relation_list"])
+                ent_offset(event_elements["entity_list"])
 
         if "event_list" in sample:
             for event in sample["event_list"]:
                 if "trigger" in event:
-                    # event["trigger_tok_span"][0] += tok_level_offset
-                    # event["trigger_tok_span"][1] += tok_level_offset
-                    # event["trigger_char_span"][0] += char_level_offset
-                    # event["trigger_char_span"][1] += char_level_offset
                     event["trigger_tok_span"] = list_add(event["trigger_tok_span"], tok_level_offset)
                     event["trigger_char_span"] = list_add(event["trigger_char_span"], char_level_offset)
                 for arg in event["argument_list"]:
@@ -1986,13 +2311,14 @@ class Preprocessor:
                 for event in sample["event_list"]:
                     bad_event = copy.deepcopy(event)
                     bad = False
-                    trigger_tok_span = event["trigger_tok_span"]
-                    extr_trigger = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_tok_span, tok2char_span, text, language)
-                    extr_trigger_c = Preprocessor.extract_ent_fr_txt_by_char_sp(event["trigger_char_span"], text, language)
-                    if not (extr_trigger == event["trigger"] == extr_trigger_c):
-                        bad = True
-                        bad_event["extr_trigger"] = extr_trigger
-                        bad_event["extr_trigger_c"] = extr_trigger_c
+                    if "trigger" in event:
+                        trigger_tok_span = event["trigger_tok_span"]
+                        extr_trigger = Preprocessor.extract_ent_fr_txt_by_tok_sp(trigger_tok_span, tok2char_span, text, language)
+                        extr_trigger_c = Preprocessor.extract_ent_fr_txt_by_char_sp(event["trigger_char_span"], text, language)
+                        if not (extr_trigger == event["trigger"] == extr_trigger_c):
+                            bad = True
+                            bad_event["extr_trigger"] = extr_trigger
+                            bad_event["extr_trigger_c"] = extr_trigger_c
 
                     for arg in event["argument_list"]:
                         arg_span = arg["tok_span"]

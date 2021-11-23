@@ -2927,14 +2927,12 @@ def rm_triggers(data):
                 continue
             new_event = {}
             for k, v in event.items():
-                if k != "trigger_type" and "trigger" in k:
+                if k == "trigger_type":
+                    new_event["event_type"] = v
+                elif "trigger" in k:  # skip all trigger related keys
                     pass
                 else:
-                    if k == "trigger_type":
-                        new_event["event_type"] = v
-                    else:
-                        new_event[k] = v
-
+                    new_event[k] = v
             new_event_list.append(new_event)
         sample["event_list"] = new_event_list
     return data
@@ -3156,26 +3154,24 @@ if __name__ == "__main__":
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     # # ============================ rm triggers in ace05 ======================================
-    # train_path = "../../data/ori_data/ace2005_lu/train_data.json"
-    # dev_path = "../../data/ori_data/ace2005_lu/valid_data.json"
-    # test_path = "../../data/ori_data/ace2005_lu/test_data.json"
-    # train_data = load_data(train_path)
-    # valid_data = load_data(dev_path)
-    # test_data = load_data(test_path)
-    # sv_dir = "../../data/ori_data/ace2005_lu_tf"
-    # if not os.path.exists(sv_dir):
-    #     os.mkdir(sv_dir)
-    #
+    train_path = "../../data/preprocessed_data/ace2005_dygiepp_default_settings/train_data.json"
+    dev_path = "../../data/preprocessed_data/ace2005_dygiepp_default_settings/valid_data.json"
+    test_path = "../../data/preprocessed_data/ace2005_dygiepp_default_settings/test_data.json"
+    train_data = load_data(train_path)
+    valid_data = load_data(dev_path)
+    test_data = load_data(test_path)
+    sv_dir = "../../data/preprocessed_data/ace2005_dygiepp_default_settings_tf"
+    if not os.path.exists(sv_dir):
+        os.mkdir(sv_dir)
 
-    #
-    # new_train_data = rm_triggers(train_data)
-    # new_valid_data = rm_triggers(valid_data)
-    # new_test_data = rm_triggers(test_data)
-    # train_sv_path = os.path.join(sv_dir, "train_data.json")
-    # dev_sv_path = os.path.join(sv_dir, "valid_data.json")
-    # test_sv_path = os.path.join(sv_dir, "test_data.json")
-    # save_as_json_lines(new_train_data, train_sv_path)
-    # save_as_json_lines(new_valid_data, dev_sv_path)
-    # save_as_json_lines(new_test_data, test_sv_path)
+    new_train_data = rm_triggers(train_data)
+    new_valid_data = rm_triggers(valid_data)
+    new_test_data = rm_triggers(test_data)
+    train_sv_path = os.path.join(sv_dir, "train_data.json")
+    dev_sv_path = os.path.join(sv_dir, "valid_data.json")
+    test_sv_path = os.path.join(sv_dir, "test_data.json")
+    save_as_json_lines(new_train_data, train_sv_path)
+    save_as_json_lines(new_valid_data, dev_sv_path)
+    save_as_json_lines(new_test_data, test_sv_path)
 
     pass

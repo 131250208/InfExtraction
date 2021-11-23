@@ -417,7 +417,11 @@ if __name__ == "__main__":
                                                                score_dict4comparing[metric_key]["best"])
 
                 # save models
-                if current_val_score > 0. and model_bag_size > 0 and re.match(metric_pattern2save, metric_key):
+                if current_val_score > 0. and model_bag_size > 0:
+                    if (metric_pattern2save is not None or metric_pattern2save != "") and \
+                            not re.match(metric_pattern2save, metric_key):
+                        continue
+
                     dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)
                     if not os.path.exists(dir_to_save_model_this_key):
                         os.makedirs(dir_to_save_model_this_key)

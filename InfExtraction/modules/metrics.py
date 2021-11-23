@@ -194,10 +194,10 @@ class MetricsCalculator:
         return {
             "trigger_iden": trigger_iden_set,
             "trigger_class": trigger_class_set,
-            "arg_soft_iden": arg_soft_iden_set,
-            "arg_soft_class": arg_soft_class_set,
             "arg_hard_iden": arg_hard_iden_set,
             "arg_hard_class": arg_hard_class_set,
+            "arg_soft_iden": arg_soft_iden_set,
+            "arg_soft_class": arg_soft_class_set,
             "arg_link_iden": arg_link_iden_set,
             "arg_link_class": arg_link_class_set,
             "event_type": event_type_set,
@@ -499,7 +499,7 @@ class MetricsCalculator:
         gold_event_list_cp = copy.deepcopy(golden_sample["event_list"])
         pred_event_list_cp = copy.deepcopy(pred_sample["event_list"])
         while len(gold_event_list_cp) != 0 and len(pred_event_list_cp) != 0:
-            max_correct_num_a_event = -1
+            max_f1_a_event = -1
             chosen_pred_event = None
             chosen_gold_event = None
 
@@ -507,24 +507,27 @@ class MetricsCalculator:
                 gold_arg_set = event2arg_set(gold_event)
                 for pred_event in pred_event_list_cp:
                     if pred_event["event_type"] != gold_event["event_type"]:
-                        current_correct_num = 0
+                        current_f1 = 0
                     else:
                         pred_arg_set = event2arg_set(pred_event)
                         current_correct_num = len(pred_arg_set.intersection(gold_arg_set))
+                        current_pred_num = len(pred_event["argument_list"])
+                        current_gold_num = len(gold_event["argument_list"])
 
-                    if current_correct_num > max_correct_num_a_event:
-                        max_correct_num_a_event = current_correct_num
+                        minimum = 1e-20
+                        precision = current_correct_num / (current_pred_num + minimum)
+                        recall = current_correct_num / (current_gold_num + minimum)
+                        current_f1 = 2 * precision * recall / (precision + recall + minimum)
+
+                    if current_f1 > max_f1_a_event:
+                        max_f1_a_event = current_f1
                         chosen_gold_event = gold_event
                         chosen_pred_event = pred_event
 
-            if max_correct_num_a_event >= 0:
-                correct_num += max_correct_num_a_event
-                pred_num_a_event = len(chosen_pred_event["argument_list"])
-                gold_num_a_event = len(chosen_gold_event["argument_list"])
-                # if max_correct_num_a_event != pred_num_a_event:
-                #     print("debug most similar!")
-                pred_num += pred_num_a_event
-                gold_num += gold_num_a_event
+            if max_f1_a_event >= 0:
+                correct_num += len(event2arg_set(chosen_pred_event).intersection(event2arg_set(chosen_gold_event)))
+                pred_num += len(chosen_pred_event["argument_list"])
+                gold_num += len(chosen_gold_event["argument_list"])
 
                 # (no replacement)不放回 matched events are used only once
                 gold_event_list_cp.remove(chosen_gold_event)
@@ -567,14 +570,13 @@ class MetricsCalculator:
                 ee_cpg_dict[key] = [0, 0, 0]
         # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-        # >>>>>>>>>>>>>>>>>>>>> calculate metrics on all samples >>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        # >>>>>>>>>>>>>>>>>>>>> calculate metrics >>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         wrong_pred_list = []
         for idx, pred_sample in enumerate(pred_sample_list):
             gold_sample = golden_sample_list[idx]
             pred_event_list = pred_sample["event_list"]
             gold_event_list = gold_sample["event_list"]
 
-            # MetricsCalculator.cal_ee_cpg(pred_event_list, gold_event_list, ee_cpg_dict)
             all_correct = True
 
             # char level argument classification
@@ -596,6 +598,9 @@ class MetricsCalculator:
             pred_set_dict = MetricsCalculator.get_mark_sets_ee(pred_event_list)
             gold_set_dict = MetricsCalculator.get_mark_sets_ee(gold_event_list)
             for key in gold_set_dict.keys():
+                if key not in ee_cpg_dict:
+                    continue
+
                 pred_set, gold_set = pred_set_dict[key], gold_set_dict[key]
                 correct = MetricsCalculator.cal_cpg(pred_set, gold_set, ee_cpg_dict[key])
                 if not correct:
@@ -729,7 +734,7 @@ class MetricsCalculator:
         :return:
         '''
         if correct_num == pred_num == gold_num == 0:
-            return 1.2333, 1.2333, 1.2333  # highlight this info by illegal outputs instead of outputting 0.
+            return - 0.01, - 0.01, - 0.01  # highlight this info by illegal outputs instead of outputting 0.
 
         minimum = 1e-20
         precision = correct_num / (pred_num + minimum)
@@ -777,29 +782,31 @@ class MetricsCalculator:
             total_cpg_dict = {**total_cpg_dict, **cpg_dict}
             error_dict["event"] = wrong_pred_list
 
-            # otm, otm_st
-            golden_data_otm = []  # one trigger to multiple events
-            golden_data_otm_st = []  # one trigger to multiple events under the same event type
-            pred_data_otm, pred_data_otm_st = [], []
-            for sample_idx, sample in enumerate(golden_data):
-                trigger_list = [str(event["trigger_tok_span"]) for event in sample["event_list"]]
-                tri_etype_list = [str(event["trigger_tok_span"] + [event["event_type"]]) for event in
-                                  sample["event_list"]]
-                if len(set(trigger_list)) < len(trigger_list):
-                    golden_data_otm.append(sample)
-                    pred_data_otm.append(pred_data[sample_idx])
-                if len(set(tri_etype_list)) < len(tri_etype_list):
-                    golden_data_otm_st.append(sample)
-                    pred_data_otm_st.append(pred_data[sample_idx])
+            # calculate otm, otm_st
+            if any("trigger" in event for sample in golden_data for event in sample["event_list"]):
+                golden_data_n_otm = []  # one trigger to multiple events
+                golden_data_s_otm = []  # one trigger to multiple events under the same event type
+                pred_data_otm, pred_data_otm_st = [], []
+                for sample_idx, sample in enumerate(golden_data):
+                    trigger_list = [str(event["trigger_tok_span"]) for event in sample["event_list"]]
+                    tri_etype_list = [str(event["trigger_tok_span"] + [event["event_type"]]) for event in
+                                      sample["event_list"]]
+                    if len(set(trigger_list)) < len(trigger_list):
+                        if len(set(tri_etype_list)) < len(tri_etype_list):
+                            golden_data_s_otm.append(sample)
+                            pred_data_otm_st.append(pred_data[sample_idx])
+                        else:
+                            golden_data_n_otm.append(sample)
+                            pred_data_otm.append(pred_data[sample_idx])
 
-            if len(golden_data_otm) / len(golden_data) > 0.05:
-                otm_cpg_dict, _ = MetricsCalculator.get_ee_cpg_dict(pred_data_otm, golden_data_otm)
-                for k, v in otm_cpg_dict.items():
-                    total_cpg_dict["{}_{}".format("otm", k)] = v
-            if len(golden_data_otm_st) / len(golden_data) > 0.05:
-                otm_st_cpg_dict, _ = MetricsCalculator.get_ee_cpg_dict(pred_data_otm_st, golden_data_otm_st)
-                for k, v in otm_st_cpg_dict.items():
-                    total_cpg_dict["{}_{}".format("otm_st", k)] = v
+                if len(golden_data_n_otm) / len(golden_data) > 0.05:
+                    otm_cpg_dict, _ = MetricsCalculator.get_ee_cpg_dict(pred_data_otm, golden_data_n_otm)
+                    for k, v in otm_cpg_dict.items():
+                        total_cpg_dict["{}_{}".format("n_otm", k)] = v
+                if len(golden_data_s_otm) / len(golden_data) > 0.05:
+                    otm_st_cpg_dict, _ = MetricsCalculator.get_ee_cpg_dict(pred_data_otm_st, golden_data_s_otm)
+                    for k, v in otm_st_cpg_dict.items():
+                        total_cpg_dict["{}_{}".format("s_otm", k)] = v
 
         score_dict = {}
         for sc_pattern, cpg in total_cpg_dict.items():

@@ -58,6 +58,7 @@ combine = True  # combine splits
 scheduler = "CAWR"
 use_ghm = False
 model_bag_size = 0
+metric_pattern2save = None  # if none save best models on all metrics
 
 batch_size_train = 12
 batch_size_valid = 12

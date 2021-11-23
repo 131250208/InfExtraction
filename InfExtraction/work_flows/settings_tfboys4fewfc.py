@@ -42,7 +42,7 @@ exp_name = "few_fc"
 language = "ch"
 stage = "inference"  # inference
 task_type = "re+tfboys"  # re, re+ee
-model_name = "RAIN"
+model_name = "TFBoYsBackbone"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "macbert-base"
@@ -50,8 +50,8 @@ pretrained_emb_name = "glove_fewfc_300.txt"
 use_wandb = False
 note = ""
 epochs = 100
-lr = 6e-5  # 5e-5, 1e-4
-check_tagging_n_decoding = True
+lr = 2e-5  # 5e-5, 1e-4
+check_tagging_n_decoding = False
 split_early_stop = True
 drop_neg_samples = False
 combine = False  # combine splits
@@ -65,13 +65,13 @@ batch_size_train = 12
 batch_size_valid = 6
 batch_size_test = 6
 
-max_seq_len_train = 128
-max_seq_len_valid = 200
-max_seq_len_test = 200
+max_seq_len_train = 100
+max_seq_len_valid = 128
+max_seq_len_test = 128
 
-sliding_len_train = 50
-sliding_len_valid = 200
-sliding_len_test = 200
+sliding_len_train = 80
+sliding_len_valid = 128
+sliding_len_test = 128
 
 
 token_level = "subword"  # token is word or subword
@@ -189,9 +189,9 @@ model_state_dict_path = None
 
 # for test
 model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
-target_run_ids = ["2uq6f74s", ]
-model_path_ids2infer = [-1, ]
-metric4testing = "arg_soft_class_f1"
+target_run_ids = ["3s2cljse", ] # zyuy3ra0
+model_path_ids2infer = [-5, ]
+metric4testing = "arg_class_most_similar_event_f1"
 cal_scores = True  # set False if the test sets are not annotated
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -231,7 +231,7 @@ word_encoder_config = {
 subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
-    "use_last_k_layers": 1,
+    "use_last_k_layers": 3,
     "wordpieces_prefix": "##",
 } if subwd_encoder else None
 
@@ -246,7 +246,9 @@ dep_config = {
 
 handshaking_kernel_config = {
     "ent_shaking_type": "cln+bilstm",
+    "ent_dist_emb_dim": 64,
     "rel_shaking_type": "cln",
+    "rel_dist_emb_dim": 128,
 }
 
 # model settings
@@ -259,9 +261,9 @@ model_settings = {
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
     "use_attns4rel": use_attns4rel,
-    "ent_dim": 1024,
+    "ent_dim": 768,
     "rel_dim": 1024,
-    "do_span_len_emb": True,
+    "do_span_len_emb": False,
     "emb_ent_info2rel": False,  # 加速收敛
     "golden_ent_cla_guide": False,
     "init_loss_weight": 0.5,

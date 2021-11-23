@@ -48,17 +48,34 @@ class Trainer:
 
     # train step
     def train_step(self, batch_train_data):
-        golden_tags = batch_train_data["golden_tags"]
-        golden_tags = [tag.to(self.device) for tag in golden_tags]
-
         del batch_train_data["sample_list"]
-        del batch_train_data["golden_tags"]
-        for k, v in batch_train_data.items():
-            if k == "padded_text_list":
-                for sent in v:
-                    sent.to(self.device)
+        # golden_tags = [tag.to(self.device) for tag in golden_tags]
+
+        def to_device_iter(inp_item):
+            if type(inp_item) is dict:
+                for k, v in inp_item.items():
+                    if type(v) is torch.Tensor:
+                        inp_item[k] = v.to(self.device)
+                    else:
+                        to_device_iter(v)
+            elif type(inp_item) is list:
+                for idx, v in enumerate(inp_item):
+                    if type(v) is torch.Tensor:
+                        inp_item[idx] = v.to(self.device)
+                    else:
+                        to_device_iter(v)
             else:
-                batch_train_data[k] = v.to(self.device)
+                pass
+
+        to_device_iter(batch_train_data)
+        golden_tags = batch_train_data["golden_tags"]
+        del batch_train_data["golden_tags"]
+        # for k, v in batch_train_data.items():
+        #     if k == "padded_text_list":
+        #         for sent in v:
+        #             sent.to(self.device)
+        #     else:
+        #         batch_train_data[k] = v.to(self.device)
 
         pred_outputs = self.model(**batch_train_data)
 
