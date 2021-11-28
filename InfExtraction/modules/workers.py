@@ -153,6 +153,7 @@ class Evaluator:
 
     def _predict_debug(self, dataloader, golden_data):
         # predict
+        self.model.eval()
         total_pred_sample_list = []
         for batch_ind, batch_predict_data in enumerate(tqdm(dataloader, desc="debug: predicting")):
             pred_sample_list = self._predict_step_debug(batch_predict_data)

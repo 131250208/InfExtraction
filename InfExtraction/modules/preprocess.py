@@ -14,157 +14,6 @@ from pprint import pprint
 from ddparser import DDParser
 import LAC
 
-
-# class Indexer:
-#     def __init__(self, tag2id, max_seq_len, spe_tag_dict):
-#         self.tag2id = tag2id
-#         self.max_seq_len = max_seq_len
-#         self.spe_tag_dict = spe_tag_dict
-#
-#     def index_tag_list_w_matrix_pos(self, tags):
-#         '''
-#         :param tags: [[pos_i, pos_j, tag1], [pos_i, pos_j, tag2], ...]
-#         :return:
-#         '''
-#         for t in tags:
-#             if t[2] in self.tag2id:
-#                 t[2] = self.tag2id[t[2]]
-#             else:
-#                 t[2] = self.spe_tag_dict["[UNK]"]
-#         return tags
-#
-#     @staticmethod
-#     def pad2length(tags, padding_tag, length):
-#         if len(tags) < length:
-#             tags.extend([padding_tag] * (length - len(tags)))
-#         return tags[:length]
-#
-#     def index_tag_list(self, tags):
-#         '''
-#         tags: [t1, t2, t3, ...]
-#         '''
-#         tag_ids = []
-#         for t in tags:
-#             if t not in self.tag2id:
-#                 tag_ids.append(self.spe_tag_dict["[UNK]"])
-#             else:
-#                 tag_ids.append(self.tag2id[t])
-#
-#         if len(tag_ids) < self.max_seq_len:
-#             tag_ids.extend([self.spe_tag_dict["[PAD]"]] * (self.max_seq_len - len(tag_ids)))
-#
-#         return tag_ids[:self.max_seq_len]
-#
-#     @staticmethod
-#     def get_shaking_idx2matrix_idx(matrix_size):
-#         return MyMatrix.get_shaking_idx2matrix_idx(matrix_size)
-#
-#     @staticmethod
-#     def get_matrix_idx2shaking_idx(matrix_size):
-#         return MyMatrix.get_matrix_idx2shaking_idx(matrix_size)
-#
-#     @staticmethod
-#     def points2shaking_seq(points, matrix_size, tag_size):
-#         '''
-#         Convert points to a shaking sequence tensor
-#
-#         points: [(start_ind, end_ind, tag_id), ]
-#         return:
-#             shaking_seq: (shaking_seq_len, tag_size)
-#         '''
-#         matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
-#         shaking_seq_len = matrix_size * (matrix_size + 1) // 2
-#         shaking_seq = torch.zeros(shaking_seq_len, tag_size).long()
-#         for sp in points:
-#             shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
-#             shaking_seq[shaking_idx][sp[2]] = 1
-#         return shaking_seq
-#
-#     @staticmethod
-#     def points2shaking_seq_batch(batch_points, matrix_size, tag_size):
-#         '''
-#         Convert points to a shaking sequence tensor in batch (for training tags)
-#
-#         batch_points: a batch of points, [points1, points2, ...]
-#             points: [(start_ind, end_ind, tag_id), ]
-#         return:
-#             batch_shaking_seq: (batch_size_train, shaking_seq_len, tag_size)
-#         '''
-#         matrix_idx2shaking_idx = Indexer.get_matrix_idx2shaking_idx(matrix_size)
-#         shaking_seq_len = matrix_size * (matrix_size + 1) // 2
-#         batch_shaking_seq = torch.zeros(len(batch_points), shaking_seq_len, tag_size).long()
-#         for batch_id, points in enumerate(batch_points):
-#             for sp in points:
-#                 shaking_idx = matrix_idx2shaking_idx[sp[0]][sp[1]]
-#                 batch_shaking_seq[batch_id][shaking_idx][sp[2]] = 1
-#         return batch_shaking_seq
-#
-#     @staticmethod
-#     def points2matrix_batch(batch_points, matrix_size):
-#         '''
-#         Convert points to a matrix tensor
-#
-#         batch_points: a batch of points, [points1, points2, ...]
-#             points: [(start_ind, end_ind, tag_id), ]
-#         return:
-#             batch_matrix: (batch_size_train, matrix_size, matrix_size)
-#         '''
-#         batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size).long()
-#         for batch_id, points in enumerate(batch_points):
-#             for pt in points:
-#                 batch_matrix[batch_id][pt[0]][pt[1]] = pt[2]
-#         return batch_matrix
-#
-#     @staticmethod
-#     def points2multilabel_matrix_batch(batch_points, matrix_size, tag_size):
-#         '''
-#         Convert points to a matrix tensor for multi-label tasks
-#
-#         batch_points: a batch of points, [points1, points2, ...]
-#             points: [(i, j, tag_id), ]
-#         return:
-#             batch_matrix: shape: (batch_size_train, matrix_size, matrix_size, tag_size) # element 0 or 1
-#         '''
-#         batch_matrix = torch.zeros(len(batch_points), matrix_size, matrix_size, tag_size).long()
-#         for batch_id, points in enumerate(batch_points):
-#             for pt in points:
-#                 batch_matrix[batch_id][pt[0]][pt[1]][pt[2]] = 1
-#         return batch_matrix
-#
-#     @staticmethod
-#     def shaking_seq2points(shaking_tag):
-#         '''
-#         shaking_tag -> points
-#         shaking_tag: shape: (shaking_seq_len, tag_size)
-#         points: [(start_ind, end_ind, tag_id), ]
-#         '''
-#         points = []
-#         shaking_seq_len = shaking_tag.size()[0]
-#         matrix_size = int((2 * shaking_seq_len + 0.25) ** 0.5 - 0.5)
-#         shaking_idx2matrix_idx = Indexer.get_shaking_idx2matrix_idx(matrix_size)
-#         nonzero_points = torch.nonzero(shaking_tag, as_tuple=False)
-#         for point in nonzero_points:
-#             shaking_idx, tag_idx = point[0].item(), point[1].item()
-#             pos1, pos2 = shaking_idx2matrix_idx[shaking_idx]
-#             point = (pos1, pos2, tag_idx)
-#             points.append(point)
-#         return points
-#
-#     @staticmethod
-#     def matrix2points(matrix_tag):
-#         '''
-#         matrix_tag -> points
-#         matrix_tag: shape: (matrix_size, matrix_size, tag_size)
-#         points: [(i, j, tag_id), ]
-#         '''
-#         points = []
-#         nonzero_points = torch.nonzero(matrix_tag, as_tuple=False)
-#         for point in nonzero_points:
-#             i, j, tag_idx = point[0].item(), point[1].item(), point[2].item()
-#             point = (i, j, tag_idx)
-#             points.append(point)
-#         return points
-
 class Indexer:
     def __init__(self, tag2id, max_seq_len, spe_tag_dict):
         self.tag2id = tag2id
@@ -1806,17 +1655,17 @@ class Preprocessor:
                     sub_event_list.append(event_cp)
             filter_res["event_list"] = sub_event_list
 
-        if "event_element_list" in sample:
-            sub_event_element_list = []
-            for event_elements in sample["event_element_list"]:
-                sub_ent_list = Preprocessor.filter_spans(event_elements["entity_list"], start_ind, end_ind)
-                sub_rel_list = Preprocessor.filter_spans(event_elements["relation_list"], start_ind, end_ind)
+        if "clique_element_list" in sample:
+            sub_clique_element_list = []
+            for clique_elements in sample["clique_element_list"]:
+                sub_ent_list = Preprocessor.filter_spans(clique_elements["entity_list"], start_ind, end_ind)
+                sub_rel_list = Preprocessor.filter_spans(clique_elements["relation_list"], start_ind, end_ind)
                 if len(sub_ent_list) + len(sub_rel_list) > 0:
-                    sub_event_element_list.append({
+                    sub_clique_element_list.append({
                         "entity_list": sub_ent_list,
                         "relation_list": sub_rel_list,
                     })
-            filter_res["event_element_list"] = sub_event_element_list
+            filter_res["clique_element_list"] = sub_clique_element_list
 
         if "open_spo_list" in sample:
             sub_open_spo_list = []
@@ -1936,8 +1785,6 @@ class Preprocessor:
             tokens = features["subword_list"] if token_level == "subword" else features["word_list"]
             tok2char_span = features["tok2char_span"]
 
-            # if id == 'misc.legal.moderated_20041202.1648_7':
-            #     print("debug split_into_short_samples")
             # split by sliding window
             for start_ind in range(0, len(tokens), sliding_len):
                 if token_level == "subword":
@@ -1955,16 +1802,11 @@ class Preprocessor:
 
                 # split features
                 short_word_list = features["word_list"][start_ind:end_ind]
-                # short_word_list += ["[PAD]"] * (max_seq_len - len(short_word_list))
                 short_subword_list = features["subword_list"][start_ind:end_ind]
-                # short_subword_list += ["[PAD]"] * (max_seq_len - len(short_subword_list))
                 split_features = {"word_list": short_word_list,
                                   "subword_list": short_subword_list,
                                   "tok2char_span": [[char_sp[0] - char_level_offset, char_sp[1] - char_level_offset]
                                                     for char_sp in features["tok2char_span"][start_ind:end_ind]],
-                                  # "pos_tag_list": features["pos_tag_list"][start_ind:end_ind],
-                                  # "ner_tag_list": features["ner_tag_list"][start_ind:end_ind],
-                                  # "dependency_list": [],
                                   }
                 if "pos_tag_list" in features:
                     split_features["pos_tag_list"] = features["pos_tag_list"][start_ind:end_ind]
@@ -2039,17 +1881,17 @@ class Preprocessor:
                     #     new_sample["entity_list"] = sub_ent_list
                     #
                     # # event
-                    # if "event_element_list" in sample:
-                    #     sub_event_element_list = []
-                    #     for event_elements in sample["event_element_list"]:
-                    #         sub_ent_list = choose_sub_ents(event_elements["entity_list"])
-                    #         sub_rel_list = choose_sub_rels(event_elements["relation_list"])
+                    # if "clique_element_list" in sample:
+                    #     sub_clique_element_list = []
+                    #     for clique_elements in sample["clique_element_list"]:
+                    #         sub_ent_list = choose_sub_ents(clique_elements["entity_list"])
+                    #         sub_rel_list = choose_sub_rels(clique_elements["relation_list"])
                     #         if len(sub_ent_list) + len(sub_rel_list) > 0:
-                    #             sub_event_element_list.append({
+                    #             sub_clique_element_list.append({
                     #                 "entity_list": sub_ent_list,
                     #                 "relation_list": sub_rel_list,
                     #             })
-                    #     new_sample["event_element_list"] = sub_event_element_list
+                    #     new_sample["clique_element_list"] = sub_clique_element_list
                     #
                     # if "event_list" in sample:
                     #     sub_event_list = []
@@ -2178,8 +2020,8 @@ class Preprocessor:
                 combined_sample["relation_list"].extend(sample_cp["relation_list"])
             if "event_list" in sample_cp:
                 combined_sample["event_list"].extend(sample_cp["event_list"])
-            if "event_element_list" in sample_cp:
-                combined_sample.setdefault("event_element_list", []).extend(sample_cp["event_element_list"])
+            if "clique_element_list" in sample_cp:
+                combined_sample.setdefault("clique_element_list", []).extend(sample_cp["clique_element_list"])
             if "open_spo_list" in sample_cp:
                 combined_sample["open_spo_list"].extend(sample_cp["open_spo_list"])
 
@@ -2220,6 +2062,8 @@ class Preprocessor:
                         split_sample["relation_list"] = filtered_sample["relation_list"]
                     if "event_list" in filtered_sample:
                         split_sample["event_list"] = filtered_sample["event_list"]
+                    if "clique_element_list" in filtered_sample:
+                        split_sample["clique_element_list"] = filtered_sample["clique_element_list"]
                     if "open_spo_list" in filtered_sample:
                         split_sample["open_spo_list"] = filtered_sample["open_spo_list"]
                     # recover spans
@@ -2246,16 +2090,21 @@ class Preprocessor:
                 ent["tok_span"] = list_add(ent["tok_span"], tok_level_offset)
                 ent["char_span"] = list_add(ent["char_span"], char_level_offset)
 
+        # if sample["id"] == '58880e1cb716866992ac65cb3f2f2c03' and tok_level_offset != 0:
+        #     print("debug")
+
         if "relation_list" in sample:
             rel_offset(sample["relation_list"])
 
         if "entity_list" in sample:
             ent_offset(sample["entity_list"])
 
-        if "event_element_list" in sample:
-            for event_elements in sample["event_element_list"]:
-                rel_offset(event_elements["relation_list"])
-                ent_offset(event_elements["entity_list"])
+        # if "clique_element_list" in sample:
+        #     # if tok_level_offset > 0 and len(sample["clique_element_list"]) > 0:
+        #     #     print("debug")
+        #     for clique_elements in sample["clique_element_list"]:
+        #         rel_offset(clique_elements["relation_list"])
+        #         ent_offset(clique_elements["entity_list"])
 
         if "event_list" in sample:
             for event in sample["event_list"]:
@@ -2279,7 +2128,10 @@ class Preprocessor:
             bad_events = []
             if "entity_list" in sample:
                 for ent in sample["entity_list"]:
+                    # try:
                     extr_ent = Preprocessor.extract_ent_fr_txt_by_tok_sp(ent["tok_span"], tok2char_span, text, language)
+                    # except Exception as e:
+                    #     print("edbug")
                     extr_ent_c = Preprocessor.extract_ent_fr_txt_by_char_sp(ent["char_span"], text, language)
 
                     if not (extr_ent == ent["text"] == extr_ent_c):

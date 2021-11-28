@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -47,8 +47,8 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "yelpbert"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = True
-note = ""
+use_wandb = False
+note = "clique comp loss"
 epochs = 300
 lr = 1e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
@@ -134,6 +134,7 @@ addtional_preprocessing_config = {
 tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "add_h2t_n_t2h_links": True,
+    "add_o2s_links": False,
     "language": language,
     "use_bound": addtional_preprocessing_config["use_bound"],
 }
@@ -255,6 +256,8 @@ model_settings = {
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
     "rel_dim": 768,
+    "tok_pair_neg_sampling_rate": 1.,
+    "clique_comp_loss": True,
     "do_span_len_emb": True,
     "emb_ent_info2rel": False,
     "golden_ent_cla_guide": False,

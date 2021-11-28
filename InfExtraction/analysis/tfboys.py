@@ -73,7 +73,7 @@ if __name__ == "__main__":
     
     # tfboys
     # tfboys_model_path = "../../data/res_data/few_fc/re+tfboys+RAIN+TRAIN/2uq6f74s/model_state_dict_22_71.846/test_data.json"
-    tfboys_model_path = "../../data/res_data/few_fc/re+tfboys+TFBYB+TRAIN/3s2cljse/model_state_dict_65_76.702/test_data.json"
+    tfboys_model_path = "../../data/res_data/few_fc/re+tfboys+RAIN+TRAIN/3s2cljse/model_state_dict_65_76.702/test_data.json"
     tfboys_pred_data = load_data(tfboys_model_path)
     tfboys_gold_data = load_data("../../data/preprocessed_data/few_fc/test_data.json")
     tfboys_gold_data = Preprocessor.choose_spans_by_token_level(tfboys_gold_data, "subword")
