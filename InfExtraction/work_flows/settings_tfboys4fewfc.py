@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -48,7 +48,7 @@ run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub
 pretrained_model_name = "macbert-base"
 pretrained_emb_name = "glove_fewfc_300.txt"
 use_wandb = False
-note = "has o2s"
+note = ""
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = False
@@ -142,7 +142,6 @@ tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "dtm_arg_type_by_edges": addtional_preprocessing_config["dtm_arg_type_by_edges"],
     "add_h2t_n_t2h_links": False,
-    "add_o2s_links": True,
     "language": language,
 }
 
@@ -264,8 +263,6 @@ model_settings = {
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
     "rel_dim": 1024,
-    "tok_pair_neg_sampling_rate": 1.,
-    "clique_comp_loss": True,
     "do_span_len_emb": False,
     "emb_ent_info2rel": False,  # 加速收敛
     "golden_ent_cla_guide": False,

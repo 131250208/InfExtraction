@@ -784,29 +784,28 @@ class MetricsCalculator:
 
             # calculate otm, otm_st
             if any("trigger" in event for sample in golden_data for event in sample["event_list"]):
-                golden_data_n_otm = []  # one trigger to multiple events
-                golden_data_s_otm = []  # one trigger to multiple events under the same event type
+                golden_data_otm = []  # one trigger to multiple events
+                golden_data_otm_st = []  # one trigger to multiple events under the same event type
                 pred_data_otm, pred_data_otm_st = [], []
                 for sample_idx, sample in enumerate(golden_data):
                     trigger_list = [str(event["trigger_tok_span"]) for event in sample["event_list"]]
                     tri_etype_list = [str(event["trigger_tok_span"] + [event["event_type"]]) for event in
                                       sample["event_list"]]
                     if len(set(trigger_list)) < len(trigger_list):
-                        if len(set(tri_etype_list)) < len(tri_etype_list):
-                            golden_data_s_otm.append(sample)
-                            pred_data_otm_st.append(pred_data[sample_idx])
-                        else:
-                            golden_data_n_otm.append(sample)
-                            pred_data_otm.append(pred_data[sample_idx])
+                        golden_data_otm.append(sample)
+                        pred_data_otm.append(pred_data[sample_idx])
+                    if len(set(tri_etype_list)) < len(tri_etype_list):
+                        golden_data_otm_st.append(sample)
+                        pred_data_otm_st.append(pred_data[sample_idx])
 
-                if len(golden_data_n_otm) / len(golden_data) > 0.05:
-                    otm_cpg_dict, _ = MetricsCalculator.get_ee_cpg_dict(pred_data_otm, golden_data_n_otm)
+                if len(golden_data_otm) / len(golden_data) > 0.05:
+                    otm_cpg_dict, _ = MetricsCalculator.get_ee_cpg_dict(pred_data_otm, golden_data_otm)
                     for k, v in otm_cpg_dict.items():
-                        total_cpg_dict["{}_{}".format("n_otm", k)] = v
-                if len(golden_data_s_otm) / len(golden_data) > 0.05:
-                    otm_st_cpg_dict, _ = MetricsCalculator.get_ee_cpg_dict(pred_data_otm_st, golden_data_s_otm)
+                        total_cpg_dict["{}_{}".format("otm", k)] = v
+                if len(golden_data_otm_st) / len(golden_data) > 0.05:
+                    otm_st_cpg_dict, _ = MetricsCalculator.get_ee_cpg_dict(pred_data_otm_st, golden_data_otm_st)
                     for k, v in otm_st_cpg_dict.items():
-                        total_cpg_dict["{}_{}".format("s_otm", k)] = v
+                        total_cpg_dict["{}_{}".format("otm_st", k)] = v
 
         score_dict = {}
         for sc_pattern, cpg in total_cpg_dict.items():

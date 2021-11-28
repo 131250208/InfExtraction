@@ -39,8 +39,8 @@ if __name__ == "__main__":
     metrics_key = ["trigger_iden", "trigger_class",
                    "arg_hard_iden", "arg_hard_class",
                    "arg_soft_class", "arg_class_most_similar_event",
-                   "n_otm_arg_hard_class", "s_otm_arg_hard_class",
-                   "n_otm_arg_class_most_similar_event", "s_otm_arg_class_most_similar_event"]
+                   "otm_arg_hard_class", "otm_st_arg_hard_class",
+                   "otm_arg_class_most_similar_event", "otm_st_arg_class_most_similar_event"]
     main_res_dict = {}
 
     def fill_scores(scd, bsl):
@@ -63,17 +63,9 @@ if __name__ == "__main__":
     score_dict = MetricsCalculator.score(casee_pred_data, casee_gold_data)
     fill_scores(score_dict, "casee")
 
-    # tbee BASE# tbee_model_path = "../../data/res_data/few_fc/re+tbee+RAIN+TRAIN/2uq6f74s/model_state_dict_22_71.846/test_data.json"
-    tbee_model_path = "../../data/res_data/few_fc/re+ee+RAIN+TRAIN/zyuy3ra0/model_state_dict_46_66.048/test_data.json"
-    tbee_pred_data = load_data(tbee_model_path)
-    tbee_gold_data = load_data("../../data/preprocessed_data/few_fc/test_data.json")
-    tbee_gold_data = Preprocessor.choose_spans_by_token_level(tbee_gold_data, "subword")
-    score_dict = MetricsCalculator.score(tbee_pred_data, tbee_gold_data)
-    fill_scores(score_dict, "BASE")
-    
     # tfboys
     # tfboys_model_path = "../../data/res_data/few_fc/re+tfboys+RAIN+TRAIN/2uq6f74s/model_state_dict_22_71.846/test_data.json"
-    tfboys_model_path = "../../data/res_data/few_fc/re+tfboys+RAIN+TRAIN/3s2cljse/model_state_dict_65_76.702/test_data.json"
+    tfboys_model_path = "../../data/res_data/few_fc/re+tfboys+TFBYB+TRAIN/3s2cljse/model_state_dict_42_75.541/test_data.json"
     tfboys_pred_data = load_data(tfboys_model_path)
     tfboys_gold_data = load_data("../../data/preprocessed_data/few_fc/test_data.json")
     tfboys_gold_data = Preprocessor.choose_spans_by_token_level(tfboys_gold_data, "subword")
