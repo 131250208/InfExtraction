@@ -553,8 +553,7 @@ def split_para2sents_ch(para):
 #     return span1[0] <= span2[0] < span2[-1] <= span1[-1]
 
 def span_contains(sp1, sp2):
-    if len(sp2) == 0:
-        return True
+    assert len(sp2) != 0 and len(sp2) != 0, "empty span error"
     span1 = sorted(sp1) if len(sp1) > 2 else sp1
     span2 = sorted(sp2) if len(sp2) > 2 else sp2
     return span1[0] <= span2[0] < span2[-1] <= span1[-1]

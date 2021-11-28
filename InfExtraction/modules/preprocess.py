@@ -1764,7 +1764,7 @@ class Preprocessor:
             if any("tok_span" in k and not utils.span_contains(limited_span, v) for k, v in item.items()):
                 pass
             else:
-                filter_res.append(item)
+                filter_res.append(copy.deepcopy(item))
 
         return filter_res
 
@@ -1996,7 +1996,7 @@ class Preprocessor:
                     # if train data, need to choose entities, relations, and events in the subtext
                     filtered_res = Preprocessor.filter_annotations(sample, start_ind, end_ind)
                     new_sample = {**new_sample, **filtered_res}
-
+                    #
                     # if "entity_list" in filtered_res:
                     #     new_sample["entity_list"] = filtered_res["entity_list"]
                     # if "relation_list" in filtered_res:
