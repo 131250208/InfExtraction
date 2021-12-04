@@ -56,26 +56,26 @@ if __name__ == "__main__":
     #     fill_scores(score_dict, baseline)
 
     # casee
-    casee_pred_data = load_data("../../data/tfboys_baselines/fewfc/casee/pred.json")
+    casee_pred_data = load_data("../../../data/tfboys_baselines/fewfc/casee/pred.json")
     casee_pred_data = convert_casee2normal_format(casee_pred_data)
-    casee_gold_data = load_data("../../data/ori_data/few_fc_bk/test.json")
+    casee_gold_data = load_data("../../../data/ori_data/few_fc_bk/test.json")
     casee_gold_data = convert_casee2normal_format(casee_gold_data)
     score_dict = MetricsCalculator.score(casee_pred_data, casee_gold_data)
     fill_scores(score_dict, "casee")
 
     # tbee BASE# tbee_model_path = "../../data/res_data/few_fc/re+tbee+RAIN+TRAIN/2uq6f74s/model_state_dict_22_71.846/test_data.json"
-    tbee_model_path = "../../data/res_data/few_fc/re+ee+RAIN+TRAIN/zyuy3ra0/model_state_dict_46_66.048/test_data.json"
+    tbee_model_path = "../../../data/res_data/few_fc/re+ee+RAIN+TRAIN/zyuy3ra0/model_state_dict_46_66.048/test_data.json"
     tbee_pred_data = load_data(tbee_model_path)
-    tbee_gold_data = load_data("../../data/preprocessed_data/few_fc/test_data.json")
+    tbee_gold_data = load_data("../../../data/preprocessed_data/few_fc/test_data.json")
     tbee_gold_data = Preprocessor.choose_spans_by_token_level(tbee_gold_data, "subword")
     score_dict = MetricsCalculator.score(tbee_pred_data, tbee_gold_data)
     fill_scores(score_dict, "BASE")
     
     # tfboys
     # tfboys_model_path = "../../data/res_data/few_fc/re+tfboys+RAIN+TRAIN/2uq6f74s/model_state_dict_22_71.846/test_data.json"
-    tfboys_model_path = "../../data/res_data/few_fc/re+tfboys+RAIN+TRAIN/3s2cljse/model_state_dict_65_76.702/test_data.json"
+    tfboys_model_path = "../../../data/res_data/few_fc/re+tfboys+RAIN+TRAIN/3s2cljse/model_state_dict_65_76.702/test_data_bk.json"
     tfboys_pred_data = load_data(tfboys_model_path)
-    tfboys_gold_data = load_data("../../data/preprocessed_data/few_fc/test_data.json")
+    tfboys_gold_data = load_data("../../../data/preprocessed_data/few_fc/test_data.json")
     tfboys_gold_data = Preprocessor.choose_spans_by_token_level(tfboys_gold_data, "subword")
     score_dict = MetricsCalculator.score(tfboys_pred_data, tfboys_gold_data)
     fill_scores(score_dict, "tfboys")
