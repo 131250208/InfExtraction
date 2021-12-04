@@ -613,7 +613,7 @@ class RAIN(IEModel):
     #         loss_list.append(torch.logsumexp(- torch.cat([ent_probs, rel_probs]), dim=0))
     #     loss_a_sample = torch.mean(torch.tensor(loss_list))
     #     return loss_a_sample
-    
+
     def get_metrics(self, pred_outputs, gold_tags):
         ent_pred_out, rel_pred_out, ent_gold_tag, rel_gold_tag = pred_outputs[0], pred_outputs[1], gold_tags[0], \
                                                                  gold_tags[1]
@@ -645,7 +645,7 @@ class RAIN(IEModel):
                w_rel * self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out,
                                                                             rel_gold_tag,
                                                                             self.bp_steps)
-        
+
         # # if use clique completeness loss
         # if self.clique_comp_loss and self.training:
         #     event_gold_tags_list = gold_tags[2]
@@ -659,7 +659,7 @@ class RAIN(IEModel):
         #     if len(global_loss_batch) > 0:
         #         loss_a_batch = torch.mean(torch.tensor(global_loss_batch))
         #         loss += loss_a_batch
-        
+
         return {
             "loss": loss,
             "ent_seq_acc": self.metrics_cal.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
@@ -672,14 +672,24 @@ class TFBoYsBackbone(RAIN):
         batch_dict = super(TFBoYsBackbone, self).generate_batch(batch_data)
         if self.clique_comp_loss and self.training:
             seq_length = len(batch_data[0]["features"]["tok2char_span"])
-            batch_dict["golden_tags"].append(
-                [[{"ent_tags": Indexer.points2multilabel_shaking_seq(clique_elements["ent_points"],
-                                                                     seq_length,
-                                                                     self.ent_tag_size),
-                   "rel_tags": Indexer.points2multilabel_matrix(clique_elements["rel_points"],
-                                                                seq_length,
-                                                                self.rel_tag_size)}
-                  for clique_elements in sample["clique_element_list"]] for sample in batch_data])
+            cliques_all_samples = []
+            for sample in batch_data:
+                cliques = []
+                for clique_elements in sample["clique_element_list"]:
+                    try:
+                        clique_element_tags = {
+                            "ent_tags": Indexer.points2multilabel_shaking_seq(clique_elements["ent_points"],
+                                                                              seq_length,
+                                                                              self.ent_tag_size),
+                            "rel_tags": Indexer.points2multilabel_matrix(clique_elements["rel_points"],
+                                                                         seq_length,
+                                                                         self.rel_tag_size)}
+                    except Exception as e:
+                        print("debug")
+                    cliques.append(clique_element_tags)
+                cliques_all_samples.append(cliques)
+
+            batch_dict["golden_tags"].append(cliques_all_samples)
 
         return batch_dict
 

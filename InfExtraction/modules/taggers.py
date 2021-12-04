@@ -1032,7 +1032,7 @@ def create_rebased_tfboys_tagger(base_class):
                                         })
                     fin_ent_list.extend(event_nodes_edges["entity_list"])
                     fin_rel_list.extend(event_nodes_edges["relation_list"])
-                    clique_element_list.append(event_nodes_edges)
+                    clique_element_list.append(copy.deepcopy(event_nodes_edges))
 
                 # add original ents and rels
                 if "entity_list" in sample:
@@ -1280,7 +1280,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                     new_ent_list.extend(clique_nodes_edges["entity_list"])
                     new_rel_list.extend(clique_nodes_edges["relation_list"])
                     if len(clique_nodes_edges["relation_list"]) > 0:
-                        clique_element_list.append(clique_nodes_edges)
+                        clique_element_list.append(copy.deepcopy(clique_nodes_edges))
 
                 new_sample["entity_list"] = new_ent_list
                 new_sample["relation_list"] = new_rel_list

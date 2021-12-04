@@ -1613,7 +1613,7 @@ class Preprocessor:
             if any("tok_span" in k and not utils.span_contains(limited_span, v) for k, v in item.items()):
                 pass
             else:
-                filter_res.append(item)
+                filter_res.append(copy.deepcopy(item))
 
         return filter_res
 
@@ -2099,12 +2099,12 @@ class Preprocessor:
         if "entity_list" in sample:
             ent_offset(sample["entity_list"])
 
-        # if "clique_element_list" in sample:
-        #     # if tok_level_offset > 0 and len(sample["clique_element_list"]) > 0:
-        #     #     print("debug")
-        #     for clique_elements in sample["clique_element_list"]:
-        #         rel_offset(clique_elements["relation_list"])
-        #         ent_offset(clique_elements["entity_list"])
+        if "clique_element_list" in sample:
+            # if tok_level_offset > 0 and len(sample["clique_element_list"]) > 0:
+            #     print("debug")
+            for clique_elements in sample["clique_element_list"]:
+                rel_offset(clique_elements["relation_list"])
+                ent_offset(clique_elements["entity_list"])
 
         if "event_list" in sample:
             for event in sample["event_list"]:

@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
