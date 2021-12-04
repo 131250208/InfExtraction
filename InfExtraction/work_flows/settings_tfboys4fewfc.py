@@ -1,5 +1,5 @@
 import os
-device_num = 1
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -40,23 +40,19 @@ from glob import glob
 # Frequent changes
 exp_name = "few_fc"
 language = "ch"
-stage = "train"  # inference
 task_type = "re+tfboys"  # re, re+ee
-model_name = "TFBoYsBackbone"
+model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "macbert-base"
 pretrained_emb_name = "glove_fewfc_300.txt"
-use_wandb = False
-note = "has o2s"
+use_wandb = True
+note = "no o2s; fix a bug in filter spans"
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
-check_tagging_n_decoding = False
-split_early_stop = True
-drop_neg_samples = False
+check_tagging_n_decoding = True
 combine = False  # combine splits
 scheduler = "CAWR"
-use_ghm = False
 
 metric_pattern2save = "val.*arg_(soft_|hard_|)class_(f1|most.*)"
 model_bag_size = 0  # if no saving, set to 0
@@ -93,22 +89,9 @@ use_attns4rel = True
 data_in_dir = "../../data/preprocessed_data"
 data_out_dir = "../../data/res_data"
 
-train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
-
-data4checking = copy.deepcopy(train_data)
-random.shuffle(data4checking)
-checking_num = 1000
-data4checking = data4checking[:checking_num]
-
-# data4checking = valid_data
-
-test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
-filename2ori_test_data = {}
-for test_data_path in test_data_list:
-    filename = test_data_path.split("/")[-1]
-    ori_test_data = load_data(test_data_path)
-    filename2ori_test_data[filename] = ori_test_data
+train_data_path = os.path.join(data_in_dir, exp_name, "train_data.json")
+valid_data_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
+test_data_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 
 dicts = "dicts.json"
 statistics = "statistics.json"
@@ -142,7 +125,7 @@ tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "dtm_arg_type_by_edges": addtional_preprocessing_config["dtm_arg_type_by_edges"],
     "add_h2t_n_t2h_links": False,
-    "add_o2s_links": True,
+    "add_o2s_links": False,
     "language": language,
 }
 
@@ -233,7 +216,6 @@ subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
     "use_last_k_layers": 3,
-    "wordpieces_prefix": "##",
 } if subwd_encoder else None
 
 dep_config = {
@@ -272,7 +254,6 @@ model_settings = {
     "init_loss_weight": 0.5,
     "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
-    # "rel_description_dict": statistics["rel_type2desc"],
 }
 
 model_settings_log = copy.deepcopy(model_settings)
@@ -303,8 +284,5 @@ config_to_log = {
     "optimizer": optimizer_config,
     "addtional_preprocessing_config": addtional_preprocessing_config,
     "tagger_config": tagger_config,
-    "split_early_stop": split_early_stop,
-    "drop_neg_samples": drop_neg_samples,
     "combine_split": combine,
-    "use_ghm": use_ghm,
 }

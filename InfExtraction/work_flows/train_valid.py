@@ -35,6 +35,7 @@ import re
 from glob import glob
 import numpy as np
 
+import copy
 import torch
 from torch.utils.data import DataLoader
 from InfExtraction.modules.preprocess import Preprocessor
@@ -56,22 +57,14 @@ def get_dataloader(data,
                    key2dict,
                    tagger,
                    collate_fn,
-                   task_type,
-                   wdp_prefix=None,
                    max_char_num_in_tok=None,
-                   split_early_stop=True,
-                   drop_neg_samples=False,
                    ):
     # split test data
     data = Preprocessor.split_into_short_samples(data,
                                                  max_seq_len,
                                                  sliding_len,
                                                  data_type,
-                                                 token_level,
-                                                 task_type,
-                                                 wordpieces_prefix=wdp_prefix,
-                                                 early_stop=split_early_stop,
-                                                 drop_neg_samples=drop_neg_samples)
+                                                 token_level)
 
     if combine:
         data = Preprocessor.combine(data, max_seq_len)
@@ -123,16 +116,20 @@ if __name__ == "__main__":
     run_name = settings.run_name
     model_name = settings.model_name
     tagger_name = settings.tagger_name
-    stage = settings.stage
     language = settings.language
 
     # data
     data_in_dir = settings.data_in_dir
     data_out_dir = settings.data_out_dir
-    ori_train_data = settings.train_data
-    ori_valid_data = settings.valid_data
-    ori_data4checking = settings.data4checking
-    filename2ori_test_data = settings.filename2ori_test_data
+    train_data = load_data(settings.train_data_path)
+    valid_data = load_data(settings.valid_data_path)
+    checking_num = 1000
+    data4checking = copy.deepcopy(train_data)[:checking_num]
+    filename2test_data = {}
+    for test_data_path in settings.test_data_path_list:
+        filename = test_data_path.split("/")[-1]
+        test_data = load_data(test_data_path)
+        filename2test_data[filename] = test_data
 
     dicts = settings.dicts
     statistics = settings.statistics
@@ -176,11 +173,11 @@ if __name__ == "__main__":
     sliding_len_test = settings.sliding_len_test
 
     combine = settings.combine
-    split_early_stop = settings.split_early_stop
-    drop_neg_samples = settings.drop_neg_samples
+    # split_early_stop = settings.split_early_stop
+    # drop_neg_samples = settings.drop_neg_samples
 
     trainer_config = settings.trainer_config
-    use_ghm = settings.use_ghm
+    # use_ghm = settings.use_ghm
     lr = settings.lr
     model_state_dict_path = settings.model_state_dict_path  # pretrained model state
 
@@ -202,9 +199,10 @@ if __name__ == "__main__":
     # model settings
     model_settings = settings.model_settings
 
-    wdp_prefix = None
-    if token_level == "subword":
-        wdp_prefix = model_settings["subwd_encoder_config"]["wordpieces_prefix"]
+    # wdp_prefix = None
+    # if token_level == "subword":
+    #     wdp_prefix = model_settings["subwd_encoder_config"]["wordpieces_prefix"]
+    
     max_char_num_in_tok = None
     if "char_encoder_config" in model_settings and model_settings["char_encoder_config"] is not None:
         max_char_num_in_tok = model_settings["char_encoder_config"]["max_char_num_in_tok"]
@@ -219,20 +217,20 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # reset settings from args
-    # ...
+    # to do
 
     # choose features and spans by token level
-    ori_train_data = Preprocessor.choose_features_by_token_level(ori_train_data, token_level, do_lower_case)
-    ori_train_data = Preprocessor.choose_spans_by_token_level(ori_train_data, token_level)
+    train_data = Preprocessor.choose_features_by_token_level(train_data, token_level, do_lower_case)
+    train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
 
-    ori_valid_data = Preprocessor.choose_features_by_token_level(ori_valid_data, token_level, do_lower_case)
-    ori_valid_data = Preprocessor.choose_spans_by_token_level(ori_valid_data, token_level)
+    valid_data = Preprocessor.choose_features_by_token_level(valid_data, token_level, do_lower_case)
+    valid_data = Preprocessor.choose_spans_by_token_level(valid_data, token_level)
 
-    ori_data4checking = Preprocessor.choose_features_by_token_level(ori_data4checking, token_level, do_lower_case)
-    ori_data4checking = Preprocessor.choose_spans_by_token_level(ori_data4checking, token_level)
-    for filename, test_data in filename2ori_test_data.items():
-        filename2ori_test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level, do_lower_case)
-        filename2ori_test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
+    data4checking = Preprocessor.choose_features_by_token_level(data4checking, token_level, do_lower_case)
+    data4checking = Preprocessor.choose_spans_by_token_level(data4checking, token_level)
+    for filename, test_data in filename2test_data.items():
+        filename2test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level, do_lower_case)
+        filename2test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # tagger
@@ -250,11 +248,11 @@ if __name__ == "__main__":
     def additional_preprocess(data, data_type):
         return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
 
-    train_data = additional_preprocess(ori_train_data, "train")
-    valid_data = additional_preprocess(ori_valid_data, "valid")
-    filename2test_data = {}
-    for filename, ori_test_data in filename2ori_test_data.items():
-        filename2test_data[filename] = additional_preprocess(ori_test_data, "test")
+    train_data = additional_preprocess(train_data, "train")
+    # valid_data = additional_preprocess(ori_valid_data, "valid")
+    # filename2test_data = {}
+    # for filename, ori_test_data in filename2ori_test_data.items():
+    #     filename2test_data[filename] = additional_preprocess(ori_test_data, "test")
 
     all_data4gen_tag_dict = []
     all_data4gen_tag_dict.extend(train_data)
@@ -265,13 +263,10 @@ if __name__ == "__main__":
     # tagger
     tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
 
-    # metrics_calculator
-    metrics_cal = MetricsCalculator(use_ghm)
-
     # model
     print("init model...")
     model_class_name = getattr(models, model_name)
-    model = model_class_name(tagger, metrics_cal, **model_settings)
+    model = model_class_name(tagger, **model_settings)
     model = model.to(device)
     print("done!")
 
@@ -312,203 +307,188 @@ if __name__ == "__main__":
                                          key2dict,
                                          tagger,
                                          collate_fn,
-                                         task_type,
-                                         wdp_prefix,
                                          max_char_num_in_tok,
-                                         split_early_stop,
-                                         drop_neg_samples
                                          )
         filename2test_data_loader[filename] = test_dataloader
 
-    if stage == "train":
-        train_dataloader = get_dataloader(train_data,
-                                          language,
-                                          "train",
-                                          token_level,
-                                          max_seq_len_train,
-                                          sliding_len_train,
-                                          combine,
-                                          batch_size_train,
-                                          key2dict,
-                                          tagger,
-                                          collate_fn,
-                                          task_type,
-                                          wdp_prefix,
-                                          max_char_num_in_tok,
-                                          split_early_stop,
-                                          drop_neg_samples
-                                          )
-        valid_dataloader = get_dataloader(valid_data,
-                                          language,
-                                          "valid",
-                                          token_level,
-                                          max_seq_len_valid,
-                                          sliding_len_valid,
-                                          combine,
-                                          batch_size_valid,
-                                          key2dict,
-                                          tagger,
-                                          collate_fn,
-                                          task_type,
-                                          wdp_prefix,
-                                          max_char_num_in_tok,
-                                          split_early_stop,
-                                          drop_neg_samples
-                                          )
-        # debug: checking tagging and decoding
-        if check_tagging_n_decoding:
-            # for checking, take valid data as train data, do additional preprocessing to get tags
-            # but take original valid data as golden dataset to evaluate
-            data4checking = additional_preprocess(ori_data4checking, "train")
-            dataloader4checking = get_dataloader(data4checking,
-                                                 language,
-                                                 "train",  # only train data will be set a tag sequence
-                                                 token_level,
-                                                 max_seq_len_valid,
-                                                 sliding_len_valid,
-                                                 combine,
-                                                 batch_size_valid,
-                                                 key2dict,
-                                                 tagger,
-                                                 collate_fn,
-                                                 task_type,
-                                                 wdp_prefix,
-                                                 max_char_num_in_tok,
-                                                 split_early_stop,
-                                                 drop_neg_samples
-                                                 )
-            pprint(evaluator.check_tagging_n_decoding(dataloader4checking, ori_data4checking))
+    # if stage == "train":
+    train_dataloader = get_dataloader(train_data,
+                                      language,
+                                      "train",
+                                      token_level,
+                                      max_seq_len_train,
+                                      sliding_len_train,
+                                      combine,
+                                      batch_size_train,
+                                      key2dict,
+                                      tagger,
+                                      collate_fn,
+                                      max_char_num_in_tok,
+                                      )
+    valid_dataloader = get_dataloader(valid_data,
+                                      language,
+                                      "valid",
+                                      token_level,
+                                      max_seq_len_valid,
+                                      sliding_len_valid,
+                                      combine,
+                                      batch_size_valid,
+                                      key2dict,
+                                      tagger,
+                                      collate_fn,
+                                      max_char_num_in_tok,
+                                      )
+    # debug: checking tagging and decoding
+    if check_tagging_n_decoding:
+        # for checking, take valid data as train data, do additional preprocessing to get tags
+        # but take original valid data as golden dataset to evaluate
+        ori_data4checking = copy.deepcopy(data4checking)
+        data4checking = additional_preprocess(data4checking, "train")
+        dataloader4checking = get_dataloader(data4checking,
+                                             language,
+                                             "train",  # only train data will be set a tag sequence
+                                             token_level,
+                                             max_seq_len_test,
+                                             sliding_len_test,
+                                             combine,
+                                             batch_size_test,
+                                             key2dict,
+                                             tagger,
+                                             collate_fn,
+                                             max_char_num_in_tok,
+                                             )
+        pprint(evaluator.check_tagging_n_decoding(dataloader4checking, ori_data4checking))
 
-        # load pretrained model
-        if model_state_dict_path is not None:
-            model.load_state_dict(torch.load(model_state_dict_path))
-            print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
+    # load pretrained model
+    if model_state_dict_path is not None:
+        model.load_state_dict(torch.load(model_state_dict_path))
+        print("model state loaded: {}".format("/".join(model_state_dict_path.split("/")[-2:])))
 
-        # optimizer
-        optimizer_class_name = getattr(torch.optim, optimizer_config["class_name"])
-        optimizer = optimizer_class_name(model.parameters(), lr=float(lr), **optimizer_config["parameters"])
+    # optimizer
+    optimizer_class_name = getattr(torch.optim, optimizer_config["class_name"])
+    optimizer = optimizer_class_name(model.parameters(), lr=float(lr), **optimizer_config["parameters"])
 
-        trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
+    trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
 
-        # train and valid
-        score_dict4comparing = {}
-        for ep in range(epochs):
-            # train
-            trainer.train(ep, epochs)
-            # valid
-            pred_samples = evaluator.predict(valid_dataloader, ori_valid_data)
-            score_dict = evaluator.score(pred_samples, ori_valid_data, "val")
+    # train and valid
+    score_dict4comparing = {}
+    for ep in range(epochs):
+        # train
+        trainer.train(ep, epochs)
+        # valid
+        pred_samples = evaluator.predict(valid_dataloader, valid_data)
+        score_dict = evaluator.score(pred_samples, valid_data, "val")
+        logger.log(score_dict)
+        dataset2score_dict = {
+            "valid_data.json": score_dict,
+        }
+
+        for metric_key, current_val_score in score_dict.items():
+            if "f1" not in metric_key:
+                continue
+
+            if metric_key not in score_dict4comparing:
+                score_dict4comparing[metric_key] = {
+                    "current": 0.0,
+                    "best": 0.0,
+                }
+            score_dict4comparing[metric_key]["current"] = current_val_score
+            score_dict4comparing[metric_key]["best"] = max(current_val_score,
+                                                           score_dict4comparing[metric_key]["best"])
+
+            # save models
+            if current_val_score > 0. and model_bag_size > 0:
+                if (metric_pattern2save is not None or metric_pattern2save != "") and \
+                        not re.match(metric_pattern2save, metric_key):
+                    continue
+
+                dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)
+                if not os.path.exists(dir_to_save_model_this_key):
+                    os.makedirs(dir_to_save_model_this_key)
+
+                # save model state
+                torch.save(model.state_dict(),
+                           os.path.join(dir_to_save_model_this_key,
+                                        "model_state_dict_{}_{:.5}.pt".format(ep, current_val_score * 100)))
+
+                # all state paths
+                model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model_this_key))
+                # sorted by scores
+                sorted_model_state_path_list = sorted(model_state_path_list,
+                                                      key=get_score_fr_path)
+                # only save <model_bag_size> model states
+                if len(sorted_model_state_path_list) > model_bag_size:
+                    os.remove(sorted_model_state_path_list[0])  # remove the state dict with the minimum score
+
+        # test
+        for filename, test_data_loader in filename2test_data_loader.items():
+            gold_test_data = filename2test_data[filename]
+            pred_samples = evaluator.predict(test_data_loader, gold_test_data)
+            score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
             logger.log(score_dict)
-            dataset2score_dict = {
-                "valid_data.json": score_dict,
-            }
+            dataset2score_dict[filename] = score_dict
 
-            for metric_key, current_val_score in score_dict.items():
-                if "f1" not in metric_key:
-                    continue
+        pprint(dataset2score_dict)
+        pprint(score_dict4comparing)
 
-                if metric_key not in score_dict4comparing:
-                    score_dict4comparing[metric_key] = {
-                        "current": 0.0,
-                        "best": 0.0,
-                    }
-                score_dict4comparing[metric_key]["current"] = current_val_score
-                score_dict4comparing[metric_key]["best"] = max(current_val_score,
-                                                               score_dict4comparing[metric_key]["best"])
-
-                # save models
-                if current_val_score > 0. and model_bag_size > 0:
-                    if (metric_pattern2save is not None or metric_pattern2save != "") and \
-                            not re.match(metric_pattern2save, metric_key):
-                        continue
-
-                    dir_to_save_model_this_key = os.path.join(dir_to_save_model, metric_key)
-                    if not os.path.exists(dir_to_save_model_this_key):
-                        os.makedirs(dir_to_save_model_this_key)
-
-                    # save model state
-                    torch.save(model.state_dict(),
-                               os.path.join(dir_to_save_model_this_key,
-                                            "model_state_dict_{}_{:.5}.pt".format(ep, current_val_score * 100)))
-
-                    # all state paths
-                    model_state_path_list = glob("{}/model_state_*".format(dir_to_save_model_this_key))
-                    # sorted by scores
-                    sorted_model_state_path_list = sorted(model_state_path_list,
-                                                          key=get_score_fr_path)
-                    # only save <model_bag_size> model states
-                    if len(sorted_model_state_path_list) > model_bag_size:
-                        os.remove(sorted_model_state_path_list[0])  # remove the state dict with the minimum score
-
-            # test
-            for filename, test_data_loader in filename2test_data_loader.items():
-                gold_test_data = filename2ori_test_data[filename]
-                pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-                score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
-                logger.log(score_dict)
-                dataset2score_dict[filename] = score_dict
-
-            pprint(dataset2score_dict)
-            pprint(score_dict4comparing)
-
-    elif stage == "inference":
-        # get model state paths
-        target_run_ids = set(target_run_ids)
-        assert model_dir_for_test is not None and model_dir_for_test.strip() != "", "Please set model state directory!"
-
-        run_id2model_state_paths = {}
-        for root, dirs, files in os.walk(model_dir_for_test):
-            for file_name in files:
-                path_se = re.search("run-\d{8}_\d{6}-(\w{8})\/.*?(val_.*)", root)
-                if path_se is None:
-                    continue
-                run_id = path_se.group(1)
-                metric = path_se.group(2)
-                if metric == "val_{}".format(metric4testing) \
-                        and run_id in target_run_ids \
-                        and re.match(".*model_state.*\.pt", file_name):
-                    if run_id not in run_id2model_state_paths:
-                        run_id2model_state_paths[run_id] = []
-                    model_state_path = os.path.join(root, file_name)
-                    run_id2model_state_paths[run_id].append(model_state_path)
-
-        # predicting
-        run_id2scores = {}
-        for run_id, model_path_list in run_id2model_state_paths.items():
-            # only top k models
-            sorted_model_path_list = sorted(model_path_list, key=get_score_fr_path)
-            model_path_list = []
-            for idx in model_path_ids2infer:
-                model_path_list.append(sorted_model_path_list[idx])
-            # model_path_list = get_last_k_paths(model_path_list, top_k_models)
-
-            for path in model_path_list:
-                # load model
-                model.load_state_dict(torch.load(path))
-                print("model state loaded: {}".format("/".join(path.split("/")[-2:])))
-                model.eval()
-                model_name = re.sub("\.pt", "", path.split("/")[-1])
-                save_dir = os.path.join(data_out_dir, exp_name, run_name, run_id, model_name)
-                if not os.path.exists(save_dir):
-                    os.makedirs(save_dir)
-
-                # test
-                for filename, test_data_loader in filename2test_data_loader.items():
-                    gold_test_data = filename2test_data[filename]
-                    # predicate
-                    pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-
-                    # save results
-                    save_as_json_lines(pred_samples, os.path.join(save_dir, filename))
-
-                    # score
-                    if cal_scores:
-                        score_dict = evaluator.score(pred_samples, gold_test_data)
-                        if run_id not in run_id2scores:
-                            run_id2scores[run_id] = {}
-                        if model_name not in run_id2scores[run_id]:
-                            run_id2scores[run_id][model_name] = {}
-                        run_id2scores[run_id][model_name][filename] = score_dict
-
-        if cal_scores:
-            pprint(run_id2scores)
+    # elif stage == "inference":
+    #     # get model state paths
+    #     target_run_ids = set(target_run_ids)
+    #     assert model_dir_for_test is not None and model_dir_for_test.strip() != "", "Please set model state directory!"
+    #
+    #     run_id2model_state_paths = {}
+    #     for root, dirs, files in os.walk(model_dir_for_test):
+    #         for file_name in files:
+    #             path_se = re.search("run-\d{8}_\d{6}-(\w{8})\/.*?(val_.*)", root)
+    #             if path_se is None:
+    #                 continue
+    #             run_id = path_se.group(1)
+    #             metric = path_se.group(2)
+    #             if metric == "val_{}".format(metric4testing) \
+    #                     and run_id in target_run_ids \
+    #                     and re.match(".*model_state.*\.pt", file_name):
+    #                 if run_id not in run_id2model_state_paths:
+    #                     run_id2model_state_paths[run_id] = []
+    #                 model_state_path = os.path.join(root, file_name)
+    #                 run_id2model_state_paths[run_id].append(model_state_path)
+    #
+    #     # predicting
+    #     run_id2scores = {}
+    #     for run_id, model_path_list in run_id2model_state_paths.items():
+    #         # only top k models
+    #         sorted_model_path_list = sorted(model_path_list, key=get_score_fr_path)
+    #         model_path_list = []
+    #         for idx in model_path_ids2infer:
+    #             model_path_list.append(sorted_model_path_list[idx])
+    #         # model_path_list = get_last_k_paths(model_path_list, top_k_models)
+    #
+    #         for path in model_path_list:
+    #             # load model
+    #             model.load_state_dict(torch.load(path))
+    #             print("model state loaded: {}".format("/".join(path.split("/")[-2:])))
+    #             model.eval()
+    #             model_name = re.sub("\.pt", "", path.split("/")[-1])
+    #             save_dir = os.path.join(data_out_dir, exp_name, run_name, run_id, model_name)
+    #             if not os.path.exists(save_dir):
+    #                 os.makedirs(save_dir)
+    #
+    #             # test
+    #             for filename, test_data_loader in filename2test_data_loader.items():
+    #                 gold_test_data = filename2test_data[filename]
+    #                 # predicate
+    #                 pred_samples = evaluator.predict(test_data_loader, gold_test_data)
+    #
+    #                 # save results
+    #                 save_as_json_lines(pred_samples, os.path.join(save_dir, filename))
+    #
+    #                 # score
+    #                 if cal_scores:
+    #                     score_dict = evaluator.score(pred_samples, gold_test_data)
+    #                     if run_id not in run_id2scores:
+    #                         run_id2scores[run_id] = {}
+    #                     if model_name not in run_id2scores[run_id]:
+    #                         run_id2scores[run_id][model_name] = {}
+    #                     run_id2scores[run_id][model_name][filename] = score_dict
+    #
+    #     if cal_scores:
+    #         pprint(run_id2scores)

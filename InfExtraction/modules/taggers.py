@@ -821,7 +821,6 @@ def create_rebased_ee_tagger(base_class):
                     fin_rel_list.extend(sample["relation_list"])
                 sample["entity_list"] = Preprocessor.unique_list(fin_ent_list)
                 sample["relation_list"] = Preprocessor.unique_list(fin_rel_list)
-            new_data = super().additional_preprocess(new_data, data_type, **kwargs)
             return new_data
 
         # def decode(self, sample, pred_outs):
@@ -1030,9 +1029,9 @@ def create_rebased_tfboys_tagger(base_class):
                                             "obj_tok_span": tk_sp_j,
                                             "predicate": "EE:{}".format(separator.join([arg_i["type"], arg_j["type"]])),
                                         })
-                    fin_ent_list.extend(event_nodes_edges["entity_list"])
-                    fin_rel_list.extend(event_nodes_edges["relation_list"])
                     clique_element_list.append(event_nodes_edges)
+                    fin_ent_list.extend(copy.deepcopy(event_nodes_edges["entity_list"]))
+                    fin_rel_list.extend(copy.deepcopy(event_nodes_edges["relation_list"]))
 
                 # add original ents and rels
                 if "entity_list" in sample:
@@ -1277,10 +1276,10 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                                 "predicate": "{}{}{}".format(ent_type, new_tag_sep, "SAME_ENT"),
                             })
                             # ================================================
-                    new_ent_list.extend(clique_nodes_edges["entity_list"])
-                    new_rel_list.extend(clique_nodes_edges["relation_list"])
                     if len(clique_nodes_edges["relation_list"]) > 0:
                         clique_element_list.append(clique_nodes_edges)
+                    new_ent_list.extend(copy.deepcopy(clique_nodes_edges["entity_list"]))
+                    new_rel_list.extend(copy.deepcopy(clique_nodes_edges["relation_list"]))
 
                 new_sample["entity_list"] = new_ent_list
                 new_sample["relation_list"] = new_rel_list

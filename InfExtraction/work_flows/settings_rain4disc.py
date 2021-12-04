@@ -40,23 +40,19 @@ from glob import glob
 # Frequent changes
 exp_name = "cadec4yelp_"
 language = "en"
-stage = "train"  # inference
 task_type = "re+ner"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "yelpbert"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
-note = "clique comp loss"
+use_wandb = True
+note = "clique comp loss; no o2s; check(test len)"
 epochs = 300
 lr = 1e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
-split_early_stop = True
-drop_neg_samples = False
 combine = True  # combine splits
 scheduler = "CAWR"
-use_ghm = False
 model_bag_size = 0
 metric_pattern2save = None  # if none save best models on all metrics
 
@@ -88,20 +84,25 @@ use_attns4rel = True  # used only if subwd_encoder (bert) is True
 # data
 data_in_dir = "../../data/preprocessed_data"
 data_out_dir = "../../data/res_data"
-train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
 
-data4checking = copy.deepcopy(valid_data)
-random.shuffle(data4checking)
-checking_num = 1000
-data4checking = data4checking[:checking_num]
+train_data_path = os.path.join(data_in_dir, exp_name, "train_data.json")
+valid_data_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
+test_data_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 
-test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
-filename2ori_test_data = {}
-for test_data_path in test_data_list:
-    filename = test_data_path.split("/")[-1]
-    ori_test_data = load_data(test_data_path)
-    filename2ori_test_data[filename] = ori_test_data
+# train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
+# valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
+#
+# data4checking = copy.deepcopy(valid_data)
+# random.shuffle(data4checking)
+# checking_num = 1000
+# data4checking = data4checking[:checking_num]
+#
+# test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+# filename2ori_test_data = {}
+# for test_data_path in test_data_list:
+#     filename = test_data_path.split("/")[-1]
+#     ori_test_data = load_data(test_data_path)
+#     filename2ori_test_data[filename] = ori_test_data
 
 dicts = "dicts.json"
 statistics = "statistics.json"
@@ -227,7 +228,6 @@ subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
     "use_last_k_layers": 1,
-    "wordpieces_prefix": "##",
 } if subwd_encoder else None
 
 dep_config = {
@@ -293,8 +293,5 @@ config_to_log = {
     "optimizer": optimizer_config,
     "addtional_preprocessing_config": addtional_preprocessing_config,
     "tagger_config": tagger_config,
-    "split_early_stop": split_early_stop,
-    "drop_neg_samples": drop_neg_samples,
     "combine_split": combine,
-    "use_ghm": use_ghm,
 }

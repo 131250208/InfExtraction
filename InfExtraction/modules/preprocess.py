@@ -1613,7 +1613,7 @@ class Preprocessor:
             if any("tok_span" in k and not utils.span_contains(limited_span, v) for k, v in item.items()):
                 pass
             else:
-                filter_res.append(item)
+                filter_res.append(copy.deepcopy(item))
 
         return filter_res
 
@@ -1767,8 +1767,7 @@ class Preprocessor:
     #     return new_sample
 
     @staticmethod
-    def split_into_short_samples(data, max_seq_len, sliding_len, data_type,
-                                 token_level, task_type, wordpieces_prefix="##", early_stop=True, drop_neg_samples=False):
+    def split_into_short_samples(data, max_seq_len, sliding_len, data_type, token_level):
         '''
         split samples with long text into samples with short subtexts
         :param data: original data
@@ -1788,7 +1787,7 @@ class Preprocessor:
             # split by sliding window
             for start_ind in range(0, len(tokens), sliding_len):
                 if token_level == "subword":
-                    while wordpieces_prefix in tokens[start_ind]:
+                    while tokens[start_ind][:2] == "##":
                         start_ind -= 1
                 end_ind = start_ind + max_seq_len
 
@@ -1828,25 +1827,15 @@ class Preprocessor:
                     "entity_list": [],
                     "relation_list": [],
                     "event_list": [],
+                    "open_spo_list": [],
                 }
                 if data_type == "test" or data_type == "valid":
                     if len(sub_text) > 0:
                         split_sample_list.append(new_sample)
-                    if end_ind > len(tokens):
-                        break
                 else:
                     # if train data, need to choose entities, relations, and events in the subtext
                     filtered_res = Preprocessor.filter_annotations(sample, start_ind, end_ind)
                     new_sample = {**new_sample, **filtered_res}
-
-                    # if "entity_list" in filtered_res:
-                    #     new_sample["entity_list"] = filtered_res["entity_list"]
-                    # if "relation_list" in filtered_res:
-                    #     new_sample["relation_list"] = filtered_res["relation_list"]
-                    # if "event_list" in filtered_res:
-                    #     new_sample["event_list"] = filtered_res["event_list"]
-                    # if "open_spo_list" in filtered_res:
-                    #     new_sample["open_spo_list"] = filtered_res["open_spo_list"]
 
                     # # relation
                     # def choose_sub_rels(rel_list):
@@ -1935,19 +1924,11 @@ class Preprocessor:
                     #         sub_open_spo_list.append(spo_cp)
                     #     new_sample["open_spo_list"] = sub_open_spo_list
 
-                    # do not introduce excessive negative samples
-                    if drop_neg_samples:
-                        if "relation_list" not in new_sample or len(new_sample["relation_list"]) == 0 \
-                                and "entity_list" not in new_sample or len(new_sample["entity_list"]) == 0 \
-                                and "event_list" not in new_sample or len(new_sample["event_list"]) == 0 \
-                                and "open_spo_list" not in new_sample or len(new_sample["open_spo_list"]) == 0:
-                            continue
-
                     # offset
                     new_sample = Preprocessor.span_offset(new_sample, - tok_level_offset, - char_level_offset)
                     split_sample_list.append(new_sample)
-                    if early_stop and end_ind > len(tokens):
-                        break
+                if end_ind > len(tokens):
+                    break
         return split_sample_list
 
     @staticmethod
@@ -2099,12 +2080,12 @@ class Preprocessor:
         if "entity_list" in sample:
             ent_offset(sample["entity_list"])
 
-        # if "clique_element_list" in sample:
-        #     # if tok_level_offset > 0 and len(sample["clique_element_list"]) > 0:
-        #     #     print("debug")
-        #     for clique_elements in sample["clique_element_list"]:
-        #         rel_offset(clique_elements["relation_list"])
-        #         ent_offset(clique_elements["entity_list"])
+        if "clique_element_list" in sample:
+            # if tok_level_offset > 0 and len(sample["clique_element_list"]) > 0:
+            #     print("debug")
+            for clique_elements in sample["clique_element_list"]:
+                rel_offset(clique_elements["relation_list"])
+                ent_offset(clique_elements["entity_list"])
 
         if "event_list" in sample:
             for event in sample["event_list"]:

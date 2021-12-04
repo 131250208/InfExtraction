@@ -13,6 +13,7 @@ from InfExtraction.modules.model_components import (HandshakingKernel,
 from torch.nn.parameter import Parameter
 from InfExtraction.modules.preprocess import Indexer
 from InfExtraction.modules.utils import MyMatrix
+from InfExtraction.modules.metrics import MetricsCalculator
 from gensim.models import KeyedVectors
 import logging
 from IPython.core.debugger import set_trace
@@ -23,7 +24,6 @@ import torch.nn.functional as F
 class IEModel(nn.Module, metaclass=ABCMeta):
     def __init__(self,
                  tagger,
-                 metrics_cal,
                  char_encoder_config=None,
                  subwd_encoder_config=None,
                  word_encoder_config=None,
@@ -33,7 +33,6 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                  ):
         super().__init__()
         self.tagger = tagger
-        self.metrics_cal = metrics_cal
         self.cat_hidden_size = 0
 
         # count bp steps
@@ -344,18 +343,16 @@ class IEModel(nn.Module, metaclass=ABCMeta):
 class TPLinkerPlus(IEModel):
     def __init__(self,
                  tagger,
-                 metrics_cal,
                  handshaking_kernel_config=None,
                  fin_hidden_size=None,
                  **kwargs,
                  ):
-        super().__init__(tagger, metrics_cal, **kwargs)
+        super().__init__(tagger, **kwargs)
         '''
         :parameters: see model settings in settings_default.py
         '''
 
         self.tag_size = tagger.get_tag_size()
-        self.metrics_cal = metrics_cal
 
         self.aggr_fc4handshaking_kernal = nn.Linear(self.cat_hidden_size, fin_hidden_size)
 
@@ -394,15 +391,14 @@ class TPLinkerPlus(IEModel):
         pred_out, gold_tag = pred_outputs, gold_tags[0]
         pred_tag = self.pred_output2pred_tag(pred_out)
         return {
-            "loss": self.metrics_cal.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
-            "seq_accuracy": self.metrics_cal.get_tag_seq_accuracy(pred_tag, gold_tag),
+            "loss": MetricsCalculator.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
+            "seq_accuracy": MetricsCalculator.get_tag_seq_accuracy(pred_tag, gold_tag),
         }
 
 
 class RAIN(IEModel):
     def __init__(self,
                  tagger,
-                 metrics_cal,
                  handshaking_kernel_config=None,
                  ent_dim=None,
                  rel_dim=None,
@@ -417,11 +413,10 @@ class RAIN(IEModel):
                  tok_pair_neg_sampling_rate=1.,
                  **kwargs,
                  ):
-        super().__init__(tagger, metrics_cal, **kwargs)
+        super().__init__(tagger, **kwargs)
 
         self.ent_tag_size, self.rel_tag_size = tagger.get_tag_size()
         self.loss_weight_recover_steps = loss_weight_recover_steps
-        self.metrics_cal = metrics_cal
         self.loss_weight = loss_weight
         self.init_loss_weight = init_loss_weight
         self.tok_pair_neg_sampling_rate = tok_pair_neg_sampling_rate
@@ -478,66 +473,67 @@ class RAIN(IEModel):
         batch_dict = super(RAIN, self).generate_batch(batch_data)
         # tags
         batch_ent_points = [sample["ent_points"] for sample in batch_data]
-        batch_rel_points = [sample["rel_points"] for sample in batch_data]
-
         golden_ent_tag = Indexer.points2multilabel_shaking_seq_batch(batch_ent_points,
                                                                      seq_length,
                                                                      self.ent_tag_size,
                                                                      )
+
+        batch_rel_points = [sample["rel_points"] for sample in batch_data]
         golden_rel_tag = Indexer.points2multilabel_matrix_batch(batch_rel_points,
                                                                 seq_length,
                                                                 self.rel_tag_size,
                                                                 )
 
-        # if self.clique_comp_loss and self.training:
-        #     clique_tags = [[{"ent_tags": Indexer.points2multilabel_shaking_seq(clique_elements["ent_points"],
-        #                                                                        seq_length,
-        #                                                                        self.ent_tag_size),
-        #                      "rel_tags": Indexer.points2multilabel_matrix(clique_elements["rel_points"],
-        #                                                                   seq_length,
-        #                                                                   self.rel_tag_size)}
-        #                     for clique_elements in sample["clique_element_list"]] for sample in batch_data]
+        if self.training:
+            if self.clique_comp_loss:
+                clique_tags = [[{"ent_tags": Indexer.points2multilabel_shaking_seq(clique_elements["ent_points"],
+                                                                                   seq_length,
+                                                                                   self.ent_tag_size),
+                                 "rel_tags": Indexer.points2multilabel_matrix(clique_elements["rel_points"],
+                                                                              seq_length,
+                                                                              self.rel_tag_size)}
+                                for clique_elements in sample["clique_element_list"]] for sample in batch_data]
 
-        if self.tok_pair_neg_sampling_rate < 1. and self.training:
-            def get_sampling_indices(golden_tag):
-                pos_tag = (torch.sum(golden_tag, dim=-1) > 0.).float()
-                # k = int(max(torch.max(torch.sum(pos_tag, dim=-1)).item(), 1) * (self.tok_pair_neg_sampling_rate + 1))
-                hsk_seq_length = golden_tag.size()[1]
-                max_pos_num = torch.max(torch.sum(pos_tag, dim=-1)).long().item()
-                k = int((hsk_seq_length - max_pos_num) * self.tok_pair_neg_sampling_rate) + max_pos_num
-                gather_indices = torch.topk(torch.rand_like(pos_tag) + pos_tag, k, dim=1).indices
-                # gather_indices = gather_indices[:, :, None].repeat(1, 1, golden_tag.size()[-1])
-                return gather_indices
+            if self.tok_pair_neg_sampling_rate < 1.:
+                def get_sampling_indices(golden_tag):
+                    pos_tag = (torch.sum(golden_tag, dim=-1) > 0.).float()
+                    # k = int(max(torch.max(torch.sum(pos_tag, dim=-1)).item(), 1) * (self.tok_pair_neg_sampling_rate + 1))
+                    hsk_seq_length = golden_tag.size()[1]
+                    max_pos_num = torch.max(torch.sum(pos_tag, dim=-1)).long().item()
+                    k = int((hsk_seq_length - max_pos_num) * self.tok_pair_neg_sampling_rate) + max_pos_num
+                    gather_indices = torch.topk(torch.rand_like(pos_tag) + pos_tag, k, dim=1).indices
+                    # gather_indices = gather_indices[:, :, None].repeat(1, 1, golden_tag.size()[-1])
+                    return gather_indices
 
-            ent_sampling_indices = get_sampling_indices(golden_ent_tag)
-            golden_rel_tag = golden_rel_tag.view(golden_rel_tag.size()[0], -1, golden_rel_tag.size()[-1])
-            rel_sampling_indices = get_sampling_indices(golden_rel_tag)
-            batch_dict["sampling_indices"] = [ent_sampling_indices, rel_sampling_indices]
+                ent_sampling_indices = get_sampling_indices(golden_ent_tag)
+                golden_rel_tag = golden_rel_tag.view(golden_rel_tag.size()[0], -1, golden_rel_tag.size()[-1])
+                rel_sampling_indices = get_sampling_indices(golden_rel_tag)
+                batch_dict["sampling_indices"] = [ent_sampling_indices, rel_sampling_indices]
 
-            golden_ent_tag = torch.gather(golden_ent_tag, 1,
-                                          ent_sampling_indices[:, :, None].repeat(1, 1, golden_ent_tag.size()[-1])
-                                          )
-            golden_rel_tag = torch.gather(golden_rel_tag, 1,
-                                          rel_sampling_indices[:, :, None].repeat(1, 1, golden_rel_tag.size()[-1])
-                                          )
-            # if self.clique_comp_loss:
-            #     for sample_idx, clique_tags_sample in enumerate(clique_tags):
-            #         ent_samp_inds = ent_sampling_indices[sample_idx]
-            #         rel_samp_inds = rel_sampling_indices[sample_idx]
-            #
-            #         for cli_tag_dict in clique_tags_sample:
-            #             cli_tag_dict["ent_tags"] = torch.gather(cli_tag_dict["ent_tags"], 0,
-            #                                                     ent_samp_inds[:, None].repeat(1, self.ent_tag_size)
-            #                                                     )
-            #             cli_tag_dict["rel_tags"] = torch.gather(cli_tag_dict["rel_tags"].view(-1, self.rel_tag_size),
-            #                                                     0,
-            #                                                     rel_samp_inds[:, None].repeat(1, self.rel_tag_size)
-            #                                                     )
+                golden_ent_tag = torch.gather(golden_ent_tag, 1,
+                                              ent_sampling_indices[:, :, None].repeat(1, 1, golden_ent_tag.size()[-1])
+                                              )
+                golden_rel_tag = torch.gather(golden_rel_tag, 1,
+                                              rel_sampling_indices[:, :, None].repeat(1, 1, golden_rel_tag.size()[-1])
+                                              )
+                if self.clique_comp_loss:
+                    for sample_idx, clique_tags_sample in enumerate(clique_tags):
+                        ent_samp_inds = ent_sampling_indices[sample_idx]
+                        rel_samp_inds = rel_sampling_indices[sample_idx]
+
+                        for cli_tag_dict in clique_tags_sample:
+                            cli_tag_dict["ent_tags"] = torch.gather(cli_tag_dict["ent_tags"], 0,
+                                                                    ent_samp_inds[:, None].repeat(1, self.ent_tag_size)
+                                                                    )
+                            cli_tag_dict["rel_tags"] = torch.gather(cli_tag_dict["rel_tags"].view(-1, self.rel_tag_size),
+                                                                    0,
+                                                                    rel_samp_inds[:, None].repeat(1, self.rel_tag_size)
+                                                                    )
 
         batch_dict["golden_tags"] = [golden_ent_tag, golden_rel_tag]
 
-        # if self.clique_comp_loss and self.training:
-        #     batch_dict["golden_tags"].append(clique_tags)
+        if self.clique_comp_loss and self.training:
+            batch_dict["golden_tags"].append(clique_tags)
 
         return batch_dict
 
@@ -589,31 +585,12 @@ class RAIN(IEModel):
 
         pred_ent_output = self.ent_fc(ent_hs_hiddens)
         pred_rel_output = self.rel_fc(rel_hs_hiddens)
-
+        
         return pred_ent_output, pred_rel_output
 
     def pred_output2pred_tag(self, pred_output):
         return (pred_output > 0.).long()
 
-    # def get_clique_comp_loss(self, ent_pred_outputs, rel_pred_outputs, event_gold_tags):
-    #     loss_list = []
-    #     for tag_dict in event_gold_tags:
-    #         ent_tags = tag_dict["ent_tags"].float()
-    #         rel_tags = tag_dict["rel_tags"].float()
-    #         ent_probs = torch.index_select(torch.sigmoid(ent_pred_outputs).view(-1), 0,
-    #                                        torch.nonzero(ent_tags.view(-1), as_tuple=True)[0])
-    #         rel_probs = torch.index_select(torch.sigmoid(rel_pred_outputs).view(-1), 0,
-    #                                        torch.nonzero(rel_tags.view(-1), as_tuple=True)[0])
-    #
-    #         # ent_prob = torch.prod(ent_probs) ** (1 / torch.sum(ent_tags))
-    #         # rel_prob = torch.prod(rel_probs) ** (1 / torch.sum(rel_tags))
-    #         # event_prob = (ent_prob * rel_prob) ** 0.5
-    #         # loss_list.append(((1 - event_prob) ** 2) ** 0.5)
-    #
-    #         loss_list.append(torch.logsumexp(- torch.cat([ent_probs, rel_probs]), dim=0))
-    #     loss_a_sample = torch.mean(torch.tensor(loss_list))
-    #     return loss_a_sample
-    
     def get_metrics(self, pred_outputs, gold_tags):
         ent_pred_out, rel_pred_out, ent_gold_tag, rel_gold_tag = pred_outputs[0], pred_outputs[1], gold_tags[0], \
                                                                  gold_tags[1]
@@ -639,81 +616,99 @@ class RAIN(IEModel):
             w_rel = max(init_rel_w - step_weight, stable_rel_w)
 
         # print("ent_w: {}, rel_w: {}".format(w_ent, w_rel))
-        loss = w_ent * self.metrics_cal.multilabel_categorical_crossentropy(ent_pred_out,
-                                                                            ent_gold_tag,
-                                                                            self.bp_steps) + \
-               w_rel * self.metrics_cal.multilabel_categorical_crossentropy(rel_pred_out,
-                                                                            rel_gold_tag,
-                                                                            self.bp_steps)
-        
-        # # if use clique completeness loss
-        # if self.clique_comp_loss and self.training:
-        #     event_gold_tags_list = gold_tags[2]
-        #     # ent_pred_out, rel_pred_out = pred_outputs[0], pred_outputs[1]
-        #     global_loss_batch = []
-        #     for sample_idx, event_gold_tags in enumerate(event_gold_tags_list):
-        #         if len(event_gold_tags) > 0:
-        #             global_loss_batch.append(self.get_clique_comp_loss(ent_pred_out[sample_idx],
-        #                                                                rel_pred_out[sample_idx],
-        #                                                                event_gold_tags))
-        #     if len(global_loss_batch) > 0:
-        #         loss_a_batch = torch.mean(torch.tensor(global_loss_batch))
-        #         loss += loss_a_batch
-        
+        loss = w_ent * MetricsCalculator.multilabel_categorical_crossentropy(ent_pred_out,
+                                                                             ent_gold_tag,
+                                                                             self.bp_steps) + \
+               w_rel * MetricsCalculator.multilabel_categorical_crossentropy(rel_pred_out,
+                                                                             rel_gold_tag,
+                                                                             self.bp_steps)
+
+        # if use clique completeness loss
+        if self.clique_comp_loss and self.training:
+            def get_clique_comp_loss(ent_pred_outputs, rel_pred_outputs, event_gold_tags):
+                loss_list = []
+                for tag_dict in event_gold_tags:
+                    ent_tags = tag_dict["ent_tags"].float()
+                    rel_tags = tag_dict["rel_tags"].float()
+                    ent_probs = torch.index_select(torch.sigmoid(ent_pred_outputs).view(-1), 0,
+                                                   torch.nonzero(ent_tags.view(-1), as_tuple=True)[0])
+                    rel_probs = torch.index_select(torch.sigmoid(rel_pred_outputs).view(-1), 0,
+                                                   torch.nonzero(rel_tags.view(-1), as_tuple=True)[0])
+
+                    # ent_prob = torch.prod(ent_probs) ** (1 / torch.sum(ent_tags))
+                    # rel_prob = torch.prod(rel_probs) ** (1 / torch.sum(rel_tags))
+                    # event_prob = (ent_prob * rel_prob) ** 0.5
+                    # loss_list.append(((1 - event_prob) ** 2) ** 0.5)
+
+                    loss_list.append(torch.logsumexp(- torch.cat([ent_probs, rel_probs]), dim=0))
+                loss_a_sample = torch.mean(torch.tensor(loss_list))
+                return loss_a_sample
+
+            event_gold_tags_list = gold_tags[2]
+            # ent_pred_out, rel_pred_out = pred_outputs[0], pred_outputs[1]
+            global_loss_batch = []
+            for sample_idx, event_gold_tags in enumerate(event_gold_tags_list):
+                if len(event_gold_tags) > 0:
+                    global_loss_batch.append(get_clique_comp_loss(ent_pred_out[sample_idx],
+                                                                  rel_pred_out[sample_idx],
+                                                                  event_gold_tags))
+            if len(global_loss_batch) > 0:
+                loss_a_batch = torch.mean(torch.tensor(global_loss_batch))
+                loss += loss_a_batch
+
         return {
             "loss": loss,
-            "ent_seq_acc": self.metrics_cal.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
-            "rel_seq_acc": self.metrics_cal.get_tag_seq_accuracy(rel_pred_tag, rel_gold_tag),
+            "ent_seq_acc": MetricsCalculator.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
+            "rel_seq_acc": MetricsCalculator.get_tag_seq_accuracy(rel_pred_tag, rel_gold_tag),
         }
 
-
-class TFBoYsBackbone(RAIN):
-    def generate_batch(self, batch_data):
-        batch_dict = super(TFBoYsBackbone, self).generate_batch(batch_data)
-        if self.clique_comp_loss and self.training:
-            seq_length = len(batch_data[0]["features"]["tok2char_span"])
-            batch_dict["golden_tags"].append(
-                [[{"ent_tags": Indexer.points2multilabel_shaking_seq(clique_elements["ent_points"],
-                                                                     seq_length,
-                                                                     self.ent_tag_size),
-                   "rel_tags": Indexer.points2multilabel_matrix(clique_elements["rel_points"],
-                                                                seq_length,
-                                                                self.rel_tag_size)}
-                  for clique_elements in sample["clique_element_list"]] for sample in batch_data])
-
-        return batch_dict
-
-    def get_clique_comp_loss(self, ent_pred_outputs, rel_pred_outputs, event_gold_tags):
-        loss_list = []
-        for tag_dict in event_gold_tags:
-            ent_tags = tag_dict["ent_tags"].float()
-            rel_tags = tag_dict["rel_tags"].float()
-            ent_probs = torch.index_select(torch.sigmoid(ent_pred_outputs).view(-1), 0,
-                                           torch.nonzero(ent_tags.view(-1), as_tuple=True)[0])
-            rel_probs = torch.index_select(torch.sigmoid(rel_pred_outputs).view(-1), 0,
-                                           torch.nonzero(rel_tags.view(-1), as_tuple=True)[0])
-
-            # ent_prob = torch.prod(ent_probs) ** (1 / torch.sum(ent_tags))
-            # rel_prob = torch.prod(rel_probs) ** (1 / torch.sum(rel_tags))
-            # event_prob = (ent_prob * rel_prob) ** 0.5
-            # loss_list.append(((1 - event_prob) ** 2) ** 0.5)
-
-            loss_list.append(torch.logsumexp(- torch.cat([ent_probs, rel_probs]), dim=0))
-        loss_a_sample = torch.mean(torch.tensor(loss_list))
-        return loss_a_sample
-
-    def get_metrics(self, pred_outputs, gold_tags):
-        metrics = super(TFBoYsBackbone, self).get_metrics(pred_outputs, gold_tags)
-
-        event_gold_tags_list = gold_tags[2]
-        ent_pred_out, rel_pred_out = pred_outputs[0], pred_outputs[1]
-        global_loss_batch = []
-        for sample_idx, event_gold_tags in enumerate(event_gold_tags_list):
-            if len(event_gold_tags) > 0:
-                global_loss_batch.append(self.get_clique_comp_loss(ent_pred_out[sample_idx],
-                                                                   rel_pred_out[sample_idx],
-                                                                   event_gold_tags))
-        if len(global_loss_batch) > 0:
-            loss_a_batch = torch.mean(torch.tensor(global_loss_batch))
-            metrics["loss"] += loss_a_batch
-        return metrics
+# class TFBoYsBackbone(RAIN):
+#     def generate_batch(self, batch_data):
+#         batch_dict = super(TFBoYsBackbone, self).generate_batch(batch_data)
+#         if self.clique_comp_loss and self.training:
+#             seq_length = len(batch_data[0]["features"]["tok2char_span"])
+#             batch_dict["golden_tags"].append(
+#                 [[{"ent_tags": Indexer.points2multilabel_shaking_seq(clique_elements["ent_points"],
+#                                                                      seq_length,
+#                                                                      self.ent_tag_size),
+#                    "rel_tags": Indexer.points2multilabel_matrix(clique_elements["rel_points"],
+#                                                                 seq_length,
+#                                                                 self.rel_tag_size)}
+#                   for clique_elements in sample["clique_element_list"]] for sample in batch_data])
+#
+#         return batch_dict
+#
+#     def get_clique_comp_loss(self, ent_pred_outputs, rel_pred_outputs, event_gold_tags):
+#         loss_list = []
+#         for tag_dict in event_gold_tags:
+#             ent_tags = tag_dict["ent_tags"].float()
+#             rel_tags = tag_dict["rel_tags"].float()
+#             ent_probs = torch.index_select(torch.sigmoid(ent_pred_outputs).view(-1), 0,
+#                                            torch.nonzero(ent_tags.view(-1), as_tuple=True)[0])
+#             rel_probs = torch.index_select(torch.sigmoid(rel_pred_outputs).view(-1), 0,
+#                                            torch.nonzero(rel_tags.view(-1), as_tuple=True)[0])
+#
+#             # ent_prob = torch.prod(ent_probs) ** (1 / torch.sum(ent_tags))
+#             # rel_prob = torch.prod(rel_probs) ** (1 / torch.sum(rel_tags))
+#             # event_prob = (ent_prob * rel_prob) ** 0.5
+#             # loss_list.append(((1 - event_prob) ** 2) ** 0.5)
+#
+#             loss_list.append(torch.logsumexp(- torch.cat([ent_probs, rel_probs]), dim=0))
+#         loss_a_sample = torch.mean(torch.tensor(loss_list))
+#         return loss_a_sample
+#
+#     def get_metrics(self, pred_outputs, gold_tags):
+#         metrics = super(TFBoYsBackbone, self).get_metrics(pred_outputs, gold_tags)
+#
+#         event_gold_tags_list = gold_tags[2]
+#         ent_pred_out, rel_pred_out = pred_outputs[0], pred_outputs[1]
+#         global_loss_batch = []
+#         for sample_idx, event_gold_tags in enumerate(event_gold_tags_list):
+#             if len(event_gold_tags) > 0:
+#                 global_loss_batch.append(self.get_clique_comp_loss(ent_pred_out[sample_idx],
+#                                                                    rel_pred_out[sample_idx],
+#                                                                    event_gold_tags))
+#         if len(global_loss_batch) > 0:
+#             loss_a_batch = torch.mean(torch.tensor(global_loss_batch))
+#             metrics["loss"] += loss_a_batch
+#         return metrics

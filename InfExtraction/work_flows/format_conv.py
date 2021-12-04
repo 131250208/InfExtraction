@@ -3104,6 +3104,7 @@ def convert_few_fc():
 
 
 if __name__ == "__main__":
+    convert_oie4()
     # convert_ace05_dygie()
     # # ================= trans ace 2005 =============================
     # in_fold_name = "ace2005_35_bk"
@@ -3153,25 +3154,25 @@ if __name__ == "__main__":
     # json.dump(mul_tri_id2events_dict, open("../../data/res_data/analysis/tfboys/mul_tri.json", "w", encoding="utf-8"), ensure_ascii=False)
     # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-    # # ============================ rm triggers in ace05 ======================================
-    train_path = "../../data/preprocessed_data/ace2005_dygiepp_default_settings/train_data.json"
-    dev_path = "../../data/preprocessed_data/ace2005_dygiepp_default_settings/valid_data.json"
-    test_path = "../../data/preprocessed_data/ace2005_dygiepp_default_settings/test_data.json"
-    train_data = load_data(train_path)
-    valid_data = load_data(dev_path)
-    test_data = load_data(test_path)
-    sv_dir = "../../data/preprocessed_data/ace2005_dygiepp_default_settings_tf"
-    if not os.path.exists(sv_dir):
-        os.mkdir(sv_dir)
-
-    new_train_data = rm_triggers(train_data)
-    new_valid_data = rm_triggers(valid_data)
-    new_test_data = rm_triggers(test_data)
-    train_sv_path = os.path.join(sv_dir, "train_data.json")
-    dev_sv_path = os.path.join(sv_dir, "valid_data.json")
-    test_sv_path = os.path.join(sv_dir, "test_data.json")
-    save_as_json_lines(new_train_data, train_sv_path)
-    save_as_json_lines(new_valid_data, dev_sv_path)
-    save_as_json_lines(new_test_data, test_sv_path)
+    # # # ============================ rm triggers in ace05 ======================================
+    # train_path = "../../data/preprocessed_data/ace2005_dygiepp_default_settings/train_data.json"
+    # dev_path = "../../data/preprocessed_data/ace2005_dygiepp_default_settings/valid_data.json"
+    # test_path = "../../data/preprocessed_data/ace2005_dygiepp_default_settings/test_data.json"
+    # train_data = load_data(train_path)
+    # valid_data = load_data(dev_path)
+    # test_data = load_data(test_path)
+    # sv_dir = "../../data/preprocessed_data/ace2005_dygiepp_default_settings_tf"
+    # if not os.path.exists(sv_dir):
+    #     os.mkdir(sv_dir)
+    #
+    # new_train_data = rm_triggers(train_data)
+    # new_valid_data = rm_triggers(valid_data)
+    # new_test_data = rm_triggers(test_data)
+    # train_sv_path = os.path.join(sv_dir, "train_data.json")
+    # dev_sv_path = os.path.join(sv_dir, "valid_data.json")
+    # test_sv_path = os.path.join(sv_dir, "test_data.json")
+    # save_as_json_lines(new_train_data, train_sv_path)
+    # save_as_json_lines(new_valid_data, dev_sv_path)
+    # save_as_json_lines(new_test_data, test_sv_path)
 
     pass

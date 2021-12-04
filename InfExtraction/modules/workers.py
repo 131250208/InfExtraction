@@ -1,5 +1,6 @@
 from InfExtraction.modules.utils import DefaultLogger
 from InfExtraction.modules.preprocess import Preprocessor
+from InfExtraction.modules.metrics import MetricsCalculator
 import os
 import torch
 import wandb
@@ -268,7 +269,7 @@ class Evaluator:
         # 如果train set在split的时候扔了负样本，merged_pred_samples里会缺失一些id（最终版可扔可不扔，影响应该不大）
         # 在训练前的伪解码阶段会将valid set当作train set来进行预处理split，所以解码的时候会遇到id缺失，这里用伪样本填补位置。
         # 注意：测试集的负样本没有进行丢弃，所以不影响对比 (comment deprecated)
-        pseudo_res = {key:[] for key in res_keys}
+        pseudo_res = {key: [] for key in res_keys}
         for sample in golden_data:
             id_ = sample["id"]
             pred_res = merged_pred_res.get(id_, pseudo_res)
@@ -301,12 +302,4 @@ class Evaluator:
         return pred_data
         
     def score(self, pred_data, golden_data, data_filename=""):
-        '''
-        :param pred_data:
-        :param golden_data:
-        :param data_filename: just for logging
-        :param final_score_key: which score is the final score: trigger_class_f1, rel_f1
-        :return:
-        '''
-
-        return self.model.metrics_cal.score(pred_data, golden_data, data_filename)
+        return MetricsCalculator.score(pred_data, golden_data, data_filename)

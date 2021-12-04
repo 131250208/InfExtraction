@@ -40,7 +40,6 @@ from glob import glob
 # Frequent changes
 exp_name = "webnlg_star"
 language = "en"
-stage = "train"  # inference
 task_type = "re"  # re, re+ee
 model_name = "RAIN"
 tagger_name = "Tagger4RAIN"
@@ -52,11 +51,8 @@ note = ""
 epochs = 100
 lr = 5e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = False
-split_early_stop = True
-drop_neg_samples = True
 combine = False  # combine splits
 scheduler = "CAWR"
-use_ghm = False
 model_bag_size = 0  # if no saving, set to 0
 
 batch_size_train = 6
@@ -74,22 +70,25 @@ sliding_len_test = 20
 # data
 data_in_dir = "../../data/preprocessed_data"
 data_out_dir = "../../data/res_data"
+train_data_path = os.path.join(data_in_dir, exp_name, "train_data.json")
+valid_data_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
+test_data_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 
-train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
-
-data4checking = copy.deepcopy(train_data)
-random.shuffle(data4checking)
-checking_num = 1000
-data4checking = data4checking[:checking_num]
-# data4checking = valid_data
-
-test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
-filename2ori_test_data = {}
-for test_data_path in test_data_list:
-    filename = test_data_path.split("/")[-1]
-    ori_test_data = load_data(test_data_path)
-    filename2ori_test_data[filename] = ori_test_data
+# train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
+# valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
+#
+# data4checking = copy.deepcopy(train_data)
+# random.shuffle(data4checking)
+# checking_num = 1000
+# data4checking = data4checking[:checking_num]
+# # data4checking = valid_data
+#
+# test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+# filename2ori_test_data = {}
+# for test_data_path in test_data_list:
+#     filename = test_data_path.split("/")[-1]
+#     ori_test_data = load_data(test_data_path)
+#     filename2ori_test_data[filename] = ori_test_data
 
 dicts = "dicts.json"
 statistics = "statistics.json"
@@ -295,8 +294,5 @@ config_to_log = {
     "optimizer": optimizer_config,
     "addtional_preprocessing_config": addtional_preprocessing_config,
     "tagger_config": tagger_config,
-    "split_early_stop": split_early_stop,
-    "drop_neg_samples": drop_neg_samples,
     "combine_split": combine,
-    "use_ghm": use_ghm,
 }
