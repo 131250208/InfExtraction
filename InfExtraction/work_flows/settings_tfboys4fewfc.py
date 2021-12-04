@@ -46,7 +46,7 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "macbert-base"
 pretrained_emb_name = "glove_fewfc_300.txt"
-use_wandb = True
+use_wandb = False
 note = "no o2s; fix a bug in filter spans"
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
@@ -125,7 +125,7 @@ tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "dtm_arg_type_by_edges": addtional_preprocessing_config["dtm_arg_type_by_edges"],
     "add_h2t_n_t2h_links": False,
-    "add_o2s_links": False,
+    "add_o2s_links": True,
     "language": language,
 }
 
