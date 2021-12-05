@@ -15,7 +15,7 @@ import torch
 
 class Tagger(metaclass=ABCMeta):
     @classmethod
-    def additional_preprocess(cls, data, data_type, **kwargs):
+    def additional_preprocess(cls, data, **kwargs):
         return data
 
     @abstractmethod
@@ -767,9 +767,7 @@ def create_rebased_ee_tagger(base_class):
                             self.event_type2arg_rols[event_type] = set()
                         self.event_type2arg_rols[event_type].add(arg["type"])
         @classmethod
-        def additional_preprocess(cls, data, data_type, **kwargs):
-            if data_type != "train":
-                return data
+        def additional_preprocess(cls, data, **kwargs):
 
             new_data = copy.deepcopy(data)
             separator = "\u2E82"
@@ -951,9 +949,7 @@ def create_rebased_tfboys_tagger(base_class):
             self.dtm_arg_type_by_edges = kwargs["dtm_arg_type_by_edges"]
 
         @classmethod
-        def additional_preprocess(cls, data, data_type, **kwargs):
-            if data_type != "train":
-                return data
+        def additional_preprocess(cls, data, **kwargs):
 
             new_data = copy.deepcopy(data)
             for sample in tqdm(new_data, desc="additional preprocessing"):
@@ -1203,10 +1199,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
             self.use_bound = kwargs["use_bound"]
 
         @classmethod
-        def additional_preprocess(cls, data, data_type, **kwargs):
-            if data_type != "train":
-                return data
-
+        def additional_preprocess(cls, data, **kwargs):
             use_bound = kwargs["use_bound"]
 
             new_tag_sep = "\u2E82"
@@ -1287,9 +1280,6 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                 new_data.append(new_sample)
             return new_data
 
-        # def decode(self, sample, pred_outs):
-        #     pred_sample = super(REBasedDiscontinuousNERTagger, self).decode(sample, pred_outs)
-        #     return self._trans(pred_sample)
         def get_tag_points(self, sample):
             super(REBasedDiscontinuousNERTagger, self).get_tag_points(sample)
             if "clique_element_list" in sample:
@@ -1341,10 +1331,6 @@ def create_rebased_discontinuous_ner_tagger(base_class):
                     ent_type2anns[ent_type]["rel_list"].append(rel)
 
             for ent_type, anns in ent_type2anns.items():
-                # if self.use_bound:
-                #     for boundary in anns["boundaries"]:
-                #         bound_span = boundary["tok_span"]
-
                 def extr(bd_span):
                     sub_seg_list = anns["seg_list"]
                     sub_rel_list = anns["rel_list"]
@@ -1426,9 +1412,7 @@ def create_rebased_oie_tagger(base_class):
             self.add_next_link = kwargs["add_next_link"]
 
         @classmethod
-        def additional_preprocess(cls, data, data_type, **kwargs):
-            if data_type != "train":
-                return data
+        def additional_preprocess(cls, data, **kwargs):
 
             add_next_link = kwargs["add_next_link"]
             new_tag_sep = "\u2E82"

@@ -46,11 +46,11 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "yelpbert"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = True
-note = "clique comp loss; no o2s; check(test len)"
+use_wandb = False
+note = "no o2s; 0.5 neg samp"
 epochs = 300
 lr = 1e-5  # 5e-5, 1e-4
-check_tagging_n_decoding = True
+check_tagging_n_decoding = False
 combine = True  # combine splits
 scheduler = "CAWR"
 model_bag_size = 0
@@ -88,21 +88,6 @@ data_out_dir = "../../data/res_data"
 train_data_path = os.path.join(data_in_dir, exp_name, "train_data.json")
 valid_data_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
 test_data_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
-
-# train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-# valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
-#
-# data4checking = copy.deepcopy(valid_data)
-# random.shuffle(data4checking)
-# checking_num = 1000
-# data4checking = data4checking[:checking_num]
-#
-# test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
-# filename2ori_test_data = {}
-# for test_data_path in test_data_list:
-#     filename = test_data_path.split("/")[-1]
-#     ori_test_data = load_data(test_data_path)
-#     filename2ori_test_data[filename] = ori_test_data
 
 dicts = "dicts.json"
 statistics = "statistics.json"
@@ -256,11 +241,9 @@ model_settings = {
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
     "rel_dim": 768,
-    "tok_pair_neg_sampling_rate": 1.,
+    "tok_pair_neg_sampling_rate": .5,
     "clique_comp_loss": True,
     "do_span_len_emb": True,
-    "emb_ent_info2rel": False,
-    "golden_ent_cla_guide": False,
     "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
 }

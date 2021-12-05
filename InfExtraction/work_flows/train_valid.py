@@ -44,6 +44,8 @@ from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
 from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data, save_as_json_lines
+import random
+import json
 
 
 def get_dataloader(data,
@@ -124,7 +126,9 @@ if __name__ == "__main__":
     train_data = load_data(settings.train_data_path)
     valid_data = load_data(settings.valid_data_path)
     checking_num = 1000
-    data4checking = copy.deepcopy(train_data)[:checking_num]
+    data4cheking = copy.deepcopy(train_data)
+    random.shuffle(data4cheking)
+    data4checking = data4cheking[:checking_num]
     filename2test_data = {}
     for test_data_path in settings.test_data_path_list:
         filename = test_data_path.split("/")[-1]
@@ -173,11 +177,8 @@ if __name__ == "__main__":
     sliding_len_test = settings.sliding_len_test
 
     combine = settings.combine
-    # split_early_stop = settings.split_early_stop
-    # drop_neg_samples = settings.drop_neg_samples
 
     trainer_config = settings.trainer_config
-    # use_ghm = settings.use_ghm
     lr = settings.lr
     model_state_dict_path = settings.model_state_dict_path  # pretrained model state
 
@@ -187,7 +188,6 @@ if __name__ == "__main__":
     # test settings
     model_dir_for_test = settings.model_dir_for_test
     target_run_ids = settings.target_run_ids
-    # top_k_models = settings.top_k_models
     model_path_ids2infer = settings.model_path_ids2infer
     metric_pattern2save = settings.metric_pattern2save
     metric4testing = settings.metric4testing
@@ -198,10 +198,6 @@ if __name__ == "__main__":
 
     # model settings
     model_settings = settings.model_settings
-
-    # wdp_prefix = None
-    # if token_level == "subword":
-    #     wdp_prefix = model_settings["subwd_encoder_config"]["wordpieces_prefix"]
     
     max_char_num_in_tok = None
     if "char_encoder_config" in model_settings and model_settings["char_encoder_config"] is not None:
@@ -245,20 +241,13 @@ if __name__ == "__main__":
         tagger_class_name = taggers.create_rebased_tfboys_tagger(tagger_class_name)
 
     # additional preprocessing
-    def additional_preprocess(data, data_type):
-        return tagger_class_name.additional_preprocess(data, data_type, **addtional_preprocessing_config)
+    def additional_preprocess(data):
+        return tagger_class_name.additional_preprocess(data, **addtional_preprocessing_config)
 
-    train_data = additional_preprocess(train_data, "train")
-    # valid_data = additional_preprocess(ori_valid_data, "valid")
-    # filename2test_data = {}
-    # for filename, ori_test_data in filename2ori_test_data.items():
-    #     filename2test_data[filename] = additional_preprocess(ori_test_data, "test")
+    train_data = additional_preprocess(train_data)
 
     all_data4gen_tag_dict = []
     all_data4gen_tag_dict.extend(train_data)
-    # all_data4gen_tag_dict.extend(additional_preprocess(ori_valid_data, "train"))  # only when setting to "train"
-    # would it do additional preprocessing
-    # all_data4gen_tag_dict.extend(additional_preprocess(ori_test_data, "train"))
 
     # tagger
     tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
@@ -280,12 +269,14 @@ if __name__ == "__main__":
         wandb.init(project=exp_name, name=run_name, config=config2log)
         dir_to_save_model = wandb.run.dir
         logger = wandb
+        run_id = wandb.run.id
     else:
         logger = DefaultLogger(default_log_path,
                                exp_name,
                                run_name,
                                default_run_id,
                                config2log)
+        run_id = default_run_id
         dir_to_save_model = default_dir_to_save_model
         if not os.path.exists(dir_to_save_model):
             os.makedirs(dir_to_save_model)
@@ -343,10 +334,10 @@ if __name__ == "__main__":
         # for checking, take valid data as train data, do additional preprocessing to get tags
         # but take original valid data as golden dataset to evaluate
         ori_data4checking = copy.deepcopy(data4checking)
-        data4checking = additional_preprocess(data4checking, "train")
+        data4checking = additional_preprocess(data4checking)
         dataloader4checking = get_dataloader(data4checking,
                                              language,
-                                             "train",  # only train data will be set a tag sequence
+                                             "train",  # only train data will save the annotations
                                              token_level,
                                              max_seq_len_test,
                                              sliding_len_test,
@@ -357,7 +348,12 @@ if __name__ == "__main__":
                                              collate_fn,
                                              max_char_num_in_tok,
                                              )
-        pprint(evaluator.check_tagging_n_decoding(dataloader4checking, ori_data4checking))
+        debug_score_dict, debug_error_analysis_dict = evaluator.check_tagging_n_decoding(dataloader4checking, ori_data4checking)
+        json.dump(debug_error_analysis_dict,
+                  open(os.path.join(dir_to_save_model, "debug_error_analysis_dict"), "w", encoding="utf-8"),
+                  ensure_ascii=False
+                  )
+        pprint(debug_score_dict)
 
     # load pretrained model
     if model_state_dict_path is not None:
@@ -368,7 +364,7 @@ if __name__ == "__main__":
     optimizer_class_name = getattr(torch.optim, optimizer_config["class_name"])
     optimizer = optimizer_class_name(model.parameters(), lr=float(lr), **optimizer_config["parameters"])
 
-    trainer = Trainer(model, train_dataloader, device, optimizer, trainer_config, logger)
+    trainer = Trainer(run_id, model, train_dataloader, device, optimizer, trainer_config, logger)
 
     # train and valid
     score_dict4comparing = {}
@@ -377,7 +373,7 @@ if __name__ == "__main__":
         trainer.train(ep, epochs)
         # valid
         pred_samples = evaluator.predict(valid_dataloader, valid_data)
-        score_dict = evaluator.score(pred_samples, valid_data, "val")
+        score_dict, _ = evaluator.score(pred_samples, valid_data, "val")
         logger.log(score_dict)
         dataset2score_dict = {
             "valid_data.json": score_dict,
@@ -424,71 +420,9 @@ if __name__ == "__main__":
         for filename, test_data_loader in filename2test_data_loader.items():
             gold_test_data = filename2test_data[filename]
             pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-            score_dict = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
+            score_dict, _ = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
             logger.log(score_dict)
             dataset2score_dict[filename] = score_dict
 
         pprint(dataset2score_dict)
         pprint(score_dict4comparing)
-
-    # elif stage == "inference":
-    #     # get model state paths
-    #     target_run_ids = set(target_run_ids)
-    #     assert model_dir_for_test is not None and model_dir_for_test.strip() != "", "Please set model state directory!"
-    #
-    #     run_id2model_state_paths = {}
-    #     for root, dirs, files in os.walk(model_dir_for_test):
-    #         for file_name in files:
-    #             path_se = re.search("run-\d{8}_\d{6}-(\w{8})\/.*?(val_.*)", root)
-    #             if path_se is None:
-    #                 continue
-    #             run_id = path_se.group(1)
-    #             metric = path_se.group(2)
-    #             if metric == "val_{}".format(metric4testing) \
-    #                     and run_id in target_run_ids \
-    #                     and re.match(".*model_state.*\.pt", file_name):
-    #                 if run_id not in run_id2model_state_paths:
-    #                     run_id2model_state_paths[run_id] = []
-    #                 model_state_path = os.path.join(root, file_name)
-    #                 run_id2model_state_paths[run_id].append(model_state_path)
-    #
-    #     # predicting
-    #     run_id2scores = {}
-    #     for run_id, model_path_list in run_id2model_state_paths.items():
-    #         # only top k models
-    #         sorted_model_path_list = sorted(model_path_list, key=get_score_fr_path)
-    #         model_path_list = []
-    #         for idx in model_path_ids2infer:
-    #             model_path_list.append(sorted_model_path_list[idx])
-    #         # model_path_list = get_last_k_paths(model_path_list, top_k_models)
-    #
-    #         for path in model_path_list:
-    #             # load model
-    #             model.load_state_dict(torch.load(path))
-    #             print("model state loaded: {}".format("/".join(path.split("/")[-2:])))
-    #             model.eval()
-    #             model_name = re.sub("\.pt", "", path.split("/")[-1])
-    #             save_dir = os.path.join(data_out_dir, exp_name, run_name, run_id, model_name)
-    #             if not os.path.exists(save_dir):
-    #                 os.makedirs(save_dir)
-    #
-    #             # test
-    #             for filename, test_data_loader in filename2test_data_loader.items():
-    #                 gold_test_data = filename2test_data[filename]
-    #                 # predicate
-    #                 pred_samples = evaluator.predict(test_data_loader, gold_test_data)
-    #
-    #                 # save results
-    #                 save_as_json_lines(pred_samples, os.path.join(save_dir, filename))
-    #
-    #                 # score
-    #                 if cal_scores:
-    #                     score_dict = evaluator.score(pred_samples, gold_test_data)
-    #                     if run_id not in run_id2scores:
-    #                         run_id2scores[run_id] = {}
-    #                     if model_name not in run_id2scores[run_id]:
-    #                         run_id2scores[run_id][model_name] = {}
-    #                     run_id2scores[run_id][model_name][filename] = score_dict
-    #
-    #     if cal_scores:
-    #         pprint(run_id2scores)

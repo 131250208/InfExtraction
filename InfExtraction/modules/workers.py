@@ -13,12 +13,14 @@ import copy
 
 class Trainer:
     def __init__(self,
+                 run_id,
                  model,
                  dataloader,
                  device,
                  optimizer,
                  trainer_config,
                  logger):
+        self.run_id = run_id
         self.model = model
         self.tagger = model.tagger
         self.device = device
@@ -50,7 +52,6 @@ class Trainer:
     # train step
     def train_step(self, batch_train_data):
         del batch_train_data["sample_list"]
-        # golden_tags = [tag.to(self.device) for tag in golden_tags]
 
         def to_device_iter(inp_item):
             if type(inp_item) is dict:
@@ -71,13 +72,6 @@ class Trainer:
         to_device_iter(batch_train_data)
         golden_tags = batch_train_data["golden_tags"]
         del batch_train_data["golden_tags"]
-        # for k, v in batch_train_data.items():
-        #     if k == "padded_text_list":
-        #         for sent in v:
-        #             sent.to(self.device)
-        #     else:
-        #         batch_train_data[k] = v.to(self.device)
-
         pred_outputs = self.model(**batch_train_data)
 
         metrics_dict = self.model.get_metrics(pred_outputs, golden_tags)
@@ -94,7 +88,7 @@ class Trainer:
         # train
         self.model.train()
         t_ep = time.time()
-        # avg_loss, total_loss, avg_seq_acc, total_seq_acc = 0., 0., 0., 0.
+
         fin_metrics_dict = {}
         dataloader = self.dataloader
         for batch_ind, batch_train_data in enumerate(dataloader):
@@ -119,10 +113,10 @@ class Trainer:
             else:
                 self.scheduler.step()
 
-            batch_print_format = "\rexp: {}, run_name: {}, Epoch: {}/{}, batch: {}/{}, {}" + \
+            batch_print_format = "\rrun_id: {}, exp: {}, run_name: {}, Epoch: {}/{}, batch: {}/{}, {}" + \
                                  "lr: {:.5}, batch_time: {:.5}, total_time: {:.5} -------------"
 
-            print(batch_print_format.format(self.exp_name, self.run_name,
+            print(batch_print_format.format(self.run_id, self.exp_name, self.run_name,
                                             ep + 1, num_epoch,
                                             batch_ind + 1, len(dataloader),
                                             metrics_log,
@@ -185,13 +179,6 @@ class Evaluator:
         with torch.no_grad():
             pred_outputs = self.model(**batch_predict_data)
 
-        # if type(pred_outputs) == tuple:
-        #     pred_tags = [self.model.pred_output2pred_tag(pred_out) for pred_out in pred_outputs]
-        # else:
-        #     pred_tags = [self.model.pred_output2pred_tag(pred_outputs), ]
-        #
-        # pred_sample_list = self.decoder.decode_batch(sample_list, pred_tags)
-
         if type(pred_outputs) == tuple:
             pred_tags = [self.model.pred_output2pred_tag(pred_out) for pred_out in pred_outputs]
             pred_outputs = pred_outputs
@@ -207,72 +194,27 @@ class Evaluator:
         pred_sample_list = Preprocessor.decompose2splits(pred_sample_list)
 
         # merge and alignment
-        # id2text = {sample["id"]: sample["text"] for sample in golden_data}
         merged_pred_res = {}
         res_keys = {"entity_list", "relation_list", "event_list", "open_spo_list"}
 
+        # merge
         for sample in pred_sample_list:
             id_ = sample["id"]
             # recover spans by offsets
             sample = Preprocessor.span_offset(sample, sample["tok_level_offset"], sample["char_level_offset"])
-            # # merge
-            # if id_ not in merged_pred_samples:
-            #     merged_pred_samples[id_] = {
-            #         "id": id_,
-            #         "text": id2text[id_],
-            #         "entity_list": [],
-            #         "relation_list": [],
-            #         "event_list": [],
-            #         "open_spo_list": [],
-            #     }
-            # if "entity_list" in sample:
-            #     merged_pred_samples[id_]["entity_list"].extend(sample["entity_list"])
-            # if "relation_list" in sample:
-            #     merged_pred_samples[id_]["relation_list"].extend(sample["relation_list"])
-            # if "event_list" in sample:
-            #     merged_pred_samples[id_]["event_list"].extend(sample["event_list"])
-            # if "open_spo_list" in sample:
-            #     merged_pred_samples[id_]["open_spo_list"].extend(sample["open_spo_list"])
 
             # merge
-            # if id_ not in merged_pred_res:
-            #     merged_pred_res[id_] = {
-            #         "id": id_,
-            #         "text": id2text[id_],
-            #     }
             merged_pred_res.setdefault(id_, {})
             for key in res_keys:
                 if key in sample:
                     merged_pred_res[id_].setdefault(key, []).extend(sample[key])
 
-            # if "entity_list" in sample:
-            #     # if "entity_list" not in merged_pred_res[id_]:
-            #     #     merged_pred_res[id_]["entity_list"] = []
-            #     # merged_pred_res[id_]["entity_list"].extend(sample["entity_list"])
-            #     merged_pred_res.setdefault(merged_pred_res[id_]["entity_list"], []).extend(sample["entity_list"])
-            # if "relation_list" in sample:
-            #     # if "relation_list" not in merged_pred_res[id_]:
-            #     #     merged_pred_res[id_]["relation_list"] = []
-            #     # merged_pred_res[id_]["relation_list"].extend(sample["relation_list"])
-            #     merged_pred_res.setdefault(merged_pred_res[id_]["relation_list"], []).extend(sample["relation_list"])
-            # if "event_list" in sample:
-            #     if "event_list" not in merged_pred_res[id_]:
-            #         merged_pred_res[id_]["event_list"] = []
-            #     merged_pred_res[id_]["event_list"].extend(sample["event_list"])
-            # if "open_spo_list" in sample:
-            #     if "open_spo_list" not in merged_pred_res[id_]:
-            #         merged_pred_res[id_]["open_spo_list"] = []
-            #     merged_pred_res[id_]["open_spo_list"].extend(sample["open_spo_list"])
-
-        # alignment by id (in order)
+        # align by ids (in order)
         pred_data = []
-        # 如果train set在split的时候扔了负样本，merged_pred_samples里会缺失一些id（最终版可扔可不扔，影响应该不大）
-        # 在训练前的伪解码阶段会将valid set当作train set来进行预处理split，所以解码的时候会遇到id缺失，这里用伪样本填补位置。
-        # 注意：测试集的负样本没有进行丢弃，所以不影响对比 (comment deprecated)
-        pseudo_res = {key: [] for key in res_keys}
+        # pseudo_res = {key: [] for key in res_keys}
         for sample in golden_data:
             id_ = sample["id"]
-            pred_res = merged_pred_res.get(id_, pseudo_res)
+            pred_res = merged_pred_res[id_]
             pred_sample = {
                 "id": sample["id"],
                 "text": sample["text"],

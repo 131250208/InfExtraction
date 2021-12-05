@@ -42,6 +42,7 @@ from InfExtraction.modules import models
 from InfExtraction.modules.workers import Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
 from InfExtraction.modules.utils import MyDataset, save_as_json_lines, load_data
+import json
 
 
 def get_dataloader(data,
@@ -264,7 +265,6 @@ if __name__ == "__main__":
         model_path_list = []
         for idx in model_path_ids2infer:
             model_path_list.append(sorted_model_path_list[idx])
-        # model_path_list = get_last_k_paths(model_path_list, top_k_models)
 
         for path in model_path_list:
             # load model
@@ -287,7 +287,11 @@ if __name__ == "__main__":
 
                 # score
                 if cal_scores:
-                    score_dict = evaluator.score(pred_samples, gold_test_data)
+                    score_dict, error_analysis_dict = evaluator.score(pred_samples, gold_test_data)
+                    json.dump(error_analysis_dict,
+                              open(os.path.join(save_dir, "error_analysis_dict.json"), "w", encoding="utf-8"),
+                              ensure_ascii=False
+                              )
                     if run_id not in run_id2scores:
                         run_id2scores[run_id] = {}
                     if model_name not in run_id2scores[run_id]:
