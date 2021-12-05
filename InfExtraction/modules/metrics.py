@@ -766,21 +766,21 @@ class MetricsCalculator:
         pred_sample = pred_data[0]
 
         total_cpg_dict = {}
-        error_dict = {}
+        error_analysis_dict = {}
         if "entity_list" in golden_sample and "entity_list" in pred_sample:
             cpg_dict, wrong_pred_list = MetricsCalculator.get_ent_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
-            error_dict["entity"] = wrong_pred_list
+            error_analysis_dict["entity"] = wrong_pred_list
 
         if "relation_list" in golden_sample and "relation_list" in pred_sample:
             cpg_dict, wrong_pred_list = MetricsCalculator.get_rel_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**cpg_dict, **total_cpg_dict}
-            error_dict["relation"] = wrong_pred_list
+            error_analysis_dict["relation"] = wrong_pred_list
 
         if "event_list" in golden_sample and "event_list" in pred_sample:
             cpg_dict, wrong_pred_list = MetricsCalculator.get_ee_cpg_dict(pred_data, golden_data)
             total_cpg_dict = {**total_cpg_dict, **cpg_dict}
-            error_dict["event"] = wrong_pred_list
+            error_analysis_dict["event"] = wrong_pred_list
 
             # calculate otm, otm_st
             if any("trigger" in event for sample in golden_data for event in sample["event_list"]):
@@ -819,16 +819,19 @@ class MetricsCalculator:
             for sct, val in oie_score_dict.items():
                 score_dict["{}{}".format(data_filename, sct)] = round(val, 5)
 
+
         if data_filename == "debug_":
-            print(">>>>>>>>>>>>>>>> error samples >>>>>>>>>>>>>>>>>>>>>>")
-            def rm_features(dict_in):  # features too long
-                for l in dict_in.values():
-                    for pair in l:
-                        for sample in pair.values():
-                            if "features" in sample:
-                                del sample["features"]
-            error_dict_out = copy.deepcopy(error_dict)
-            rm_features(error_dict_out)
-            pprint(error_dict_out)
+            print(">>>>>>>>>>>>>>>> error samples in decoding debug >>>>>>>>>>>>>>>>>>>>>>")
+            for k, v in error_analysis_dict.items():
+                print("{}: {}".format(k, len(v)))
+            # def rm_features(dict_in):  # features too long
+            #     for l in dict_in.values():
+            #         for pair in l:
+            #             for sample in pair.values():
+            #                 if "features" in sample:
+            #                     del sample["features"]
+            # error_dict_out = copy.deepcopy(error_analysis_dict)
+            # rm_features(error_dict_out)
+            # pprint(error_dict_out)
             print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
-        return score_dict
+        return score_dict, error_analysis_dict

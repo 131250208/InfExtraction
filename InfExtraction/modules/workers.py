@@ -12,12 +12,14 @@ import copy
 
 class Trainer:
     def __init__(self,
+                 run_id,
                  model,
                  dataloader,
                  device,
                  optimizer,
                  trainer_config,
                  logger):
+        self.run_id = run_id
         self.model = model
         self.tagger = model.tagger
         self.device = device
@@ -118,10 +120,10 @@ class Trainer:
             else:
                 self.scheduler.step()
 
-            batch_print_format = "\rexp: {}, run_name: {}, Epoch: {}/{}, batch: {}/{}, {}" + \
+            batch_print_format = "\rrun_id: {}, exp: {}, run_name: {}, epoch: {}/{}, batch: {}/{}, {}" + \
                                  "lr: {:.5}, batch_time: {:.5}, total_time: {:.5} -------------"
 
-            print(batch_print_format.format(self.exp_name, self.run_name,
+            print(batch_print_format.format(self.run_id, self.exp_name, self.run_name,
                                             ep + 1, num_epoch,
                                             batch_ind + 1, len(dataloader),
                                             metrics_log,
