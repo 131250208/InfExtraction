@@ -34,7 +34,7 @@ train_data = convert_daixiang_data("train.txt")
 valid_data = convert_daixiang_data("dev.txt")
 test_data = convert_daixiang_data("test.txt")
 ```
-If you bother to download and convert, download our version from [here](https://drive.google.com/drive/folders/1w1OOHeM6p38LM-0aZ9htO6UO63SaHvNB?usp=sharing). We only provide CADEC but not the other two, since they are not freely available.
+If you did not bother to download and convert, download our version from [here](https://drive.google.com/drive/folders/1w1OOHeM6p38LM-0aZ9htO6UO63SaHvNB?usp=sharing). We only provide CADEC but not the other two, since they are not freely available.
 
 If you use other datasets, convert the data format to fit in our style as below:
 ```json
