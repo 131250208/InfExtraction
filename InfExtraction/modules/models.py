@@ -597,9 +597,13 @@ class RAIN(IEModel):
         for tag_dict in event_gold_tags:
             ent_tags = tag_dict["ent_tags"].float()
             rel_tags = tag_dict["rel_tags"].float()
-            ent_probs = torch.index_select(torch.sigmoid(ent_pred_outputs).view(-1), 0,
+            # ent_probs = torch.index_select(torch.sigmoid(ent_pred_outputs).view(-1), 0,
+            #                                torch.nonzero(ent_tags.view(-1), as_tuple=True)[0])
+            # rel_probs = torch.index_select(torch.sigmoid(rel_pred_outputs).view(-1), 0,
+            #                                torch.nonzero(rel_tags.view(-1), as_tuple=True)[0])
+            ent_probs = torch.index_select(ent_pred_outputs.view(-1), 0,
                                            torch.nonzero(ent_tags.view(-1), as_tuple=True)[0])
-            rel_probs = torch.index_select(torch.sigmoid(rel_pred_outputs).view(-1), 0,
+            rel_probs = torch.index_select(rel_pred_outputs.view(-1), 0,
                                            torch.nonzero(rel_tags.view(-1), as_tuple=True)[0])
 
             loss_list.append(torch.logsumexp(- torch.cat([ent_probs, rel_probs]), dim=0))

@@ -1,5 +1,5 @@
 import os
-device_num = 0
+device_num = 3
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -8,6 +8,7 @@ import numpy as np
 from datetime import date
 import time
 from InfExtraction.modules.utils import load_data
+from transformers import BertTokenizer
 
 seed = 2333
 enable_bm = True
@@ -46,8 +47,8 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "macbert-base"
 pretrained_emb_name = "glove_fewfc_300.txt"
-use_wandb = False
-note = "no o2s"
+use_wandb = True
+note = "no o2s; new clique loss wo sigmoid"
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = False
@@ -104,14 +105,17 @@ dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 key_map = {
     "char2id": "char_list",
     "word2id": "word_list",
-    "bert_dict": "subword_list",
+    # "bert_dict": "subword_list",
     "pos_tag2id": "pos_tag_list",
     "ner_tag2id": "ner_tag_list",
     "deprel_type2id": "dependency_list",
 }
-key2dict = {}
+key2dict = {
+    "subword_list": BertTokenizer.from_pretrained("../../data/pretrained_models/{}".format(pretrained_model_name)).get_vocab()
+}
 for key, val in dicts.items():
-    key2dict[key_map[key]] = val
+    if key in key_map:
+        key2dict[key_map[key]] = val
 
 # additional preprocessing
 addtional_preprocessing_config = {

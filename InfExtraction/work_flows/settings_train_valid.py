@@ -8,6 +8,8 @@ import numpy as np
 from datetime import date
 import time
 from InfExtraction.modules.utils import load_data
+from transformers import BertTokenizer
+
 
 seed = 2333
 enable_bm = True
@@ -74,22 +76,6 @@ train_data_path = os.path.join(data_in_dir, exp_name, "train_data.json")
 valid_data_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
 test_data_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
 
-# train_data = load_data(os.path.join(data_in_dir, exp_name, "train_data.json"))
-# valid_data = load_data(os.path.join(data_in_dir, exp_name, "valid_data.json"))
-#
-# data4checking = copy.deepcopy(train_data)
-# random.shuffle(data4checking)
-# checking_num = 1000
-# data4checking = data4checking[:checking_num]
-# # data4checking = valid_data
-#
-# test_data_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
-# filename2ori_test_data = {}
-# for test_data_path in test_data_list:
-#     filename = test_data_path.split("/")[-1]
-#     ori_test_data = load_data(test_data_path)
-#     filename2ori_test_data[filename] = ori_test_data
-
 dicts = "dicts.json"
 statistics = "statistics.json"
 statistics_path = os.path.join(data_in_dir, exp_name, statistics)
@@ -101,14 +87,17 @@ dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
 key_map = {
     "char2id": "char_list",
     "word2id": "word_list",
-    "bert_dict": "subword_list",
+    # "bert_dict": "subword_list",
     "pos_tag2id": "pos_tag_list",
     "ner_tag2id": "ner_tag_list",
     "deprel_type2id": "dependency_list",
 }
-key2dict = {}
+key2dict = {
+    "subword_list": BertTokenizer.from_pretrained("../../data/pretrained_models/{}".format(pretrained_model_name)).get_vocab()
+}
 for key, val in dicts.items():
-    key2dict[key_map[key]] = val
+    if key in key_map:
+        key2dict[key_map[key]] = val
 
 # additional preprocessing
 addtional_preprocessing_config = {
