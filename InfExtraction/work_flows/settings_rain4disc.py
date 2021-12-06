@@ -46,8 +46,8 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "yelpbert"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = True
-note = "no o2s; 0.6 neg samp; 3 bert layers"
+use_wandb = False
+note = "no o2s; 0.5 neg samp; 3 bert layers"
 epochs = 300
 lr = 1e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = False
@@ -79,7 +79,7 @@ dep_gcn = False
 
 word_encoder = False
 subwd_encoder = True
-use_attns4rel = True  # used only if subwd_encoder (bert) is True
+use_attns4rel = True
 
 # data
 data_in_dir = "../../data/preprocessed_data"
@@ -167,18 +167,17 @@ trainer_config = {
     "log_interval": log_interval,
 }
 
-# pretrianed model state
+# pretrianed model state path, for continuous training
 model_state_dict_path = None
 
-# for test
-model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
-target_run_ids = ["0kQIoiOs", ]
-model_path_ids2infer = [1, ]
+# for inference and evaluation
+model_dir_for_test = "./wandb"  # "./default_log_dir" or "./wandb"
+target_run_ids = ["0kQIoiOs", ]  # set run ids for e
 metric4testing = "ent_exact_offset_f1"
-cal_scores = True  # set False if the test sets are not annotated
+model_path_ids2infer = [1, 3, -1]
+cal_scores = True  # set False if golden annotations are not give in data
 
-# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model settings >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 pos_tag_emb_config = {
     "pos_tag_num": statistics["pos_tag_num"],
     "emb_dim": 64,
@@ -244,7 +243,7 @@ model_settings = {
     "use_attns4rel": use_attns4rel,
     "ent_dim": 768,
     "rel_dim": 768,
-    "tok_pair_neg_sampling_rate": .6,
+    "tok_pair_neg_sampling_rate": .5,
     "clique_comp_loss": False,
     "do_span_len_emb": True,
     "loss_weight": 0.5,

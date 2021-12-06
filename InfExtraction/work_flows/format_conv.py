@@ -1,7 +1,8 @@
 import json
 import os
-from InfExtraction.modules.preprocess import Preprocessor, WhiteWordTokenizer, ChineseWordTokenizer
-from InfExtraction.modules.utils import load_data, save_as_json_lines, merge_spans
+from InfExtraction.modules.preprocess import Preprocessor
+from InfExtraction.modules.utils import (load_data, save_as_json_lines, merge_spans,
+                                         WhiteWordTokenizer, ChineseWordTokenizer)
 from InfExtraction.modules import utils
 from InfExtraction.modules.metrics import MetricsCalculator
 from tqdm import tqdm

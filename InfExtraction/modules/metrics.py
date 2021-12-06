@@ -2,9 +2,9 @@ import torch
 import re
 import copy
 from InfExtraction.modules import utils
-from InfExtraction.modules.preprocess import ChineseWordTokenizer
+from InfExtraction.modules.utils import ChineseWordTokenizer
 from torch import nn
-from InfExtraction.modules.eval4oie import OIEMetrics
+# from InfExtraction.modules.eval4oie import OIEMetrics
 from pprint import pprint
 
 
@@ -688,27 +688,27 @@ class MetricsCalculator:
 
         return prf_dict, statistics
 
-    @staticmethod
-    def get_oie_score_dict(pred_sample_list, golden_sample_list):
-        auc, prfc, _ = OIEMetrics.compare_oie4(pred_sample_list,
-                                               golden_sample_list,
-                                               OIEMetrics.binary_linient_tuple_match)
-
-        correct_num, pred_num, gold_num = OIEMetrics.compare_saoke(
-            pred_sample_list, golden_sample_list, 0.85)
-        precision, recall, f1 = MetricsCalculator.get_prf_scores(
-            correct_num, pred_num, gold_num)
-
-        return {
-            "oie4_auc": auc,
-            "oie4_precision": prfc[0],
-            "oie4_recall": prfc[1],
-            "oie4_f1": prfc[2],
-            "oie_4confidence_threshold": prfc[3],
-            "saoke_precision": precision,
-            "saoke_recall": recall,
-            "saoke_f1": f1
-        }
+    # @staticmethod
+    # def get_oie_score_dict(pred_sample_list, golden_sample_list):
+    #     auc, prfc, _ = OIEMetrics.compare_oie4(pred_sample_list,
+    #                                            golden_sample_list,
+    #                                            OIEMetrics.binary_linient_tuple_match)
+    #
+    #     correct_num, pred_num, gold_num = OIEMetrics.compare_saoke(
+    #         pred_sample_list, golden_sample_list, 0.85)
+    #     precision, recall, f1 = MetricsCalculator.get_prf_scores(
+    #         correct_num, pred_num, gold_num)
+    #
+    #     return {
+    #         "oie4_auc": auc,
+    #         "oie4_precision": prfc[0],
+    #         "oie4_recall": prfc[1],
+    #         "oie4_f1": prfc[2],
+    #         "oie_4confidence_threshold": prfc[3],
+    #         "saoke_precision": precision,
+    #         "saoke_recall": recall,
+    #         "saoke_f1": f1
+    #     }
 
     @staticmethod
     def get_prf_scores(correct_num, pred_num, gold_num):
@@ -800,10 +800,10 @@ class MetricsCalculator:
             for idx, sct in enumerate(["prec", "rec", "f1"]):
                 score_dict["{}{}_{}".format(data_filename, sc_pattern, sct)] = round(prf[idx], 5)
 
-        if "open_spo_list" in golden_sample and "open_spo_list" in pred_sample:
-            oie_score_dict = MetricsCalculator.get_oie_score_dict(pred_data, golden_data)
-            for sct, val in oie_score_dict.items():
-                score_dict["{}{}".format(data_filename, sct)] = round(val, 5)
+        # if "open_spo_list" in golden_sample and "open_spo_list" in pred_sample:
+        #     oie_score_dict = MetricsCalculator.get_oie_score_dict(pred_data, golden_data)
+        #     for sct, val in oie_score_dict.items():
+        #         score_dict["{}{}".format(data_filename, sct)] = round(val, 5)
 
         if data_filename == "debug_":
             print(">>>>>>>>>> num of wrong samples in debugging >>>>>>>>")

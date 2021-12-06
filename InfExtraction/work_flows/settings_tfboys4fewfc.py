@@ -1,5 +1,5 @@
 import os
-device_num = 3
+device_num = 0
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
 import torch
@@ -47,7 +47,7 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "macbert-base"
 pretrained_emb_name = "glove_fewfc_300.txt"
-use_wandb = True
+use_wandb = False
 note = "no o2s; new clique loss wo sigmoid"
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4

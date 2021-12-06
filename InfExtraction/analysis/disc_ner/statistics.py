@@ -1,7 +1,7 @@
 from InfExtraction.modules.preprocess import Preprocessor
 from InfExtraction.modules.utils import load_data
 
-data_name = "cadec"
+data_name = "cadec4yelp"
 train_path = "../../../data/preprocessed_data/{}/train_data.json".format(data_name)
 valid_path = "../../../data/preprocessed_data/{}/valid_data.json".format(data_name)
 test_path = "../../../data/preprocessed_data/{}/test_data.json".format(data_name)

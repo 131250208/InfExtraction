@@ -2,12 +2,12 @@ import copy
 import re
 from abc import ABCMeta, abstractmethod
 from tqdm import tqdm
-from InfExtraction.modules.preprocess import Indexer, Preprocessor
+from InfExtraction.modules.preprocess import Preprocessor
 from InfExtraction.modules import utils
+from InfExtraction.modules.utils import Indexer
 import numpy as np
 import networkx as nx
 from InfExtraction.modules.metrics import MetricsCalculator
-# from InfExtraction.modules.ancient_eval4oie import OIEMetrics
 import logging
 import random
 import torch

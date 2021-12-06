@@ -6,19 +6,12 @@ import numpy as np
 import pandas as pd
 from transformers import BertModel, BertTokenizerFast
 from InfExtraction.modules.model_components import (HandshakingKernel,
-                                                    LayerNorm,
                                                     GraphConvLayer,
-                                                    SingleSourceHandshakingKernel,
-                                                    MatchingLinear)
-from torch.nn.parameter import Parameter
-from InfExtraction.modules.preprocess import Indexer
-from InfExtraction.modules.utils import MyMatrix
+                                                    SingleSourceHandshakingKernel)
+from InfExtraction.modules.utils import MyMatrix, Indexer
 from InfExtraction.modules.metrics import MetricsCalculator
 from gensim.models import KeyedVectors
 import logging
-from IPython.core.debugger import set_trace
-import time
-import torch.nn.functional as F
 
 
 class IEModel(nn.Module, metaclass=ABCMeta):
