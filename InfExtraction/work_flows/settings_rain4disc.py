@@ -38,7 +38,7 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "cadec4yelp_"
+exp_name = "cadec4yelp"
 language = "en"
 task_type = "re+ner"  # re, re+ee
 model_name = "RAIN"
@@ -46,8 +46,8 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "yelpbert"
 pretrained_emb_name = "glove.6B.100d.txt"
-use_wandb = False
-note = "no o2s; 0.5 neg samp; 3 bert layers"
+use_wandb = True
+note = ""
 epochs = 300
 lr = 1e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = False
@@ -173,8 +173,8 @@ model_state_dict_path = None
 # for inference and evaluation
 model_dir_for_test = "./wandb"  # "./default_log_dir" or "./wandb"
 target_run_ids = ["0kQIoiOs", ]  # set run ids for e
-metric4testing = "ent_exact_offset_f1"
-model_path_ids2infer = [1, 3, -1]
+metric4testing = "ent_offset_f1"
+model_path_ids2infer = [0, 2, -1]
 cal_scores = True  # set False if golden annotations are not give in data
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model settings >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
@@ -214,7 +214,7 @@ word_encoder_config = {
 subwd_encoder_config = {
     "pretrained_model_path": "../../data/pretrained_models/{}".format(pretrained_model_name),
     "finetune": True,
-    "use_last_k_layers": 3,
+    "use_last_k_layers": 1,
 } if subwd_encoder else None
 
 dep_config = {
