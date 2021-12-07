@@ -83,7 +83,7 @@ python preprocess.py
 exp_name = "cadec4yelp" # same as the data folder
 pretrained_model_name = "yelpbert" # same as the BERT folder
 pretrained_emb_name = "glove.6B.100d.txt" # word embedding file
-model_bag_size = 0 # top k model states will be saved in each metrics
+model_bag_size = 5 # top k model states will be saved in each metrics
 ```
 
 - Make sure your datasets are put under `data/preprocessed_data`.
@@ -110,8 +110,8 @@ python train_valid.py -s settings_rain4disc.py
 # for inference and evaluation
 model_dir_for_test = "./wandb"  # "./default_log_dir" or "./wandb"
 target_run_ids = ["0kQIoiOs", ]  # set run ids
-metric4testing = "ent_exact_offset_f1" # use model states on which metric
-model_path_ids2infer = [1, 3, -1] # model states are sorted by performance on above metric
+metric4testing = "ent_offset_f1" # use model states on which metric
+model_path_ids2infer = [0, 2, -1] # model states are sorted by performance on above metric
 cal_scores = True  # set False if golden annotations are not give in data
 ```
 - Keep `model settings` the same as in training
