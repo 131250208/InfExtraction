@@ -305,16 +305,47 @@ class WhiteWordTokenizer:
         return res
 
 
+def get_all_possible_entities(sample):
+    ent_list = []
+    if "entity_list" in sample:
+        ent_list.extend([ent["text"] for ent in sample["entity_list"]])
+    if "relation_list" in sample:
+        ent_list.extend([spo["subject"] for spo in sample["relation_list"]])
+        ent_list.extend([spo["object"] for spo in sample["relation_list"]])
+    if "event_list" in sample:
+        for event in sample["event_list"]:
+            ent_list.append(event["trigger"])
+            for arg in event["argument_list"]:
+                ent_list.append(arg["text"])
+    return set(ent_list)
+
+
+def get_all_possible_char_spans(sample):
+    char_spans = []
+
+    def recursion(dict_):
+        for key, val in dict_.items():
+            if "char_span" in key:
+                char_spans.append(val)
+            elif type(val) is list:
+                for e in val:
+                    if type(e) is dict:
+                        recursion(e)
+            elif type(val) is dict:
+                recursion(val)
+
+    return char_spans
+
+
 class ChineseWordTokenizer:
     @staticmethod
-    def tokenize(text, ent_list=None, span_list=None, rm_blanks=False, token_level="char"):
+    def tokenize(text, ent_list=None, span_list=None, rm_blanks=False, tokenize_func="default"):
         '''
         :param text:
-        :param ent_list: 1. tokenize by entity boundaries
-        :param span_list: 2. tokenize by spans boundaries
-                            3. tokenize to Chinese characters (if token level = char)
+        :param ent_list:  consider entity boundaries
+        :param span_list: consider spans boundaries
         :param rm_blanks: remove whitespace tokens
-        :param token_level: char-Chinese characters; seg-Chinese words
+        :param token_level: default, seg, ...
         :return:
         '''
         boundary_ids = set()
@@ -341,13 +372,16 @@ class ChineseWordTokenizer:
             segs = [text]
 
         word_list = []
-        if token_level == "char":
+        if tokenize_func == "default":
             word_pattern = "[0-9]+|\[[A-Z]+\]|[a-zA-Z]+|[^0-9a-zA-Z]"
             for seg in segs:
                 word_list.extend(re.findall(word_pattern, seg))
-        elif token_level == "seg":
+        elif tokenize_func == "seg":
             assert len(boundary_ids) > 0, "please set ent_list or span_list if token level == seg"
             word_list = segs
+        else:
+            for seg in segs:
+                word_list.extend(tokenize_func(seg))
 
         if rm_blanks:
             word_list = [w for w in word_list if re.sub("\s+", "", w) != ""]
@@ -358,8 +392,8 @@ class ChineseWordTokenizer:
         return get_tok2char_span_map4ch(word_list)
 
     @staticmethod
-    def tokenize_plus(text, ent_list=None, span_list=None, rm_blanks=False, token_level="char"):
-        word_list = ChineseWordTokenizer.tokenize(text, ent_list, span_list, rm_blanks, token_level)
+    def tokenize_plus(text, ent_list=None, span_list=None, rm_blanks=False, tokenize_func="default"):
+        word_list = ChineseWordTokenizer.tokenize(text, ent_list, span_list, rm_blanks, tokenize_func)
         res = {
             "word_list": word_list,
             "word2char_span": ChineseWordTokenizer.get_tok2char_span_map(word_list),

@@ -752,18 +752,7 @@ class Preprocessor:
 
     @staticmethod
     def get_all_possible_entities(sample):
-        ent_list = []
-        if "entity_list" in sample:
-            ent_list.extend([ent["text"] for ent in sample["entity_list"]])
-        if "relation_list" in sample:
-            ent_list.extend([spo["subject"] for spo in sample["relation_list"]])
-            ent_list.extend([spo["object"] for spo in sample["relation_list"]])
-        if "event_list" in sample:
-            for event in sample["event_list"]:
-                ent_list.append(event["trigger"])
-                for arg in event["argument_list"]:
-                    ent_list.append(arg["text"])
-        return set(ent_list)
+        return utils.get_all_possible_entities(sample)
 
     def create_features(self, data, word_tokenizer_type="white"):
         # create features

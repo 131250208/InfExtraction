@@ -3083,19 +3083,81 @@ def convert_few_fc():
     # save_as_json_lines(one_tri_mul_insts_in_same_event_type_samples, otm_same_type_sv_path)
 
 
+def convert_duuie():
+    dir = "../../data/ori_data/duuie/"
+    train_data_path = dir + "train.json"
+    val_data_path = dir + "val.json"
+    train_data = load_data(train_data_path)
+    val_data = load_data(val_data_path)
+    word_tokenizer = ChineseWordTokenizer()
 
+    train_data_norm = []
+    for sample in tqdm(train_data):
+        new_sample = {
+            "id": "train_{}".format(len(train_data_norm)),
+            "text": sample["text"],
+        }
+        assert len(sample["text"]) == len(sample["tokens"]) and "".join(sample["tokens"]) == sample["text"]
+        entity_list = []
+        for ent in sample["entity"]:
+            new_ent = {
+                "text": ent["text"],
+                "type": ent["type"],
+                "char_span": utils.ids2span(ent["offset"]),
+            }
+            assert new_ent["text"] == new_sample["text"][new_ent["char_span"][0]:new_ent["char_span"][1]]
+            entity_list.append(new_ent)
+        new_sample["entity_list"] = entity_list
+
+        rel_list = []
+        for rel in sample["relation"]:
+            assert len(rel["args"]) == 2
+            new_rel = {
+                "subject": rel["args"][0]["text"],
+                "predicate": rel["type"],
+                "object": rel["args"][1]["text"],
+                "subj_char_span": utils.ids2span(rel["args"][0]["offset"]),
+                "obj_char_span": utils.ids2span(rel["args"][1]["offset"]),
+            }
+            assert new_rel["subject"] == new_sample["text"][new_rel["subj_char_span"][0]:new_rel["subj_char_span"][1]]
+            assert new_rel["object"] == new_sample["text"][new_rel["obj_char_span"][0]:new_rel["obj_char_span"][1]]
+            rel_list.append(new_rel)
+        new_sample["relation_list"] = rel_list
+
+        event_list = []
+        for event in sample["event"]:
+            assert "text" in event
+            new_event = {
+                "event_type": event["type"],
+                "trigger": event["text"],
+                "trigger_char_span": utils.ids2span(event["offset"]),
+            }
+            assert new_event["trigger"] == new_sample["text"][new_event["trigger_char_span"][0]:new_event["trigger_char_span"][1]]
+
+            arg_list = []
+            for arg in event["args"]:
+                new_arg = {
+                    "type": arg["type"],
+                    "text": arg["text"],
+                    "char_span": utils.ids2span(arg["offset"]),
+                }
+                assert new_arg["text"] == new_sample["text"][
+                                               new_arg["char_span"][0]:new_arg["char_span"][1]]
+                arg_list.append(new_arg)
+            new_event["argument_list"] = arg_list
+            event_list.append(new_event)
+        new_sample["event_list"] = event_list
+
+        codes = word_tokenizer.tokenize_plus(new_sample["text"], span_list=utils.get_all_possible_char_spans(new_sample),
+                                             tokenize_func=utils.get_lac("seg").run)
+        new_sample = {**new_sample, **codes}
+        train_data_norm.append(new_sample)
+
+    return train_data_norm
 
 
 if __name__ == "__main__":
-    def get_f1(precision, recall):
-        return 2 * precision * recall / (precision + recall + 1e-20)
-
-    def get_prec(f1, recall):
-        return 1 / (2 / f1 - 1 / recall)
-
-    print(get_prec(59.3, 58.3))
-    # convert_oie4().7
-    # convert_ace05_dygie()
+    train_data = convert_duuie()
     # # ================= trans ace 2005 =============================
     # in_fold_name = "ace2005_35_bk"
     # ori_train_data = json.load(open("../../data/ori_data/{}/train_data.json".format(in_fold_name), "r", encoding="utf-8"))
