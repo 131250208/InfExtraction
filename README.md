@@ -14,6 +14,11 @@ networkx
 gensim
 ```
 
+At the root directory, run:
+```
+pip install -e .
+```
+
 ## 2. Data
 ### 2.1 Download Datasets
 * CADEC: https://data.csiro.au/dap/landingpage?pid=csiro:10948&v=3&d=true
