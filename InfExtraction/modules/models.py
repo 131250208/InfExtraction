@@ -397,13 +397,13 @@ class RAIN(IEModel):
                  rel_dim=None,
                  use_attns4rel=False,
                  do_span_len_emb=False,
-                 # emb_ent_info2rel=False,
-                 # golden_ent_cla_guide=False,
                  loss_weight_recover_steps=None,
                  loss_weight=.5,
                  init_loss_weight=.5,
                  clique_comp_loss=False,
                  tok_pair_neg_sampling_rate=1.,
+                 loss_func="bce_loss",
+                 pred_threshold=0.,
                  **kwargs,
                  ):
         super().__init__(tagger, **kwargs)
@@ -414,6 +414,8 @@ class RAIN(IEModel):
         self.init_loss_weight = init_loss_weight
         self.tok_pair_neg_sampling_rate = tok_pair_neg_sampling_rate
         self.clique_comp_loss = clique_comp_loss
+        self.pred_threshold = pred_threshold
+        self.loss_func = loss_func
 
         self.aggr_fc4ent_hsk = nn.Linear(self.cat_hidden_size, ent_dim)
         self.aggr_fc4rel_hsk = nn.Linear(self.cat_hidden_size, rel_dim)
@@ -583,7 +585,7 @@ class RAIN(IEModel):
         return pred_ent_output, pred_rel_output
 
     def pred_output2pred_tag(self, pred_output):
-        return (pred_output > 0.).long()
+        return (pred_output > self.pred_threshold).long()
 
     def _get_clique_comp_loss(self, ent_pred_outputs, rel_pred_outputs, event_gold_tags):
         loss_list = []
@@ -627,13 +629,25 @@ class RAIN(IEModel):
             w_ent = min(init_ent_w + step_weight, stable_ent_w)
             w_rel = max(init_rel_w - step_weight, stable_rel_w)
 
-        # print("ent_w: {}, rel_w: {}".format(w_ent, w_rel))
-        loss = w_ent * MetricsCalculator.multilabel_categorical_crossentropy(ent_pred_out,
-                                                                             ent_gold_tag,
-                                                                             self.bp_steps) + \
-               w_rel * MetricsCalculator.multilabel_categorical_crossentropy(rel_pred_out,
-                                                                             rel_gold_tag,
-                                                                             self.bp_steps)
+        # # print("ent_w: {}, rel_w: {}".format(w_ent, w_rel))
+        # loss = w_ent * MetricsCalculator.multilabel_categorical_crossentropy(ent_pred_out,
+        #                                                                      ent_gold_tag,
+        #                                                                      self.bp_steps) + \
+        #        w_rel * MetricsCalculator.multilabel_categorical_crossentropy(rel_pred_out,
+        #                                                                      rel_gold_tag,
+        #                                                                      self.bp_steps)
+
+        # loss function
+        loss_func = None
+        if self.loss_func == "bce_loss":
+            loss_func = MetricsCalculator.bce_loss
+        elif self.loss_func == "mce_loss":
+            loss_func = lambda pred_out, gold_tag: MetricsCalculator.multilabel_categorical_crossentropy(pred_out,
+                                                                                                        gold_tag,
+                                                                                                        self.bp_steps)
+
+        loss = w_ent * loss_func(ent_pred_out, ent_gold_tag) + \
+               w_rel * loss_func(rel_pred_out, rel_gold_tag)
 
         # if use clique completeness loss
         if self.clique_comp_loss and self.training:

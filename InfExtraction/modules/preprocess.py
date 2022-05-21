@@ -1058,7 +1058,13 @@ class Preprocessor:
 
     @staticmethod
     def choose_spans_by_token_level4sample(sample, token_level):
-        tok_key = "subwd_span" if token_level == "subword" else "wd_span"
+        if token_level == "subword":
+            tok_key = "subwd_span"
+        elif token_level == "word":
+            tok_key = "wd_span"
+        elif token_level == "char":
+            tok_key = "char_span"
+
         def choose_sps(a_list):
             for item in a_list:
                 if type(item) is list:

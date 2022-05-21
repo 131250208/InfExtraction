@@ -266,7 +266,9 @@ if __name__ == "__main__":
     # logger
     if use_wandb:
         # init wandb
-        wandb.init(project=exp_name, name=run_name, config=config2log)
+        wandb.init(project=exp_name, name=run_name, config=config2log,
+                   # settings=wandb.Settings(start_method="fork"),
+                   )
         dir_to_save_model = wandb.run.dir
         logger = wandb
         run_id = wandb.run.id

@@ -47,8 +47,8 @@ tagger_name = "Tagger4RAIN"
 run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
 pretrained_model_name = "macbert-base"
 pretrained_emb_name = "glove_fewfc_300.txt"
-use_wandb = False
-note = "no o2s; new clique loss wo sigmoid"
+use_wandb = True
+note = "no o2s; abl bilstm"
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = False
@@ -175,7 +175,7 @@ trainer_config = {
 # pretrianed model state
 model_state_dict_path = None
 
-# for test
+# for inference and evaluation
 model_dir_for_test = "./wandb"  # "./default_log_dir", "./wandb"
 target_run_ids = ["3s2cljse", ] # zyuy3ra0
 model_path_ids2infer = [-5, ]
@@ -232,7 +232,7 @@ dep_config = {
 } if dep_gcn else None
 
 handshaking_kernel_config = {
-    "ent_shaking_type": "cln+bilstm",
+    "ent_shaking_type": "cln",
     "ent_dist_emb_dim": 64,
     "rel_shaking_type": "cln",
     "rel_dist_emb_dim": 128,
@@ -256,6 +256,8 @@ model_settings = {
     "init_loss_weight": 0.5,
     "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
+    "loss_func": "mce_loss",
+    "pred_threshold": 0,
 }
 
 model_settings_log = copy.deepcopy(model_settings)

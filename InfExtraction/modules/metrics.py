@@ -534,9 +534,13 @@ class MetricsCalculator:
         output_trigger_based_metrics = any("trigger" in event for golden_sample in golden_sample_list
                                            for event in golden_sample["event_list"])
 
-        no_arg_text = any("text" not in arg for golden_sample in golden_sample_list
-                          for event in golden_sample["event_list"]
-                          for arg in event["argument_list"])
+        no_arg_text_in_gold = any("text" not in arg for golden_sample in golden_sample_list
+                                  for event in golden_sample["event_list"]
+                                  for arg in event["argument_list"])
+        no_arg_text_in_pred = any("text" not in arg for pred_sample in pred_sample_list
+                                  for event in pred_sample["event_list"]
+                                  for arg in event["argument_list"])
+        no_arg_text = no_arg_text_in_gold or no_arg_text_in_pred
         if not no_arg_text:  # char level metric needs argument text
             ee_cpg_dict["arg_class_char_level"] = [0, 0, 0]
 

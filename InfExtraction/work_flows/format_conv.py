@@ -2620,8 +2620,8 @@ def trans2cmeee_format():
 
 
 def convert_tfboys_baselines2normal_format(dataset, baseline_name):
-    ac_path = "../../data/tfboys_baselines/{}/{}/ac_prediction.json".format(dataset, baseline_name)
-    ed_path = "../../data/tfboys_baselines/{}/{}/ed_prediction.json".format(dataset, baseline_name)
+    ac_path = "../../../data/tfboys_baselines/{}/{}/ac_prediction.json".format(dataset, baseline_name)
+    ed_path = "../../../data/tfboys_baselines/{}/{}/ed_prediction.json".format(dataset, baseline_name)
     ed_data = load_data(ed_path)
     ac_data = load_data(ac_path)
     sent_id2event_pred = {}
@@ -2635,8 +2635,8 @@ def convert_tfboys_baselines2normal_format(dataset, baseline_name):
 
     for pred in ed_data["prediction"]:
         sent_id2event_pred.setdefault(pred[0], {})
-        trigger_str = "{},{},{}".format(pred[1], pred[2], pred[3])
-        sent_id2event_pred[pred[0]][trigger_str] = {
+        tri_event_str = "{},{},{}".format(pred[1], pred[2], pred[3])
+        sent_id2event_pred[pred[0]][tri_event_str] = {
             "trigger": "unk",
             "trigger_tok_span": [pred[1], pred[2]],
             "event_type": pred[3],
@@ -2644,29 +2644,19 @@ def convert_tfboys_baselines2normal_format(dataset, baseline_name):
         }
 
     for pred in ac_data["prediction"]:
-        if pred[0] not in sent_id2event_pred:
+        tri_event_str = "{},{},{}".format(pred[2], pred[3], pred[1])
+        if pred[0] not in sent_id2event_pred or tri_event_str not in sent_id2event_pred[pred[0]]:
             continue
-        # try:
-        trigger_str = "{},{},{}".format(pred[2], pred[3], pred[1])
-        sent_id2event_pred[pred[0]][trigger_str]["argument_list"].append({
+
+        sent_id2event_pred[pred[0]][tri_event_str]["argument_list"].append({
             "tok_span": [pred[4], pred[5]],
             "type": pred[6],
         })
-        # except Exception as e:
-        #     print("trigger offset error in pred!!!")
-        #     for tri_str in sent_id2event_pred[pred[0]]:
-        #         tri_start, tri_end, et = tri_str.split(",")
-        #         tri_start, tri_end = int(tri_start), int(tri_end)
-        #         if tri_start <= pred[2] <= pred[3] <= tri_end and pred[1] == et:
-        #             sent_id2event_pred[pred[0]][tri_str]["argument_list"].append({
-        #                 "tok_span": [pred[4], pred[5]],
-        #                 "type": pred[6],
-        #             })
 
     for gold in ed_data["ground_truth"]:
         sent_id2event_gold.setdefault(gold[0], {})
-        trigger_str = "{},{},{}".format(gold[1], gold[2], gold[3])
-        sent_id2event_gold[gold[0]][trigger_str] = {
+        tri_event_str = "{},{},{}".format(gold[1], gold[2], gold[3])
+        sent_id2event_gold[gold[0]][tri_event_str] = {
             "trigger": "unk",
             "trigger_tok_span": [gold[1], gold[2]],
             "event_type": gold[3],
@@ -2674,22 +2664,14 @@ def convert_tfboys_baselines2normal_format(dataset, baseline_name):
         }
 
     for gold in ac_data["ground_truth"]:
-        # try:
-        trigger_str = "{},{},{}".format(gold[2], gold[3], gold[1])
-        sent_id2event_gold[gold[0]][trigger_str]["argument_list"].append({
+        tri_event_str = "{},{},{}".format(gold[2], gold[3], gold[1])
+        if gold[0] not in sent_id2event_gold or tri_event_str not in sent_id2event_gold[gold[0]]:
+            continue
+
+        sent_id2event_gold[gold[0]][tri_event_str]["argument_list"].append({
             "tok_span": [gold[4], gold[5]],
             "type": gold[6],
         })
-        # except Exception as e:
-        #     print("trigger offset error in gold!!!")
-        #     for tri_str in sent_id2event_gold[gold[0]]:
-        #         tri_start, tri_end, et = tri_str.split(",")
-        #         tri_start, tri_end = int(tri_start), int(tri_end)
-        #         if tri_start <= gold[2] <= gold[3] <= tri_end and gold[1] == et:
-        #             sent_id2event_gold[gold[0]][tri_str]["argument_list"].append({
-        #                 "tok_span": [gold[4], gold[5]],
-        #                 "type": gold[6],
-        #             })
 
     sent_id2events_pred = {}
     sent_id2events_gold = {}
@@ -3105,7 +3087,14 @@ def convert_few_fc():
 
 
 if __name__ == "__main__":
-    convert_oie4()
+    def get_f1(precision, recall):
+        return 2 * precision * recall / (precision + recall + 1e-20)
+
+    def get_prec(f1, recall):
+        return 1 / (2 / f1 - 1 / recall)
+
+    print(get_prec(59.3, 58.3))
+    # convert_oie4().7
     # convert_ace05_dygie()
     # # ================= trans ace 2005 =============================
     # in_fold_name = "ace2005_35_bk"

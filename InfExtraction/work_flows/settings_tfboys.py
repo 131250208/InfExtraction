@@ -48,7 +48,7 @@ run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub
 pretrained_model_name = "bert-large-cased"
 pretrained_emb_name = "glove.6B.100d.txt"
 use_wandb = True
-note = "no o2s"
+note = "no o2s; abl ner, pos"
 epochs = 100
 lr = 2e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = False
@@ -112,6 +112,7 @@ tagger_config = {
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
     "dtm_arg_type_by_edges": addtional_preprocessing_config["dtm_arg_type_by_edges"],
     "add_h2t_n_t2h_links": False,
+    "add_o2s_links": False,
     "language": language,
 }
 
@@ -157,24 +158,23 @@ trainer_config = {
 # pretrianed model state
 model_state_dict_path = None # "./wandb/run-20211110_145929-39zclu50/files/val_arg_soft_class_f1/model_state_dict_34_59.766.pt"
 
-# for test
+# for inference and evaluation
 model_dir_for_test = "./default_log_dir"  # "./default_log_dir", "./wandb"
 target_run_ids = ["0kQIoiOs", ]
 model_path_ids2infer = [-1, ]
-metric4testing = "trigger_class_f1"
+metric4testing = "arg_class_most_similar_event_f1"
 cal_scores = True  # set False if the test sets are not annotated
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> model >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 # to do an ablation study, you can ablate components by setting it to False
+pos_tag_emb = False
+ner_tag_emb = False
+dep_gcn = False
 
-pos_tag_emb = True
-ner_tag_emb = True
 char_encoder = True
-
 word_encoder = True
 subwd_encoder = True
 
-dep_gcn = False
 use_attns4rel = True
 
 token_level = "subword"  # token is word or subword
@@ -231,7 +231,9 @@ dep_config = {
 
 handshaking_kernel_config = {
     "ent_shaking_type": "cln+bilstm",
+    # "ent_dist_emb_dim": 64,
     "rel_shaking_type": "cln",
+    # "rel_dist_emb_dim": 128,
 }
 
 # model settings
@@ -247,14 +249,13 @@ model_settings = {
     "ent_dim": 1024,
     "rel_dim": 1280,
     "tok_pair_neg_sampling_rate": 1.,
-    "clique_comp_loss": True,
-    "do_span_len_emb": True,
-    "emb_ent_info2rel": False,  # 加速收敛
-    "golden_ent_cla_guide": False,
+    "clique_comp_loss": False,
+    "do_span_len_emb": False,
     "init_loss_weight": 0.5,
     "loss_weight": 0.5,
     "loss_weight_recover_steps": 0,
-    # "rel_description_dict": statistics["rel_type2desc"],
+    "loss_func": "mce_loss",
+    "pred_threshold": 0,
 }
 
 model_settings_log = copy.deepcopy(model_settings)
