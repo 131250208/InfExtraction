@@ -1,17 +1,17 @@
-data_in_dir = "../../data/normal_data/cadec"
-data_out_dir = "../../data/preprocessed_data/cadec4yelp"
+data_in_dir = "../../data/normal_data/duuie"
+data_out_dir = "../../data/preprocessed_data/duuie"
 
 # >>>>>>>>>>> used if "word_list" or "word2char_span" are provided >>>>>>>>>>>>>>>>>>>>>>>
-word_tokenizer_type = "white"  # white, stanza, normal_chinese;
+word_tokenizer_type = "normal_chinese"  # white, stanza, normal_chinese;
 language = "en"  # used to init stanza for tokenizing, valid only if word_tokenizer_type = "stanza"
 
 # >>>>>>>>>>>>>> bert >>>>>>>>>>>>>>>>>>
-pretrained_model_tokenizer_path = "../../data/pretrained_models/yelpbert"
+pretrained_model_tokenizer_path = "../../data/pretrained_models/macbert-large"
 do_lower_case = True  # only for bert tokenizer (subword_list), it does not change the original text or word_list
 
 # >>>>>>>>>>>>> data format >>>>>>>>>>>>>
 ori_data_format = "normal"  # casrel (webnlg_star, nyt_star), etl_span (webnlg), raw_nyt (nyt)
-add_id = True  # set True if ids are not provided in data
+add_id = False  # set True if ids are not provided in data
 
 # >>>>>>>>>>>>> annotate spans by searching entities >>>>>>>>>>
 add_char_span = False  # for data without annotated character-level spans (offsets)
