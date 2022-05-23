@@ -107,6 +107,7 @@ class Preprocessor:
                 if tok_sp[0] == -1:  # 第一次赋值以后不再修改
                     tok_sp[0] = tok_ind
                 tok_sp[1] = tok_ind + 1  # 一直修改
+
         return char2tok_span
 
     def _get_ent2char_spans(self, text, entities, ignore_subword_match=True):
@@ -487,7 +488,8 @@ class Preprocessor:
                 if char_span[-1] == 0:
                     return char_span
                 ch_sp = [char_span[idx], char_span[idx + 1]]
-                tok_span_list = char2tok_span[ch_sp[0]:ch_sp[1]]
+                tok_span_list = [tok_sp for tok_sp in char2tok_span[ch_sp[0]:ch_sp[1]]
+                                 if not tok_sp[0] == tok_sp[1] == -1]  # filter blanks [-1, -1]
                 tok_span.extend([tok_span_list[0][0], tok_span_list[-1][1]])
             return tok_span
 
@@ -645,7 +647,10 @@ class Preprocessor:
             if tk_sp[-1] == 0:
                 return tok_span
             char_span_list = tok2char_span[tk_sp[0]:tk_sp[1]]
-            char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
+            try:
+                char_span.extend([char_span_list[0][0], char_span_list[-1][1]])
+            except Exception as e:
+                print("debug")
         return char_span
 
     @staticmethod
@@ -1565,8 +1570,8 @@ class Preprocessor:
 
 if __name__ == "__main__":
     bert = BertTokenizerFast.from_pretrained("../../data/pretrained_models/bert-base-uncased")
-    text = "type1; type2; type3[SEP]FSAN jkfsn"
-    codes = bert.encode_plus(text, return_offsets_mapping=True)
+    text = " type1; type2; type3[SEP]FSAN jkfsn"
+    codes = bert.encode_plus(text, return_offsets_mapping=True, add_special_tokens=False)
     print(bert.tokenize(text))
     print(codes["offset_mapping"])
     pass
