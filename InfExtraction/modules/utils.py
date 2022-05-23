@@ -333,6 +333,7 @@ def get_all_possible_char_spans(sample):
                         recursion(e)
             elif type(val) is dict:
                 recursion(val)
+    recursion(sample)
 
     return char_spans
 
