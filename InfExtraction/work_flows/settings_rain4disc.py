@@ -7,8 +7,10 @@ import random
 import numpy as np
 from datetime import date
 import time
-from InfExtraction.modules.utils import load_data
+from InfExtraction.modules.utils import load_data, get_oss_client
 from transformers import BertTokenizer
+from petrel_client.client import Client
+
 seed = 2333
 enable_bm = True
 
@@ -87,9 +89,10 @@ data_out_dir = "../../data/res_data"
 
 train_data_path = "/".join([data_in_dir, exp_name, "train_data.json"])
 valid_data_path = "/".join([data_in_dir, exp_name, "valid_data.json"])
+
 test_data_path_list = []
 cluster = 'inside'
-files = client.get_file_iterator("{}/{}/".format(data_in_dir, exp_name))
+files = get_oss_client().get_file_iterator("{}/{}/".format(data_in_dir, exp_name))
 for p, k in files:
     if "test" in p:
         path = '{0}:s3://{1}'.format(cluster, p)

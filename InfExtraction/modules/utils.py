@@ -1372,9 +1372,20 @@ def merge_gen(*gens):
             yield item
 
 
+client = None
+
+
+def get_oss_client():
+    global client
+    if client is None:
+        conf_path = '~/petreloss.conf'
+        client = Client(conf_path)
+    return client
+
+
 def load_data(path, lines=None, mute=False):
     if "s3:" in path:
-        res = client.get(url)
+        res = get_oss_client().get(url)
         data_lines = res.decode("utf-8").split("\n")
         data = [json.loads(line) for line in data_lines]
         return data
