@@ -1387,8 +1387,11 @@ def get_oss_client():
 def load_data(path, lines=None, mute=False):
     if "s3:" in path:
         res = get_oss_client().get(path)
-        data_lines = res.decode("utf-8").split("\n")
-        data = [json.loads(line) for line in data_lines]
+        try:
+            data = json.load(res.decode("utf-8"))
+        except Exception as e:
+            data_lines = res.decode("utf-8").split("\n")
+            data = [json.loads(line) for line in data_lines]
         return data
 
     filename = path.split("/")[-1]
