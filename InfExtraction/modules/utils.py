@@ -16,6 +16,7 @@ from functools import wraps
 import time
 from ddparser import DDParser
 import LAC
+from petrel_client.client import Client
 
 
 def get_lac(mode):

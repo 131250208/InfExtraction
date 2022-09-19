@@ -9,7 +9,6 @@ from datetime import date
 import time
 from InfExtraction.modules.utils import load_data, get_oss_client
 from transformers import BertTokenizer
-from petrel_client.client import Client
 
 seed = 2333
 enable_bm = True
