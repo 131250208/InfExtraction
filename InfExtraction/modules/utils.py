@@ -333,7 +333,6 @@ def get_all_possible_char_spans(sample):
                         recursion(e)
             elif type(val) is dict:
                 recursion(val)
-    recursion(sample)
 
     return char_spans
 
@@ -1374,6 +1373,12 @@ def merge_gen(*gens):
 
 
 def load_data(path, lines=None, mute=False):
+    if "s3:" in path:
+        res = client.get(url)
+        data_lines = res.decode("utf-8").split("\n")
+        data = [json.loads(line) for line in data_lines]
+        return data
+
     filename = path.split("/")[-1]
     try:
         data = []
