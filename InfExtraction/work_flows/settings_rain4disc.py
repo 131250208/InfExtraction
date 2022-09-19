@@ -82,19 +82,25 @@ subwd_encoder = True
 use_attns4rel = True
 
 # data
-data_in_dir = "../../data/preprocessed_data"
+data_in_dir = "inside:s3://wycheng_b1/data/info_extr/preprocessed_data"
 data_out_dir = "../../data/res_data"
 
-train_data_path = os.path.join(data_in_dir, exp_name, "train_data.json")
-valid_data_path = os.path.join(data_in_dir, exp_name, "valid_data.json")
-test_data_path_list = glob("{}/*test*.json".format(os.path.join(data_in_dir, exp_name)))
+train_data_path = "/".join([data_in_dir, exp_name, "train_data.json"])
+valid_data_path = "/".join([data_in_dir, exp_name, "valid_data.json"])
+test_data_path_list = []
+cluster = 'inside'
+files = client.get_file_iterator("{}/{}/".format(data_in_dir, exp_name))
+for p, k in files:
+    if "test" in p:
+        path = '{0}:s3://{1}'.format(cluster, p)
+        test_data_path_list.append(path)
 
 dicts = "dicts.json"
 statistics = "statistics.json"
-statistics_path = os.path.join(data_in_dir, exp_name, statistics)
-dicts_path = os.path.join(data_in_dir, exp_name, dicts)
-statistics = json.load(open(statistics_path, "r", encoding="utf-8"))
-dicts = json.load(open(dicts_path, "r", encoding="utf-8"))
+statistics_path = "{}/{}/{}".format(data_in_dir, exp_name, statistics)
+dicts_path = "{}/{}/{}".format(data_in_dir, exp_name, dicts)
+statistics = load_data(statistics_path)
+dicts = load_data(dicts_path)
 
 # for preprocessing
 key_map = {
