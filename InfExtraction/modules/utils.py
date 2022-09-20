@@ -1390,10 +1390,9 @@ def load_data(path, lines=None, mute=False):
         try:
             data = json.loads(res.decode("utf-8"))
         except Exception as e:
-            data_lines = res.decode("utf-8").split("\n")
+            data_lines = res.decode("utf-8").strip().split("\n")
             data = [json.loads(line) for line in data_lines]
         return data
-
     filename = path.split("/")[-1]
     try:
         data = []
