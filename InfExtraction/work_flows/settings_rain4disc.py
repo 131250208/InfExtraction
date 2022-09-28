@@ -55,7 +55,7 @@ check_tagging_n_decoding = False
 combine = True  # combine splits
 scheduler = "CAWR"
 model_bag_size = 0
-metric_pattern2save = None  # if none save best models on all metrics
+metric_pattern2save = None  # if none, save best models on all metrics
 
 batch_size_train = 12
 batch_size_valid = 12

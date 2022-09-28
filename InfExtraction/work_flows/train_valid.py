@@ -43,7 +43,7 @@ from InfExtraction.modules import taggers
 from InfExtraction.modules import models
 from InfExtraction.modules.workers import Trainer, Evaluator
 from InfExtraction.modules.metrics import MetricsCalculator
-from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data, save_as_json_lines
+from InfExtraction.modules.utils import DefaultLogger, MyDataset, load_data, save_as_json_lines, TensorBoardLogger
 import random
 import json
 
@@ -265,13 +265,20 @@ if __name__ == "__main__":
 
     # logger
     if use_wandb:
-        # init wandb
-        wandb.init(project=exp_name, name=run_name, config=config2log,
-                   # settings=wandb.Settings(start_method="fork"),
-                   )
-        dir_to_save_model = wandb.run.dir
-        logger = wandb
-        run_id = wandb.run.id
+        # # init wandb
+        # wandb.init(project=exp_name, name=run_name, config=config2log,
+        #            # settings=wandb.Settings(start_method="fork"),
+        #            )
+        # dir_to_save_model = wandb.run.dir
+        # logger = wandb
+        # run_id = wandb.run.id
+
+        # init tensorboard logger
+        run_id = default_run_id
+        dir_to_save_model = default_dir_to_save_model
+        if not os.path.exists(dir_to_save_model):
+            os.makedirs(dir_to_save_model)
+        logger = TensorBoardLogger()
     else:
         logger = DefaultLogger(default_log_path,
                                exp_name,
@@ -376,6 +383,7 @@ if __name__ == "__main__":
         # valid
         pred_samples = evaluator.predict(valid_dataloader, valid_data)
         score_dict, _ = evaluator.score(pred_samples, valid_data, "val")
+        score_dict["n_iter"] = ep
         logger.log(score_dict)
         dataset2score_dict = {
             "valid_data.json": score_dict,
@@ -423,6 +431,7 @@ if __name__ == "__main__":
             gold_test_data = filename2test_data[filename]
             pred_samples = evaluator.predict(test_data_loader, gold_test_data)
             score_dict, _ = evaluator.score(pred_samples, gold_test_data, filename.split(".")[0])
+            score_dict["n_iter"] = ep
             logger.log(score_dict)
             dataset2score_dict[filename] = score_dict
 

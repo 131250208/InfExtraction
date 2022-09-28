@@ -802,7 +802,7 @@ class MetricsCalculator:
         for sc_pattern, cpg in total_cpg_dict.items():
             prf = MetricsCalculator.get_prf_scores(*cpg)
             for idx, sct in enumerate(["prec", "rec", "f1"]):
-                score_dict["{}{}_{}".format(data_filename, sc_pattern, sct)] = round(prf[idx], 5)
+                score_dict["{}/{}{}".format(sc_pattern, data_filename, sct)] = round(prf[idx], 5)
 
         # if "open_spo_list" in golden_sample and "open_spo_list" in pred_sample:
         #     oie_score_dict = MetricsCalculator.get_oie_score_dict(pred_data, golden_data)

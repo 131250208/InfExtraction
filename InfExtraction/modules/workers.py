@@ -1,4 +1,4 @@
-from InfExtraction.modules.utils import DefaultLogger
+from InfExtraction.modules.utils import DefaultLogger, TensorBoardLogger
 from InfExtraction.modules.preprocess import Preprocessor
 from InfExtraction.modules.metrics import MetricsCalculator
 import os
@@ -126,6 +126,9 @@ class Trainer:
                                             ), end="")
 
             if type(self.logger) is type(wandb) and batch_ind % self.logger_interval == 0:
+                self.logger.log(log_dict)
+            elif type(self.logger) is TensorBoardLogger and batch_ind % self.logger_interval == 0:
+                log_dict["n_iter"] = batch_ind * ep
                 self.logger.log(log_dict)
             elif type(self.logger) is DefaultLogger and (batch_ind + 1) == len(dataloader):
                 # if logger is not wandb, only log once at the end

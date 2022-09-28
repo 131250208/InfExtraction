@@ -17,6 +17,7 @@ import time
 from ddparser import DDParser
 import LAC
 from petrel_client.client import Client
+from torch.utils.tensorboard import SummaryWriter
 
 
 def get_lac(mode):
@@ -1479,6 +1480,18 @@ class DefaultLogger:
             "log_text": content,
         }
         open(self.log_path, "a", encoding="utf-8").write("{}\n{}".format(self.line, json.dumps(log_dict, indent=4)))
+
+
+class TensorBoardLogger:
+    def __init__(self):
+        self.writer = SummaryWriter()
+
+    def log(self, log_dict):
+        assert "n_iter" in log_dict
+        n_iter = log_dict["n_iter"]
+        del log_dict["n_iter"]
+        for key, val in log_dict.items():
+            self.writer.add_scalar(key, val, n_iter)
 
 
 class MyDataset(Dataset):
