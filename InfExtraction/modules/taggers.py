@@ -44,7 +44,7 @@ class Tagger(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def decode(self, sample, pred_tags):
+    def decode(self, sample, pred_tags, pred_outs=None):
         '''
         decoding function: to extract results by the predicted tag
 
@@ -77,7 +77,7 @@ class Tagger(metaclass=ABCMeta):
 
 
 class HandshakingTagger4TPLPlus(Tagger):
-    def __init__(self, data, **kwargs):
+    def __init__(self, data, preprocessor, **kwargs):
         '''
         :param data: all data, used to generate entity type and relation type dicts
         '''
@@ -89,50 +89,52 @@ class HandshakingTagger4TPLPlus(Tagger):
             # entity type
             ent_type_set |= {ent["type"] for ent in sample["entity_list"]}
             # relation type
-            rel_type_set |= {rel["predicate"] for rel in sample["relation_list"]}
-        rel_type_set = sorted(rel_type_set)
-        ent_type_set = sorted(ent_type_set)
-        self.rel2id = {rel: ind for ind, rel in enumerate(rel_type_set)}
-        self.ent2id = {ent: ind for ind, ent in enumerate(ent_type_set)}
-
-        self.id2rel = {ind: rel for rel, ind in self.rel2id.items()}
+            rel_type_set |= {rel["predicate"] for rel in sample.get("relation_list", [])}
 
         self.separator = "\u2E80"
-        self.rel_link_types = {"SH2OH",  # subject head to object head
-                               "ST2OT",  # subject tail to object tail
-                               # "OH2SH",  # object head to subject head
-                               # "OT2ST",  # object tail to subject tail
-                               }
-
+        self.classify_entities_by_relation = kwargs["classify_entities_by_relation"]
         self.add_o2s_links = False
-        if "add_o2s_links" in kwargs and kwargs["add_o2s_links"] is True:
-            self.add_o2s_links = True
-            self.rel_link_types = self.rel_link_types.union({
-                "OH2SH",  # object head to subject head
-                "OT2ST",  # object tail to subject tail
-            })
-
         self.add_h2t_n_t2h_links = False
-        if "add_h2t_n_t2h_links" in kwargs and kwargs["add_h2t_n_t2h_links"] is True:
-            self.rel_link_types = self.rel_link_types.union({
-                "SH2OT",  # subject head to object tail
-                "ST2OH",  # subject tail to object head
-                # "OT2SH",  # object tail to subject head
-                # "OH2ST",  # object head to subject tail
-            })
-            self.add_h2t_n_t2h_links = True
-            if self.add_o2s_links:
+
+        ent_type_set = sorted(ent_type_set)
+        self.ent2id = {ent: ind for ind, ent in enumerate(ent_type_set)}
+        self.id2ent = {ind: ent for ent, ind in self.ent2id.items()}
+        self.tags = {self.separator.join([ent, "EH2ET"]) for ent in
+                      self.ent2id.keys()}  # EH2ET: entity head to entity tail
+
+        if len(rel_type_set) > 0:
+            rel_type_set = sorted(rel_type_set)
+            self.rel2id = {rel: ind for ind, rel in enumerate(rel_type_set)}
+            self.id2rel = {ind: rel for rel, ind in self.rel2id.items()}
+
+            self.rel_link_types = {"SH2OH",  # subject head to object head
+                                   "ST2OT",  # subject tail to object tail
+                                   # "OH2SH",  # object head to subject head
+                                   # "OT2ST",  # object tail to subject tail
+                                   }
+
+            if "add_o2s_links" in kwargs and kwargs["add_o2s_links"] is True:
+                self.add_o2s_links = True
                 self.rel_link_types = self.rel_link_types.union({
-                    "OT2SH",  # object tail to subject head
-                    "OH2ST",  # object head to subject tail
+                    "OH2SH",  # object head to subject head
+                    "OT2ST",  # object tail to subject tail
                 })
 
-        self.classify_entities_by_relation = kwargs["classify_entities_by_relation"]
+            if "add_h2t_n_t2h_links" in kwargs and kwargs["add_h2t_n_t2h_links"] is True:
+                self.rel_link_types = self.rel_link_types.union({
+                    "SH2OT",  # subject head to object tail
+                    "ST2OH",  # subject tail to object head
+                    # "OT2SH",  # object tail to subject head
+                    # "OH2ST",  # object head to subject tail
+                })
+                self.add_h2t_n_t2h_links = True
+                if self.add_o2s_links:
+                    self.rel_link_types = self.rel_link_types.union({
+                        "OT2SH",  # object tail to subject head
+                        "OH2ST",  # object head to subject tail
+                    })
 
-        self.tags = {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
-        self.id2ent = {ind: ent for ent, ind in self.ent2id.items()}
-        self.tags |= {self.separator.join([ent, "EH2ET"]) for ent in
-                      self.ent2id.keys()}  # EH2ET: entity head to entity tail
+            self.tags |= {self.separator.join([rel, lt]) for rel in self.rel2id.keys() for lt in self.rel_link_types}
 
         self.tags = sorted(self.tags)
         self.tag2id = {t: idx for idx, t in enumerate(self.tags)}
@@ -191,7 +193,7 @@ class HandshakingTagger4TPLPlus(Tagger):
 
         return matrix_points
 
-    def decode(self, sample, pred_tags):
+    def decode(self, sample, pred_tags, pred_outs=None):
         '''
         sample: to provide tok2char_span map and text
         pred_tags: predicted tags
@@ -324,7 +326,7 @@ class HandshakingTagger4TPLPlus(Tagger):
 
 
 class Tagger4RAIN(HandshakingTagger4TPLPlus):
-    def __init__(self, data, **kwargs):
+    def __init__(self, data, preprocessor, **kwargs):
         '''
         :param data: all data, used to generate entity type and relation type dicts
         '''
@@ -751,7 +753,7 @@ class Tagger4RAIN(HandshakingTagger4TPLPlus):
 
 def create_rebased_ee_tagger(base_class):
     class REBasedEETagger(base_class):
-        def __init__(self, data, *args, **kwargs):
+        def __init__(self, data, preprocessor, *args, **kwargs):
             super(REBasedEETagger, self).__init__(data, *args, **kwargs)
             self.event_type2arg_rols = {}
             for sample in data:
@@ -936,7 +938,7 @@ def create_rebased_ee_tagger(base_class):
 
 def create_rebased_tfboys_tagger(base_class):
     class REBasedTFBOYSTagger(base_class):
-        def __init__(self, data, *args, **kwargs):
+        def __init__(self, data, preprocessor, *args, **kwargs):
             super(REBasedTFBOYSTagger, self).__init__(data, *args, **kwargs)
             self.event_type2arg_rols = {}
             self.event_type2arg_rols = {}
@@ -1193,7 +1195,7 @@ def create_rebased_tfboys_tagger(base_class):
 
 def create_rebased_discontinuous_ner_tagger(base_class):
     class REBasedDiscontinuousNERTagger(base_class):
-        def __init__(self, *arg, **kwargs):
+        def __init__(self, preprocessor, *arg, **kwargs):
             super(REBasedDiscontinuousNERTagger, self).__init__(*arg, **kwargs)
             self.language = kwargs["language"]
             self.use_bound = kwargs["use_bound"]
@@ -1406,7 +1408,7 @@ def create_rebased_discontinuous_ner_tagger(base_class):
 
 def create_rebased_oie_tagger(base_class):
     class REBasedOIETagger(base_class):
-        def __init__(self, *arg, **kwargs):
+        def __init__(self, data, preprocessor, *arg, **kwargs):
             super(REBasedOIETagger, self).__init__(*arg, **kwargs)
             self.language = kwargs["language"]
             self.add_next_link = kwargs["add_next_link"]
@@ -1665,3 +1667,133 @@ def create_rebased_oie_tagger(base_class):
             return ori_sample
 
     return REBasedOIETagger
+
+
+class UNERTagger(Tagger):
+    def __init__(self, data, preprocessor, **kwargs):
+        super(UNERTagger, self).__init__()
+        self.type_num = kwargs["type_num"]  # >= real type num
+        self.ent_type2desc = utils.load_data(kwargs["ent_type2desc"])
+        self.preprocessor = preprocessor
+
+    def get_tag_size(self):
+        pass
+
+    def get_tag_points(self, sample):
+        pass
+
+    def tag(self, data):
+        '''
+        do nothing, have tagging in generating batch data
+        :param data: 
+        :return: 
+        '''
+        return data
+
+    def get_prompts_n_tags(self, batch_data, training=True):
+        # gen prompt
+        sep = "[unused9]"
+        prompt_data = []
+
+        def gen_prompt(type2desc_tps):
+            prompt_txt = ""
+            type_list = []
+            type2idx = dict()
+            for idx, (ent_type, desc) in enumerate(type2desc_tps):
+                if prompt_txt != "":
+                    prompt_txt += " " + sep + " "
+                start, end = len(prompt_txt), len(prompt_txt) + len(ent_type)
+                type_list.append({
+                    "text": ent_type,
+                    "char_span": [start, end],
+                })
+                prompt_txt += "{}: {}".format(ent_type, random.choice(desc))
+                type2idx[ent_type] = idx
+            return {
+                "text": prompt_txt.strip(),
+                "entity_list": type_list,
+                "type2idx": type2idx,
+            }
+
+        prompt2sample_map = []
+        for sample_idx, sample in enumerate(batch_data):
+            type_prompt_list = []
+            if training:
+                pos_types = {ent["type"] for ent in sample["entity_list"]}
+                type2desc_tps = [(ent_type, self.ent_type2desc["positive_types"][ent_type]) 
+                                 for ent_type in pos_types]
+                neg_num = self.type_num - len(type2desc_tps)
+                neg_types = list(self.ent_type2desc["negative_types"].items()) + \
+                            [(t, d) for t, d in self.ent_type2desc["positive_types"].items() if t not in pos_types]
+                # try:
+                type2desc_tps.extend(random.sample(neg_types, neg_num))
+                # except Exception as e:
+                #     print("debug")
+                #     print()
+                random.shuffle(type2desc_tps)
+                type_prompt_list.append(type2desc_tps)
+            else:
+                # predicating
+                for i in range(0, len(self.ent_type2desc["positive_types"].items()), self.type_num):
+                    type2desc_tps = list(self.ent_type2desc["positive_types"].items())[i: i+self.type_num]
+                    random.shuffle(type2desc_tps)
+                    type_prompt_list.append(type2desc_tps)
+
+            for type2desc_tps in type_prompt_list:
+                prompt = gen_prompt(type2desc_tps)
+                prompt_data.append(prompt)
+                prompt2sample_map.append(sample_idx)
+            
+        prompt_data = self.preprocessor.create_features(prompt_data)
+        prompt_data = self.preprocessor.add_tok_span(prompt_data)
+        prompt_data = self.preprocessor.choose_features_by_token_level(prompt_data)
+        prompt_data = self.preprocessor.choose_spans_by_token_level(prompt_data)
+
+        max_seq_len4prompt = max([len(p["features"]["tok2char_span"]) for p in prompt_data])
+        prompt_data = self.preprocessor.index_features(prompt_data, max_seq_len4prompt)
+
+        batch_tag_points = []
+        for idx, prompt in enumerate(prompt_data):
+            sample = batch_data[idx]
+            tag_points = set()
+            if "entity_list" in sample:
+                for ent in sample["entity_list"]:
+                    if ent["type"] in prompt["type2idx"]:
+                        type_idx = prompt["type2idx"][ent["type"]]
+                        tag_points.add(
+                            (ent["tok_span"][0], ent["tok_span"][1] - 1, type_idx))
+            batch_tag_points.append(list(tag_points))
+            
+        # uner settings里的model和tagger还没设置好
+
+        return prompt_data, batch_tag_points, prompt2sample_map
+
+    def decode(self, sample, pred_tags, pred_outs=None):
+        # pred_tags - pred_outputs
+        # 同时输出pred logits 和标签映射span
+
+        ent_list = []
+        predicted_shaking_tag = pred_tags[0]
+        shk_points = Indexer.shaking_seq2points(predicted_shaking_tag)  # (start, end - 1, type index)
+
+        sample_idx, text = sample["id"], sample["text"]
+        prompt = sample["prompt"]
+        tok2char_span = sample["features"]["tok2char_span"]
+
+        # entity
+        for sp in shk_points:
+            ent_type = prompt["entity_list"][sp[2]]["text"]
+
+            char_span_list = tok2char_span[sp[0]:sp[1] + 1]
+            char_sp = [char_span_list[0][0], char_span_list[-1][1]]
+            ent_text = text[char_sp[0]:char_sp[1]]
+            entity = {
+                "type": ent_type,
+                "text": ent_text,
+                "tok_span": [sp[0], sp[1] + 1],
+                "char_span": char_sp,
+            }
+            ent_list.append(entity)
+
+        sample["entity_list"] = ent_list
+        return sample

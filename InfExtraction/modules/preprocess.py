@@ -16,12 +16,17 @@ from pprint import pprint
 
 
 class Preprocessor:
-    def __init__(self, language, pretrained_model_path, do_lower_case):
+    def __init__(self, language, pretrained_model_path, do_lower_case, token_level=None,
+                 key2dict=None, max_char_num_in_tok=None, word_tokenizer_type=None):
         self.subword_tokenizer = None
         self.word_tokenizer = None
         self.language = language
         self.pretrained_model_path = pretrained_model_path
         self.do_lower_case = do_lower_case
+        self.key2dict = key2dict
+        self.max_char_num_in_tok = max_char_num_in_tok
+        self.word_tokenizer_type = word_tokenizer_type
+        self.token_level = token_level
 
     @staticmethod
     def add_ch_parsed_res(sample_list):
@@ -493,7 +498,7 @@ class Preprocessor:
                 tok_span.extend([tok_span_list[0][0], tok_span_list[-1][1]])
             return tok_span
 
-        for sample in tqdm(data, desc="adding word level and subword level spans"):
+        for sample in data:
             char2word_span = self._get_char2tok_span(sample["features"]["word2char_span"])
             char2subwd_span = self._get_char2tok_span(sample["features"]["subword2char_span"])
 
@@ -759,9 +764,12 @@ class Preprocessor:
     def get_all_possible_entities(sample):
         return utils.get_all_possible_entities(sample)
 
-    def create_features(self, data, word_tokenizer_type="white"):
+    def create_features(self, data, word_tokenizer_type=None):
+        if word_tokenizer_type is None:
+            word_tokenizer_type = self.word_tokenizer_type
+
         # create features
-        for sample in tqdm(data, desc="create features"):
+        for sample in data:
             text = sample["text"]
             # word level
             word_level_feature_keys = {"ner_tag_list", "word_list", "pos_tag_list", "dependency_list", "word2char_span"}
@@ -1010,8 +1018,10 @@ class Preprocessor:
 
         return dicts, data_statistics
 
-    @staticmethod
-    def choose_features_by_token_level(data, token_level, do_lower_case=False):
+    def choose_features_by_token_level(self, data):
+        token_level = self.token_level
+        do_lower_case = self.do_lower_case
+
         for sample in data:
             features = sample["features"]
             if token_level == "subword":
@@ -1050,8 +1060,7 @@ class Preprocessor:
                 sample["features"] = new_features
         return data
 
-    @staticmethod
-    def choose_spans_by_token_level4sample(sample, token_level):
+    def choose_spans_by_token_level4sample(self, sample, token_level):
         if token_level == "subword":
             tok_key = "subwd_span"
         elif token_level == "word":
@@ -1081,15 +1090,15 @@ class Preprocessor:
                     if type(val) is list:
                         choose_sps(val)
 
-    @staticmethod
-    def choose_spans_by_token_level(data, token_level):
+    def choose_spans_by_token_level(self, data):
         '''
         :param data:
         :param token_level: "subword" or "word"
         :return:
         '''
+        token_level = self.token_level
         for sample in data:
-            Preprocessor.choose_spans_by_token_level4sample(sample, token_level)
+            self.choose_spans_by_token_level4sample(sample, token_level)
         return data
 
     @staticmethod
@@ -1496,8 +1505,7 @@ class Preprocessor:
                 del sample_id2mismatched_ents[sample["id"]]
         return sample_id2mismatched_ents
 
-    @staticmethod
-    def index_features(data, language, key2dict, max_seq_len, max_char_num_in_tok=None):
+    def index_features(self, data, max_seq_len):
         '''
         :param language:
         :param data:
@@ -1507,6 +1515,8 @@ class Preprocessor:
         :param pretrained_model_padding: for subword ids padding
         :return:
         '''
+        max_char_num_in_tok = self.max_char_num_in_tok
+        key2dict = self.key2dict
 
         # map for replacing key names
         key_map = {
@@ -1518,7 +1528,7 @@ class Preprocessor:
             "dependency_list": "dependency_points"
         }
 
-        for sample in tqdm(data, desc="indexing"):
+        for sample in data:
             features = sample["features"]
             features["token_type_ids"] = [0] * len(features["tok2char_span"])
             features["attention_mask"] = [1] * len(features["tok2char_span"])

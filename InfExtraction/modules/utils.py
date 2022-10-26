@@ -1389,7 +1389,8 @@ def load_data(path, lines=None, mute=False):
     if "s3:" in path:
         res = get_oss_client().get(path)
         try:
-            data = json.loads(res.decode("utf-8"))
+            jt = res.decode("utf-8")
+            data = json.loads(jt)
         except Exception as e:
             data_lines = res.decode("utf-8").strip().split("\n")
             data = [json.loads(line) for line in data_lines]
@@ -1483,8 +1484,10 @@ class DefaultLogger:
 
 
 class TensorBoardLogger:
-    def __init__(self):
-        self.writer = SummaryWriter()
+    def __init__(self, log_dir, config2log):
+        self.writer = SummaryWriter(log_dir=log_dir)
+        config_str = "```  \n" + json.dumps(config2log, ensure_ascii=False, indent=4) + "  \n```"
+        self.writer.add_text("hyper-parameters", config_str)
 
     def log(self, log_dict):
         assert "n_iter" in log_dict

@@ -56,10 +56,9 @@ def get_dataloader(data,
                    sliding_len,
                    combine,
                    batch_size,
-                   key2dict,
                    tagger,
                    collate_fn,
-                   max_char_num_in_tok=None,
+                   preprocessor
                    ):
     # split test data
     data = Preprocessor.split_into_short_samples(data,
@@ -78,12 +77,9 @@ def get_dataloader(data,
         pprint(sample_id2mismatched)
 
     # inexing
-    indexed_data = Preprocessor.index_features(data,
-                                               language,
-                                               key2dict,
-                                               max_seq_len,
-                                               max_char_num_in_tok)
-    # tagging
+    indexed_data = preprocessor.index_features(data,
+                                               max_seq_len)
+    # # tagging
     indexed_data = tagger.tag(indexed_data)
 
     # dataloader
@@ -161,7 +157,6 @@ if __name__ == "__main__":
 
     # training settings
     check_tagging_n_decoding = settings.check_tagging_n_decoding
-    device_num = settings.device_num
     token_level = settings.token_level
     epochs = settings.epochs
     batch_size_train = settings.batch_size_train
@@ -215,18 +210,25 @@ if __name__ == "__main__":
     # reset settings from args
     # to do
 
+    # preprocessor
+    pretrained_model_path = settings.pretrained_model_path
+    do_lower_case = settings.do_lower_case
+    word_tokenizer_type = settings.word_tokenizer_type
+    preprocessor = Preprocessor(language, pretrained_model_path, do_lower_case, token_level,
+                                key2dict, max_char_num_in_tok, word_tokenizer_type)
+
     # choose features and spans by token level
-    train_data = Preprocessor.choose_features_by_token_level(train_data, token_level, do_lower_case)
-    train_data = Preprocessor.choose_spans_by_token_level(train_data, token_level)
+    train_data = preprocessor.choose_features_by_token_level(train_data)
+    train_data = preprocessor.choose_spans_by_token_level(train_data)
 
-    valid_data = Preprocessor.choose_features_by_token_level(valid_data, token_level, do_lower_case)
-    valid_data = Preprocessor.choose_spans_by_token_level(valid_data, token_level)
+    valid_data = preprocessor.choose_features_by_token_level(valid_data)
+    valid_data = preprocessor.choose_spans_by_token_level(valid_data)
 
-    data4checking = Preprocessor.choose_features_by_token_level(data4checking, token_level, do_lower_case)
-    data4checking = Preprocessor.choose_spans_by_token_level(data4checking, token_level)
+    data4checking = preprocessor.choose_features_by_token_level(data4checking)
+    data4checking = preprocessor.choose_spans_by_token_level(data4checking)
     for filename, test_data in filename2test_data.items():
-        filename2test_data[filename] = Preprocessor.choose_features_by_token_level(test_data, token_level, do_lower_case)
-        filename2test_data[filename] = Preprocessor.choose_spans_by_token_level(test_data, token_level)
+        filename2test_data[filename] = preprocessor.choose_features_by_token_level(test_data)
+        filename2test_data[filename] = preprocessor.choose_spans_by_token_level(test_data)
 
     # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     # tagger
@@ -248,9 +250,9 @@ if __name__ == "__main__":
 
     all_data4gen_tag_dict = []
     all_data4gen_tag_dict.extend(train_data)
-
+    
     # tagger
-    tagger = tagger_class_name(all_data4gen_tag_dict, **tagger_config)
+    tagger = tagger_class_name(all_data4gen_tag_dict, preprocessor, **tagger_config)
 
     # model
     print("init model...")
@@ -278,7 +280,14 @@ if __name__ == "__main__":
         dir_to_save_model = default_dir_to_save_model
         if not os.path.exists(dir_to_save_model):
             os.makedirs(dir_to_save_model)
-        logger = TensorBoardLogger()
+
+        import socket
+        from datetime import datetime
+        current_time = datetime.now().strftime("%b%d_%H-%M-%S")
+        log_dir = os.path.join(
+            "runs", exp_name, run_id, run_name + "_" + current_time + "_" + socket.gethostname()
+        )
+        logger = TensorBoardLogger(log_dir, config2log)
     else:
         logger = DefaultLogger(default_log_path,
                                exp_name,
@@ -304,10 +313,9 @@ if __name__ == "__main__":
                                          sliding_len_test,
                                          combine,
                                          batch_size_test,
-                                         key2dict,
                                          tagger,
                                          collate_fn,
-                                         max_char_num_in_tok,
+                                         preprocessor,
                                          )
         filename2test_data_loader[filename] = test_dataloader
 
@@ -320,10 +328,9 @@ if __name__ == "__main__":
                                       sliding_len_train,
                                       combine,
                                       batch_size_train,
-                                      key2dict,
                                       tagger,
                                       collate_fn,
-                                      max_char_num_in_tok,
+                                      preprocessor,
                                       )
     valid_dataloader = get_dataloader(valid_data,
                                       language,
@@ -333,10 +340,9 @@ if __name__ == "__main__":
                                       sliding_len_valid,
                                       combine,
                                       batch_size_valid,
-                                      key2dict,
                                       tagger,
                                       collate_fn,
-                                      max_char_num_in_tok,
+                                      preprocessor,
                                       )
     # debug: checking tagging and decoding
     if check_tagging_n_decoding:
@@ -352,10 +358,9 @@ if __name__ == "__main__":
                                              sliding_len_test,
                                              combine,
                                              batch_size_test,
-                                             key2dict,
                                              tagger,
                                              collate_fn,
-                                             max_char_num_in_tok,
+                                             preprocessor,
                                              )
         debug_score_dict, debug_error_analysis_dict = evaluator.check_tagging_n_decoding(dataloader4checking, ori_data4checking)
         json.dump(debug_error_analysis_dict,

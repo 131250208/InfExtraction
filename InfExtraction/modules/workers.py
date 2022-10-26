@@ -97,15 +97,15 @@ class Trainer:
 
             # log
             log_dict = {
-                "learning_rate": self.optimizer.param_groups[0]['lr'],
+                "lr": self.optimizer.param_groups[0]['lr'],
                 "time": time.time() - t_ep,
             }
             metrics_log = ""
             for key, met in metrics_dict.items():
                 fin_metrics_dict[key] = fin_metrics_dict.get(key, 0) + met.item()
                 avg_met = fin_metrics_dict[key] / (batch_ind + 1)
-                metrics_log += "train_{}: {:.5}, ".format(key, avg_met)
-                log_dict["train_{}".format(key)] = avg_met
+                metrics_log += "tr_{}: {:.3}, ".format(key, avg_met)
+                log_dict["tr_{}".format(key)] = avg_met
 
             # scheduler
             if self.scheduler_name == "ReduceLROnPlateau":
@@ -113,8 +113,8 @@ class Trainer:
             else:
                 self.scheduler.step()
 
-            batch_print_format = "\rrun_id: {}, exp: {}, run_name: {}, Epoch: {}/{}, batch: {}/{}, {}" + \
-                                 "lr: {:.5}, batch_time: {:.5}, total_time: {:.5} -------------"
+            batch_print_format = "\rrid: {}, exp: {}, rname: {}, Ep: {}/{}, batch: {}/{}, {}" + \
+                                 "lr: {:.3}, batch_time: {:.3}, total_time: {:.3} ----------"
 
             print(batch_print_format.format(self.run_id, self.exp_name, self.run_name,
                                             ep + 1, num_epoch,
@@ -169,15 +169,33 @@ class Evaluator:
     def _predict_step(self, batch_predict_data):
         sample_list = batch_predict_data["sample_list"]
         del batch_predict_data["sample_list"]
-        if "golden_tags" in batch_predict_data:
-            del batch_predict_data["golden_tags"]
+        # if "golden_tags" in batch_predict_data:
+        #     del batch_predict_data["golden_tags"]
+        #
+        # for k, v in batch_predict_data.items():
+        #     if k == "padded_text_list":
+        #         for sent in v:
+        #             sent.to(self.device)
+        #     else:
+        #         batch_predict_data[k] = v.to(self.device)
 
-        for k, v in batch_predict_data.items():
-            if k == "padded_text_list":
-                for sent in v:
-                    sent.to(self.device)
+        def to_device_iter(inp_item):
+            if type(inp_item) is dict:
+                for k, v in inp_item.items():
+                    if type(v) is torch.Tensor:
+                        inp_item[k] = v.to(self.device)
+                    else:
+                        to_device_iter(v)
+            elif type(inp_item) is list:
+                for idx, v in enumerate(inp_item):
+                    if type(v) is torch.Tensor:
+                        inp_item[idx] = v.to(self.device)
+                    else:
+                        to_device_iter(v)
             else:
-                batch_predict_data[k] = v.to(self.device)
+                pass
+
+        to_device_iter(batch_predict_data)
 
         with torch.no_grad():
             pred_outputs = self.model(**batch_predict_data)

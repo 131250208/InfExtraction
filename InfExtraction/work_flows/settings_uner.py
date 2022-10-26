@@ -1,7 +1,6 @@
 import os
-device_num = 1
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
-os.environ["CUDA_VISIBLE_DEVICES"] = str(device_num)
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4"
 import torch
 import random
 import numpy as np
@@ -39,20 +38,24 @@ import re
 from glob import glob
 
 # Frequent changes
-exp_name = "cadec4yelp"
+exp_name = "genia"
 language = "en"
-task_type = "re+ner"  # re, re+ee
-model_name = "RAIN"
-tagger_name = "Tagger4RAIN"
-run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
-pretrained_model_name = "yelpbert"
-pretrained_emb_name = "glove.6B.100d.txt"
+do_lower_case = False
+word_tokenizer_type = "white"
+
+task_type = "ner"
+model_name = "UNER"
+tagger_name = "UNERTagger"
+# run_name = "{}+{}+{}".format(task_type, re.sub("[^A-Z]", "", model_name), re.sub("[^A-Z]", "", tagger_name))
+run_name = task_type
+pretrained_model_name = "biobert_large_v1.1_squad"  # biobert_large， bert-large-cased
+pretrained_emb_name = "bio_embedding_extrinsic.bin"
 use_wandb = True
 note = ""
-epochs = 300
+epochs = 100
 lr = 1e-5  # 5e-5, 1e-4
 check_tagging_n_decoding = True
-combine = True  # combine splits
+combine = False  # combine splits
 scheduler = "CAWR"
 model_bag_size = 0
 metric_pattern2save = None  # if none, save best models on all metrics
@@ -61,13 +64,13 @@ batch_size_train = 12
 batch_size_valid = 12
 batch_size_test = 12
 
-max_seq_len_train = 64
+max_seq_len_train = 100
 max_seq_len_valid = 100
 max_seq_len_test = 100
 
-sliding_len_train = 64
-sliding_len_valid = 100
-sliding_len_test = 100
+sliding_len_train = 30
+sliding_len_valid = 30
+sliding_len_test = 30
 
 # >>>>>>>>>>>>>>>>> features >>>>>>>>>>>>>>>>>>>
 token_level = "subword"  # token is word or subword
@@ -78,7 +81,7 @@ ner_tag_emb = False
 char_encoder = False
 dep_gcn = False
 
-word_encoder = False
+word_encoder = True
 subwd_encoder = True
 use_attns4rel = True
 
@@ -87,15 +90,15 @@ data_in_dir = "inside:s3://wycheng_b1/data/info_extr/preprocessed_data"
 data_out_dir = "../../data/res_data"
 
 train_data_path = "/".join([data_in_dir, exp_name, "train_data.json"])
-valid_data_path = "/".join([data_in_dir, exp_name, "valid_data.json"])
+valid_data_path = "/".join([data_in_dir, exp_name, "test_data.json"])
 
 test_data_path_list = []
-cluster = 'inside'
-files = get_oss_client().get_file_iterator("{}/{}/".format(data_in_dir, exp_name))
-for p, k in files:
-    if "test" in p:
-        path = '{0}:s3://{1}'.format(cluster, p)
-        test_data_path_list.append(path)
+# cluster = 'inside'
+# files = get_oss_client().get_file_iterator("{}/{}/".format(data_in_dir, exp_name))
+# for p, k in files:
+#     if "test" in p:
+#         path = '{0}:s3://{1}'.format(cluster, p)
+#         test_data_path_list.append(path)
 
 dicts = "dicts.json"
 statistics = "statistics.json"
@@ -124,17 +127,17 @@ for key, val in dicts.items():
 # additional preprocessing
 addtional_preprocessing_config = {
     "add_default_entity_type": False,
-    "classify_entities_by_relation": False,
-    "use_bound": True,
+    "classify_entities_by_relation": False
 }
 
 # tagger config
 tagger_config = {
+    "ent_type2desc": "{}/{}/{}".format(data_in_dir, exp_name, "ent_type2desc.json"),
+    "type_num": 7,
     "classify_entities_by_relation": addtional_preprocessing_config["classify_entities_by_relation"],
-    "add_h2t_n_t2h_links": True,
+    "add_h2t_n_t2h_links": False,
     "add_o2s_links": False,
-    "language": language,
-    "use_bound": addtional_preprocessing_config["use_bound"],
+    "language": language
 }
 
 # optimizers and schedulers
@@ -171,6 +174,7 @@ default_dir_to_save_model = "./default_log_dir/run-{}_{}-{}".format(date.today()
 # trainer config
 trainer_config = {
     "run_name": run_name,
+    "run_id": default_run_id,
     "exp_name": exp_name,
     "scheduler_config": scheduler_dict[scheduler],
     "log_interval": log_interval,
@@ -236,8 +240,7 @@ dep_config = {
 } if dep_gcn else None
 
 handshaking_kernel_config = {
-    "ent_shaking_type": "cln+lstm",
-    "rel_shaking_type": "cln",
+    "shaking_type": "cln+bilstm"
 }
 
 # model settings
@@ -249,14 +252,7 @@ model_settings = {
     "word_encoder_config": word_encoder_config,
     "dep_config": dep_config,
     "handshaking_kernel_config": handshaking_kernel_config,
-    "use_attns4rel": use_attns4rel,
-    "ent_dim": 768,
-    "rel_dim": 768,
-    "tok_pair_neg_sampling_rate": .5,
-    "clique_comp_loss": False,
-    "do_span_len_emb": True,
-    "loss_weight": 0.5,
-    "loss_weight_recover_steps": 0,
+    "fin_hidden_size": 1024
 }
 
 model_settings_log = copy.deepcopy(model_settings)
@@ -265,9 +261,10 @@ if "word_encoder_config" in model_settings_log and model_settings_log["word_enco
 
 # this dict would be logged
 config_to_log = {
-    "model_name": model_name,
     "seed": seed,
     "task_type": task_type,
+    "model_name": model_name,
+    "tagger_name": tagger_name,
     "epochs": epochs,
     "learning_rate": lr,
     "batch_size_train": batch_size_train,

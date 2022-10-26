@@ -1,3 +1,5 @@
+import copy
+
 import torch.nn as nn
 import torch
 from abc import ABCMeta, abstractmethod
@@ -120,7 +122,7 @@ class IEModel(nn.Module, metaclass=ABCMeta):
                 elif word_lower in pretrained_emb:
                     hit_count += 1
                     init_word_embedding_matrix[idx] = pretrained_emb[word_lower]
-            print("pretrained word embedding hit rate: {}".format(hit_count / len(word2id)))
+            print("pretrained word embedding hitting rate: {}".format(hit_count / len(word2id)))
 
             init_word_embedding_matrix = torch.FloatTensor(init_word_embedding_matrix)
             word_emb_dim = init_word_embedding_matrix.size()[1]
@@ -271,14 +273,9 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         if self.training:
             self.bp_steps += 1
 
-    def generate_batch(self, batch_data):
-        assert len(batch_data) > 0
-
-        batch_dict = {
-            "sample_list": [sample for sample in batch_data],
-        }
+    def features2tensor(self, batch_data):
+        batch_dict = dict()
         seq_length = len(batch_data[0]["features"]["tok2char_span"])
-
         if self.subwd_encoder_config is not None:
             subword_input_ids_list = []
             attention_mask_list = []
@@ -310,7 +307,12 @@ class IEModel(nn.Module, metaclass=ABCMeta):
         if self.dep_config is not None:
             dep_matrix_points_batch = [sample["features"]["dependency_points"] for sample in batch_data]
             batch_dict["dep_adj_matrix"] = Indexer.points2matrix_batch(dep_matrix_points_batch, seq_length)
+        return batch_dict
 
+    def generate_batch(self, batch_data):
+        assert len(batch_data) > 0
+        batch_dict = self.features2tensor(batch_data)
+        batch_dict["sample_list"] = batch_data
         # batch_dict["golden_tags"] need to be set by inheritors
         return batch_dict
 
@@ -351,7 +353,7 @@ class TPLinkerPlus(IEModel):
 
         # handshaking kernel
         shaking_type = handshaking_kernel_config["shaking_type"]
-        self.handshaking_kernel = HandshakingKernel(fin_hidden_size, fin_hidden_size, shaking_type)
+        self.handshaking_kernel = SingleSourceHandshakingKernel(fin_hidden_size, shaking_type)
 
         # decoding fc
         self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
@@ -370,7 +372,7 @@ class TPLinkerPlus(IEModel):
         cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
         # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
         # shaking_seq_len: max_seq_len * vf - sum(1, vf)
-        shaking_hiddens = self.handshaking_kernel(cat_hiddens, cat_hiddens)
+        shaking_hiddens = self.handshaking_kernel(cat_hiddens)
 
         # predicted_oudtuts: (batch_size, shaking_seq_len, tag_num)
         predicted_oudtuts = self.dec_fc(shaking_hiddens)
@@ -385,63 +387,7 @@ class TPLinkerPlus(IEModel):
         pred_tag = self.pred_output2pred_tag(pred_out)
         return {
             "loss": MetricsCalculator.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
-            "seq_accuracy": MetricsCalculator.get_tag_seq_accuracy(pred_tag, gold_tag),
-        }
-
-
-class UNER(IEModel):
-    def __init__(self,
-                 tagger,
-                 handshaking_kernel_config=None,
-                 fin_hidden_size=None,
-                 **kwargs,
-                 ):
-        super().__init__(tagger, **kwargs)
-        '''
-        :parameters: see model settings in settings_default.py
-        '''
-
-        self.tag_size = tagger.get_tag_size()
-
-        self.aggr_fc4handshaking_kernal = nn.Linear(self.cat_hidden_size, fin_hidden_size)
-
-        # handshaking kernel
-        shaking_type = handshaking_kernel_config["shaking_type"]
-        self.handshaking_kernel = HandshakingKernel(fin_hidden_size, fin_hidden_size, shaking_type)
-
-        # decoding fc
-        self.dec_fc = nn.Linear(fin_hidden_size, self.tag_size)
-
-    def generate_batch(self, batch_data):
-        seq_length = len(batch_data[0]["features"]["tok2char_span"])
-        batch_dict = super(UNER, self).generate_batch(batch_data)
-        # shaking tag
-        tag_points_batch = [sample["tag_points"] for sample in batch_data]
-        batch_dict["golden_tags"] = [Indexer.points2multilabel_shaking_seq_batch(tag_points_batch, seq_length, self.tag_size), ]
-        return batch_dict
-
-    def forward(self, **kwargs):
-        super(UNER, self).forward()
-        cat_hiddens, _ = self.get_basic_features(**kwargs)
-        cat_hiddens = self.aggr_fc4handshaking_kernal(cat_hiddens)
-        # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
-        # shaking_seq_len: max_seq_len * vf - sum(1, vf)
-        shaking_hiddens = self.handshaking_kernel(cat_hiddens, cat_hiddens)
-
-        # predicted_oudtuts: (batch_size, shaking_seq_len, tag_num)
-        predicted_oudtuts = self.dec_fc(shaking_hiddens)
-
-        return predicted_oudtuts
-
-    def pred_output2pred_tag(self, pred_output):
-        return (pred_output > 0.).long()
-
-    def get_metrics(self, pred_outputs, gold_tags):
-        pred_out, gold_tag = pred_outputs, gold_tags[0]
-        pred_tag = self.pred_output2pred_tag(pred_out)
-        return {
-            "loss": MetricsCalculator.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
-            "seq_accuracy": MetricsCalculator.get_tag_seq_accuracy(pred_tag, gold_tag),
+            "seq_acc": MetricsCalculator.get_tag_seq_accuracy(pred_tag, gold_tag),
         }
 
 
@@ -722,4 +668,86 @@ class RAIN(IEModel):
             "loss": loss,
             "ent_seq_acc": MetricsCalculator.get_tag_seq_accuracy(ent_pred_tag, ent_gold_tag),
             "rel_seq_acc": MetricsCalculator.get_tag_seq_accuracy(rel_pred_tag, rel_gold_tag),
+        }
+
+
+class UNER(IEModel):
+    def __init__(self,
+                 tagger,
+                 handshaking_kernel_config=None,
+                 fin_hidden_size=None,
+                 **kwargs,
+                 ):
+        super().__init__(tagger, **kwargs)
+        '''
+        :parameters: see model settings in settings_default.py
+        '''
+        self.tagger = tagger
+        self.aggr_fc4handshaking_kernal = nn.Linear(self.cat_hidden_size, fin_hidden_size)
+
+        # handshaking kernel
+        shaking_type = handshaking_kernel_config["shaking_type"]
+        self.handshaking_kernel = SingleSourceHandshakingKernel(fin_hidden_size, shaking_type)
+
+    def generate_batch(self, batch_data):
+        assert len(batch_data) > 0
+        text_seq_length = len(batch_data[0]["features"]["tok2char_span"])
+
+        batch_prompt, batch_tag_points, prompt2sample_map = self.tagger.get_prompts_n_tags(batch_data, training=self.training)
+        prompt_seq_length = len(batch_prompt[0]["features"]["tok2char_span"])
+
+        new_sample_list = []
+        sample_mem = set()
+        for prompt_idx, prompt in enumerate(batch_prompt):
+            sample_idx = prompt2sample_map[prompt_idx]
+            sample = batch_data[sample_idx]
+            if sample["id"] in sample_mem:
+                sample = copy.deepcopy(sample)
+            sample["prompt"] = prompt
+            new_sample_list.append(sample)
+            sample_mem.add(sample["id"])
+
+        data_features = self.features2tensor(new_sample_list)
+        prompt_features = self.features2tensor(batch_prompt)
+
+        prompt_span2shk_map = Indexer.get_matrix_idx2shaking_idx(prompt_seq_length)
+
+        return {
+            "golden_tags": [Indexer.points2multilabel_shaking_seq_batch(batch_tag_points, text_seq_length, self.tagger.type_num), ],
+            "data_features": data_features,
+            "prompt_features": prompt_features,
+            "type_indices": torch.tensor([[prompt_span2shk_map[t["tok_span"][0]][t["tok_span"][1] - 1]
+                                       for t in prompt["entity_list"]] for prompt in batch_prompt]),
+            "sample_list": new_sample_list,
+        }
+
+    def forward(self, **kwargs):
+        super(UNER, self).forward()
+        prompt_f, data_f = kwargs["prompt_features"], kwargs["data_features"]
+        prompt_cat_hiddens, _ = self.get_basic_features(**prompt_f)
+        text_cat_hiddens, _ = self.get_basic_features(**data_f)
+
+        prompt_cat_hiddens = self.aggr_fc4handshaking_kernal(prompt_cat_hiddens)
+        text_cat_hiddens = self.aggr_fc4handshaking_kernal(text_cat_hiddens)
+
+        # shaking_hiddens: (batch_size, shaking_seq_len, hidden_size)
+        # shaking_seq_len: max_seq_len * vf - sum(1, vf)
+        prompt_shaking_hiddens = self.handshaking_kernel(prompt_cat_hiddens)
+        text_shaking_hiddens = self.handshaking_kernel(text_cat_hiddens)
+
+        type_indices = kwargs["type_indices"][:, :, None].repeat(1, 1, prompt_shaking_hiddens.size()[-1])
+        type_hiddens = torch.gather(prompt_shaking_hiddens, 1, type_indices)
+        predicted_outputs = torch.matmul(text_shaking_hiddens, type_hiddens.permute(0, 2, 1))
+
+        return predicted_outputs
+
+    def pred_output2pred_tag(self, pred_output):
+        return (pred_output > 0.).long()
+
+    def get_metrics(self, pred_outputs, gold_tags):
+        pred_out, gold_tag = pred_outputs, gold_tags[0]
+        pred_tag = self.pred_output2pred_tag(pred_out)
+        return {
+            "loss": MetricsCalculator.multilabel_categorical_crossentropy(pred_out, gold_tag, self.bp_steps),
+            "seq_acc": MetricsCalculator.get_tag_seq_accuracy(pred_tag, gold_tag),
         }
